@@ -3,6 +3,7 @@ import express from "express";
 import cors from "cors";
 import helmet from "helmet";
 import pool from "./config/database.js";
+import customerRoutes from "./routes/customer.routes.js";
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -41,6 +42,9 @@ app.get("/api/health/db", async (req, res) => {
     });
   }
 });
+
+// Rutas
+app.use("/api/customers", customerRoutes);
 
 // Servidor
 app.listen(PORT, () => {
