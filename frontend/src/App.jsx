@@ -1,60 +1,64 @@
-import { useEffect, useState } from "react";
-import { getCustomers } from "./services/customer.service";
+import { Route, Routes } from "react-router-dom";
+import MainLayout from "./layouts/MainLayout";
+import Dashboard from "./pages/Dashboard/Dashboard";
+import Clientes from "./pages/Clientes/Clientes";
+
+function PlaceholderPage({ title }) {
+  return (
+    <section>
+      <h2>{title}</h2>
+      <p>Módulo de {title.toLowerCase()} en construcción.</p>
+    </section>
+  );
+}
 
 function App() {
-  const [customers, setCustomers] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-
-  useEffect(() => {
-    async function loadCustomers() {
-      try {
-        const response = await getCustomers();
-
-        if (response.success) {
-          setCustomers(response.data);
-        } else {
-          setError("No se pudieron cargar los clientes.");
-        }
-      } catch (err) {
-        console.error(err);
-        setError("Error conectando con el API.");
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    loadCustomers();
-  }, []);
-
   return (
-    <main style={{ padding: "40px", fontFamily: "Arial, sans-serif" }}>
-      <h1>MERTEL</h1>
+    <Routes>
+      <Route element={<MainLayout />}>
+        <Route path="/" element={<Dashboard />} />
 
-      <p>Prueba de conexión Frontend → Backend → MySQL</p>
+        <Route 
+          path="/clientes"
+          element={<Clientes />}
+        />
 
-      {loading && <p>Cargando clientes...</p>}
+        <Route
+          path="/facturas"
+          element={<PlaceholderPage title="Facturas" />}
+        />
 
-      {error && <p>{error}</p>}
+        <Route
+          path="/cartera"
+          element={<PlaceholderPage title="Cartera" />}
+        />
 
-      {!loading && !error && (
-        <>
-          <p>Clientes encontrados: {customers.length}</p>
+        <Route
+          path="/cobranza"
+          element={<PlaceholderPage title="Cobranza" />}
+        />
 
-          {customers.length === 0 ? (
-            <p>No hay clientes registrados todavía.</p>
-          ) : (
-            <ul>
-              {customers.map((customer) => (
-                <li key={customer.id}>
-                  {customer.name} — {customer.nit}
-                </li>
-              ))}
-            </ul>
-          )}
-        </>
-      )}
-    </main>
+        <Route
+          path="/pagos"
+          element={<PlaceholderPage title="Pagos" />}
+        />
+
+        <Route
+          path="/reportes"
+          element={<PlaceholderPage title="Reportes" />}
+        />
+
+        <Route
+          path="/configuracion"
+          element={<PlaceholderPage title="Configuración" />}
+        />
+
+        <Route
+          path="*"
+          element={<PlaceholderPage title="Página no encontrada" />}
+        />
+      </Route>
+    </Routes>
   );
 }
 

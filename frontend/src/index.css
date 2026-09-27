@@ -1,111 +1,350 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap");
+
 :root {
-  --text: #6b6375;
-  --text-h: #08060d;
-  --bg: #fff;
-  --border: #e5e4e7;
-  --code-bg: #f4f3ec;
-  --accent: #aa3bff;
-  --accent-bg: rgba(170, 59, 255, 0.1);
-  --accent-border: rgba(170, 59, 255, 0.5);
-  --social-bg: rgba(244, 243, 236, 0.5);
-  --shadow:
-    rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
-
-  --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --mono: ui-monospace, Consolas, monospace;
-
-  font: 18px/145% var(--sans);
-  letter-spacing: 0.18px;
-  color-scheme: light dark;
-  color: var(--text);
-  background: var(--bg);
+  font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: #172033;
+  background: #f4f6f9;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
 
-  @media (max-width: 1024px) {
-    font-size: 16px;
-  }
+  --mertel-navy: #172033;
+  --mertel-navy-soft: #202b42;
+  --mertel-red: #e30613;
+  --mertel-red-dark: #c90511;
+  --mertel-bg: #f4f6f9;
+  --mertel-white: #ffffff;
+  --mertel-border: #dfe4ec;
+  --mertel-text: #172033;
+  --mertel-muted: #667085;
+  --mertel-hover: #eef1f6;
+  --mertel-shadow: 0 1px 3px rgba(16, 24, 40, 0.08);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --text: #9ca3af;
-    --text-h: #f3f4f6;
-    --bg: #16171d;
-    --border: #2e303a;
-    --code-bg: #1f2028;
-    --accent: #c084fc;
-    --accent-bg: rgba(192, 132, 252, 0.15);
-    --accent-border: rgba(192, 132, 252, 0.5);
-    --social-bg: rgba(47, 48, 58, 0.5);
-    --shadow:
-      rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
-  }
-
-  #social .button-icon {
-    filter: invert(1) brightness(2);
-  }
-}
-
-body {
-  margin: 0;
-}
-
-#root {
-  width: 1126px;
-  max-width: 100%;
-  margin: 0 auto;
-  text-align: center;
-  border-inline: 1px solid var(--border);
-  min-height: 100svh;
-  display: flex;
-  flex-direction: column;
+* {
   box-sizing: border-box;
 }
 
-h1,
-h2 {
-  font-family: var(--heading);
-  font-weight: 500;
-  color: var(--text-h);
-}
-
-h1 {
-  font-size: 56px;
-  letter-spacing: -1.68px;
-  margin: 32px 0;
-  @media (max-width: 1024px) {
-    font-size: 36px;
-    margin: 20px 0;
-  }
-}
-h2 {
-  font-size: 24px;
-  line-height: 118%;
-  letter-spacing: -0.24px;
-  margin: 0 0 8px;
-  @media (max-width: 1024px) {
-    font-size: 20px;
-  }
-}
-p {
+html,
+body,
+#root {
   margin: 0;
+  min-width: 320px;
+  min-height: 100%;
 }
 
-code,
-.counter {
-  font-family: var(--mono);
+body {
+  min-height: 100vh;
+  background: var(--mertel-bg);
+  color: var(--mertel-text);
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+/* Layout principal */
+
+.mertel-layout {
+  min-height: 100vh;
+  display: flex;
+  background: var(--mertel-bg);
+}
+
+.mertel-sidebar {
+  position: fixed;
+  inset: 0 auto 0 0;
+  width: 250px;
+  display: flex;
+  flex-direction: column;
+  background: var(--mertel-navy);
+  color: #fff;
+  padding: 28px 16px 18px;
+  z-index: 20;
+}
+
+.mertel-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 10px 30px;
+}
+
+.mertel-brand-mark {
+  width: 38px;
+  height: 38px;
+  flex: 0 0 38px;
+  display: grid;
+  place-items: center;
+  border-radius: 11px;
+  background: #fff;
+  color: var(--mertel-navy);
+  font-size: 18px;
+  font-weight: 800;
+}
+
+.mertel-brand-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.mertel-brand-copy strong {
+  font-size: 16px;
+  letter-spacing: 0.5px;
+}
+
+.mertel-brand-copy span {
+  color: #aeb8ca;
+  font-size: 11px;
+}
+
+.mertel-navigation {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.mertel-nav-item {
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  padding: 0 13px;
+  border-radius: 9px;
+  color: #d7ddea;
+  font-size: 14px;
+  font-weight: 500;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.mertel-nav-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+
+.mertel-nav-item.active {
+  background: #fff;
+  color: var(--mertel-navy);
+  font-weight: 600;
+}
+
+.mertel-sidebar-footer {
+  margin-top: auto;
+  padding: 17px 12px 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.mertel-sidebar-footer span {
+  font-size: 12px;
+  color: #c8d0df;
+}
+
+.mertel-sidebar-footer small {
+  font-size: 11px;
+  color: #7f8ba1;
+}
+
+.mertel-main {
+  width: calc(100% - 250px);
+  min-height: 100vh;
+  margin-left: 250px;
+}
+
+.mertel-header {
+  height: 78px;
+  display: flex;
+  align-items: center;
+  padding: 0 32px;
+  background: #fff;
+  border-bottom: 1px solid var(--mertel-border);
+}
+
+.mertel-header h1 {
+  margin: 0 0 4px;
+  font-size: 18px;
+  line-height: 1;
+  font-weight: 700;
+}
+
+.mertel-header span {
+  color: var(--mertel-muted);
+  font-size: 12px;
+}
+
+.mertel-content {
+  min-height: calc(100vh - 78px);
+  padding: 32px;
+}
+
+/* Contenido de páginas */
+
+.mertel-page {
+  width: 100%;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.mertel-page-header {
+  margin-bottom: 24px;
+}
+
+.mertel-page-header h2 {
+  margin: 0 0 7px;
+  font-size: 28px;
+  line-height: 1.2;
+  letter-spacing: -0.5px;
+}
+
+.mertel-page-header p {
+  margin: 0;
+  color: var(--mertel-muted);
+  font-size: 14px;
+}
+
+/* Botones */
+
+.mertel-button {
+  min-height: 40px;
   display: inline-flex;
-  border-radius: 4px;
-  color: var(--text-h);
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 0 15px;
+  font-size: 13px;
+  font-weight: 600;
+  transition: 0.15s ease;
 }
 
-code {
-  font-size: 15px;
-  line-height: 135%;
-  padding: 4px 8px;
-  background: var(--code-bg);
+.mertel-button-primary {
+  background: var(--mertel-red);
+  color: #fff;
+}
+
+.mertel-button-primary:hover {
+  background: var(--mertel-red-dark);
+}
+
+.mertel-button-secondary {
+  background: #fff;
+  color: var(--mertel-text);
+  border-color: var(--mertel-border);
+}
+
+.mertel-button-secondary:hover {
+  background: var(--mertel-hover);
+}
+
+/* Inputs */
+
+.mertel-input,
+.mertel-select {
+  width: 100%;
+  min-height: 40px;
+  border: 1px solid #cfd6e2;
+  border-radius: 8px;
+  background: #fff;
+  color: var(--mertel-text);
+  padding: 0 12px;
+  outline: none;
+  font-size: 13px;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.mertel-input:focus,
+.mertel-select:focus {
+  border-color: #8793a8;
+  box-shadow: 0 0 0 3px rgba(23, 32, 51, 0.07);
+}
+
+/* Cards */
+
+.mertel-card {
+  background: #fff;
+  border: 1px solid var(--mertel-border);
+  border-radius: 12px;
+  box-shadow: var(--mertel-shadow);
+}
+
+.mertel-card-header {
+  padding: 18px 20px;
+  border-bottom: 1px solid var(--mertel-border);
+}
+
+.mertel-card-body {
+  padding: 20px;
+}
+
+/* Responsive */
+
+@media (max-width: 900px) {
+  .mertel-sidebar {
+    width: 215px;
+  }
+
+  .mertel-main {
+    width: calc(100% - 215px);
+    margin-left: 215px;
+  }
+
+  .mertel-content {
+    padding: 24px;
+  }
+}
+
+@media (max-width: 700px) {
+  .mertel-sidebar {
+    position: static;
+    width: 100%;
+    min-height: auto;
+    padding: 18px 14px;
+  }
+
+  .mertel-layout {
+    display: block;
+  }
+
+  .mertel-navigation {
+    flex-direction: row;
+    overflow-x: auto;
+    padding-bottom: 4px;
+  }
+
+  .mertel-nav-item {
+    flex: 0 0 auto;
+  }
+
+  .mertel-sidebar-footer {
+    display: none;
+  }
+
+  .mertel-main {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .mertel-header {
+    height: 70px;
+    padding: 0 20px;
+  }
+
+  .mertel-content {
+    padding: 20px 16px;
+  }
 }
