@@ -4,6 +4,7 @@ import cors from "cors";
 import helmet from "helmet";
 import pool from "./config/database.js";
 import customerRoutes from "./routes/customer.routes.js";
+import invoiceRoutes from "./routes/invoice.routes.js";
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -45,6 +46,7 @@ app.get("/api/health/db", async (req, res) => {
 
 // Rutas
 app.use("/api/customers", customerRoutes);
+app.use("/api/invoices", invoiceRoutes);
 
 // Servidor
 app.listen(PORT, () => {
