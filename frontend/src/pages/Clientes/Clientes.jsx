@@ -1,6 +1,22 @@
 import { useEffect, useMemo, useState } from "react";
-import { Search, Plus, Users, RefreshCw, X } from "lucide-react";
-import { getCustomers, createCustomer } from "../../services/customer.service";
+import {
+  Search,
+  Plus,
+  Users,
+  RefreshCw,
+  X,
+  Pencil,
+  Trash2,
+  Eye,
+} from "lucide-react";
+
+import {
+  getCustomers,
+  createCustomer,
+  updateCustomer,
+  deleteCustomer,
+} from "../../services/customer.service";
+
 import "./Clientes.css";
 
 const initialForm = {
@@ -10,8 +26,9 @@ const initialForm = {
   email: "",
   address: "",
   city: "",
-  credit_limit: "",
-  available_credit: "",
+  credit_limit: 0,
+  available_credit: 0,
+  status: "active",
   notes: "",
 };
 
@@ -19,11 +36,22 @@ function Clientes() {
   const [customers, setCustomers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [deletingId, setDeletingId] = useState(null);
+
   const [error, setError] = useState("");
   const [formError, setFormError] = useState("");
+
   const [search, setSearch] = useState("");
+
   const [showModal, setShowModal] = useState(false);
+  const [modalMode, setModalMode] = useState("create");
+  const [selectedCustomer, setSelectedCustomer] = useState(null);
+
   const [form, setForm] = useState(initialForm);
+
+  // =========================================================
+  // CARGAR CLIENTES
+  // =========================================================
 
   async function loadCustomers() {
     try {
@@ -34,171 +62,309 @@ function Clientes() {
 
       if (!response.success) {
         throw new Error(
-          response.message || "No se pudieron cargar los clientes.",
+          response.message || "No se pudieron cargar los clientes",
         );
       }
 
       setCustomers(response.data || []);
-    } catch (err) {
-      console.error("Error cargando clientes:", err);
-      setError("No fue posible cargar los clientes.");
+    } catch (error) {
+      console.error("Error cargando clientes:", error);
+
+      setError(
+        error.response?.data?.message ||
+          error.message ||
+          "No se pudieron cargar los clientes",
+      );
     } finally {
       setLoading(false);
     }
   }
 
   useEffect(() => {
-    let cancelled = false;
+  const timer = setTimeout(() => {
+    loadCustomers();
+  }, 0);
 
-    async function loadInitialCustomers() {
-      try {
-        setError("");
+  return () => clearTimeout(timer);
+}, []);
 
-        const response = await getCustomers();
-
-        if (!response.success) {
-          throw new Error(
-            response.message || "No se pudieron cargar los clientes.",
-          );
-        }
-
-        if (!cancelled) {
-          setCustomers(response.data || []);
-          setLoading(false);
-        }
-      } catch (err) {
-        console.error("Error cargando clientes:", err);
-
-        if (!cancelled) {
-          setError("No fue posible cargar los clientes.");
-          setLoading(false);
-        }
-      }
-    }
-
-    loadInitialCustomers();
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  // =========================================================
+  // BUSCADOR
+  // =========================================================
 
   const filteredCustomers = useMemo(() => {
-    const normalizedSearch = search.trim().toLowerCase();
+    const term = search.trim().toLowerCase();
 
-    if (!normalizedSearch) {
+    if (!term) {
       return customers;
     }
 
     return customers.filter((customer) => {
       return (
-        String(customer.nit || "").toLowerCase().includes(normalizedSearch) ||
-        String(customer.name || "").toLowerCase().includes(normalizedSearch) ||
-        String(customer.phone || "").toLowerCase().includes(normalizedSearch) ||
-        String(customer.city || "").toLowerCase().includes(normalizedSearch)
+        String(customer.nit || "")
+          .toLowerCase()
+          .includes(term) ||
+        String(customer.name || "")
+          .toLowerCase()
+          .includes(term) ||
+        String(customer.phone || "")
+          .toLowerCase()
+          .includes(term) ||
+        String(customer.email || "")
+          .toLowerCase()
+          .includes(term) ||
+        String(customer.city || "")
+          .toLowerCase()
+          .includes(term)
       );
     });
   }, [customers, search]);
 
+  // =========================================================
+  // FORMATEAR MONEDA
+  // =========================================================
+
   function formatCurrency(value) {
+    const number = Number(value || 0);
+
     return new Intl.NumberFormat("es-CO", {
       style: "currency",
       currency: "COP",
       maximumFractionDigits: 0,
-    }).format(Number(value || 0));
+    }).format(number);
   }
 
+  // =========================================================
+  // ABRIR MODAL CREAR
+  // =========================================================
+
   function openCreateModal() {
+    setModalMode("create");
+    setSelectedCustomer(null);
     setForm(initialForm);
     setFormError("");
     setShowModal(true);
   }
 
-  function closeCreateModal() {
-    if (saving) return;
+  // =========================================================
+  // ABRIR MODAL EDITAR
+  // =========================================================
+
+    function openEditModal(customer) {
+    setFormError("");
+    setModalMode("edit");
+    setSelectedCustomer(customer);
+
+    setForm({
+      nit: customer.nit || "",
+      name: customer.name || "",
+      phone: customer.phone || "",
+      email: customer.email || "",
+      address: customer.address || "",
+      city: customer.city || "",
+      credit_limit: customer.credit_limit ?? 0,
+      available_credit: customer.available_credit ?? 0,
+      status: customer.status || "active",
+      notes: customer.notes || "",
+    });
+
+    setShowModal(true);
+  }
+
+  // =========================================================
+  // ABRIR MODAL VER
+  // =========================================================
+
+  function openViewModal(customer) {
+    setModalMode("view");
+    setSelectedCustomer(customer);
+    setFormError("");
+
+    setForm({
+      nit: customer.nit || "",
+      name: customer.name || "",
+      phone: customer.phone || "",
+      email: customer.email || "",
+      address: customer.address || "",
+      city: customer.city || "",
+      credit_limit: customer.credit_limit ?? 0,
+      available_credit: customer.available_credit ?? 0,
+      status: customer.status || "active",
+      notes: customer.notes || "",
+    });
+
+    setShowModal(true);
+  }
+
+  // =========================================================
+  // CERRAR MODAL
+  // =========================================================
+
+  function closeModal() {
+    if (saving) {
+      return;
+    }
 
     setShowModal(false);
+    setSelectedCustomer(null);
+    setForm(initialForm);
     setFormError("");
   }
+
+  // =========================================================
+  // CAMBIAR FORMULARIO
+  // =========================================================
 
   function handleChange(event) {
     const { name, value } = event.target;
 
-    setForm((current) => ({
-      ...current,
+    setForm((previous) => ({
+      ...previous,
       [name]: value,
     }));
   }
 
+  // =========================================================
+  // GUARDAR / ACTUALIZAR
+  // =========================================================
+
   async function handleSubmit(event) {
     event.preventDefault();
+
     setFormError("");
 
-    const nit = form.nit.trim();
-    const name = form.name.trim();
+    if (!form.nit.trim()) {
+      setFormError("El NIT es obligatorio.");
+      return;
+    }
 
-    if (!nit || !name) {
-      setFormError("El NIT y el nombre del cliente son obligatorios.");
+    if (!form.name.trim()) {
+      setFormError("El nombre del cliente es obligatorio.");
       return;
     }
 
     try {
       setSaving(true);
 
-      const payload = {
-        nit,
-        name,
-        phone: form.phone.trim() || null,
-        email: form.email.trim() || null,
-        address: form.address.trim() || null,
-        city: form.city.trim() || null,
-        credit_limit: Number(form.credit_limit || 0),
-        available_credit:
-          form.available_credit === ""
-            ? Number(form.credit_limit || 0)
-            : Number(form.available_credit),
-        status: "active",
-        notes: form.notes.trim() || null,
-      };
+      let response;
 
-      const response = await createCustomer(payload);
+      if (modalMode === "edit") {
+        if (!selectedCustomer?.id) {
+          throw new Error("No se encontró el cliente que deseas editar.");
+        }
+
+        response = await updateCustomer(selectedCustomer.id, {
+          ...form,
+          credit_limit: Number(form.credit_limit || 0),
+          available_credit: Number(form.available_credit || 0),
+        });
+      } else {
+        response = await createCustomer({
+          ...form,
+          credit_limit: Number(form.credit_limit || 0),
+          available_credit: Number(form.available_credit || 0),
+        });
+      }
 
       if (!response.success) {
         throw new Error(
-          response.message || "No se pudo crear el cliente.",
+          response.message ||
+            (modalMode === "edit"
+              ? "No se pudo actualizar el cliente."
+              : "No se pudo crear el cliente."),
         );
       }
 
-      setCustomers((current) => [...current, response.data]);
-      setShowModal(false);
-      setForm(initialForm);
-      setFormError("");
-    } catch (err) {
-      console.error("Error creando cliente:", err);
+      await loadCustomers();
 
-      const message =
-        err?.response?.data?.message ||
-        err?.message ||
-        "No se pudo crear el cliente.";
+      closeModal();
+    } catch (error) {
+      console.error("Error guardando cliente:", error);
 
-      setFormError(message);
+      setFormError(
+        error.response?.data?.message ||
+          error.message ||
+          "Ocurrió un error al guardar el cliente.",
+      );
     } finally {
       setSaving(false);
     }
   }
 
-  return (
-    <>
-      <section className="clientes-page">
-        <div className="page-header">
-          <div>
-            <div className="page-title-row">
-              <Users size={24} />
-              <h2>Clientes</h2>
-            </div>
+  // =========================================================
+  // ELIMINAR
+  // =========================================================
 
-            <p>
-              Consulta y administra los clientes registrados en MERTEL.
+  async function handleDelete(customer) {
+    const confirmed = window.confirm(
+      `¿Está seguro de eliminar al cliente "${customer.name}"?`,
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      setDeletingId(customer.id);
+      setError("");
+
+      const response = await deleteCustomer(customer.id);
+
+      if (!response.success) {
+        throw new Error(
+          response.message || "No se pudo eliminar el cliente.",
+        );
+      }
+
+      setCustomers((previous) =>
+        previous.filter((item) => item.id !== customer.id),
+      );
+    } catch (error) {
+      console.error("Error eliminando cliente:", error);
+
+      setError(
+        error.response?.data?.message ||
+          error.message ||
+          "No se pudo eliminar el cliente.",
+      );
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
+  // =========================================================
+  // TITULO DEL MODAL
+  // =========================================================
+
+  function getModalTitle() {
+    if (modalMode === "create") {
+      return "Nuevo cliente";
+    }
+
+    if (modalMode === "edit") {
+      return "Editar cliente";
+    }
+
+    return "Información del cliente";
+  }
+
+  // =========================================================
+  // RENDER
+  // =========================================================
+
+  return (
+    <section className="clientes-page">
+      {/* =====================================================
+          HEADER
+      ===================================================== */}
+
+      <div className="page-header">
+        <div className="page-title-row">
+          <div>
+            <h1 className="page-title">Clientes</h1>
+
+            <p className="page-subtitle">
+              Gestión y administración de clientes
             </p>
           </div>
 
@@ -212,16 +378,31 @@ function Clientes() {
           </button>
         </div>
 
+        {/* ===================================================
+            TOOLBAR
+        =================================================== */}
+
         <div className="page-toolbar">
           <div className="search-box">
             <Search size={18} />
 
             <input
-              type="search"
-              placeholder="Buscar por NIT, nombre, teléfono o ciudad..."
+              type="text"
+              placeholder="Buscar por NIT, nombre, teléfono, correo o ciudad..."
               value={search}
               onChange={(event) => setSearch(event.target.value)}
             />
+
+            {search && (
+              <button
+                type="button"
+                className="search-clear"
+                onClick={() => setSearch("")}
+                title="Limpiar búsqueda"
+              >
+                <X size={16} />
+              </button>
+            )}
           </div>
 
           <button
@@ -229,402 +410,550 @@ function Clientes() {
             className="secondary-button"
             onClick={loadCustomers}
             disabled={loading}
+            title="Actualizar clientes"
           >
-            <RefreshCw size={17} />
+            <RefreshCw
+              size={17}
+              className={loading ? "spin" : ""}
+            />
+
             Actualizar
           </button>
         </div>
+      </div>
 
-        <div className="data-card">
-          {loading && (
+      {/* =====================================================
+          ERROR GENERAL
+      ===================================================== */}
+
+      {error && (
+        <div className="clientes-alert clientes-alert-error">
+          {error}
+        </div>
+      )}
+
+      {/* =====================================================
+          TABLA
+      ===================================================== */}
+
+      <div className="data-card">
+        <div className="table-header">
+          <div className="table-header-title">
+            <Users size={19} />
+
+            <span>Clientes registrados</span>
+
+            <span className="table-count">
+              {filteredCustomers.length}
+            </span>
+          </div>
+        </div>
+
+        <div className="table-container">
+          {loading ? (
             <div className="empty-state">
+              <RefreshCw size={26} className="spin" />
+
               <p>Cargando clientes...</p>
             </div>
-          )}
-
-          {!loading && error && (
-            <div className="empty-state">
-              <h3>No se pudieron cargar los clientes</h3>
-              <p>{error}</p>
-              <button
-                type="button"
-                className="secondary-button"
-                onClick={loadCustomers}
-              >
-                Intentar nuevamente
-              </button>
-            </div>
-          )}
-
-          {!loading && !error && customers.length === 0 && (
+          ) : filteredCustomers.length === 0 ? (
             <div className="empty-state">
               <Users size={32} />
-              <h3>No hay clientes registrados</h3>
+
+              <h3>
+                {search
+                  ? "No se encontraron clientes"
+                  : "No hay clientes registrados"}
+              </h3>
+
               <p>
-                Todavía no existen clientes en la base de datos de MERTEL.
+                {search
+                  ? "Intenta cambiar los términos de búsqueda."
+                  : "Crea el primer cliente para comenzar."}
               </p>
-              <button
-                type="button"
-                className="primary-button"
-                onClick={openCreateModal}
-              >
-                <Plus size={18} />
-                Registrar primer cliente
-              </button>
-            </div>
-          )}
 
-          {!loading && !error && customers.length > 0 && (
-            <>
-              <div className="table-header">
-                <span>
-                  {filteredCustomers.length}{" "}
-                  {filteredCustomers.length === 1 ? "cliente" : "clientes"}
-                </span>
-              </div>
-
-              {filteredCustomers.length === 0 ? (
-                <div className="empty-state">
-                  <Search size={32} />
-                  <h3>No encontramos resultados</h3>
-                  <p>
-                    Prueba con otro NIT, nombre, teléfono o ciudad.
-                  </p>
-                </div>
-              ) : (
-                <div className="table-container">
-                  <table className="data-table">
-                    <thead>
-                      <tr>
-                        <th>NIT</th>
-                        <th>Cliente</th>
-                        <th>Teléfono</th>
-                        <th>Ciudad</th>
-                        <th>Cupo</th>
-                        <th>Disponible</th>
-                        <th>Estado</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredCustomers.map((customer) => (
-                        <tr key={customer.id}>
-                          <td>{customer.nit}</td>
-                          <td>
-                            <strong>{customer.name}</strong>
-                            {customer.email && <small>{customer.email}</small>}
-                          </td>
-                          <td>{customer.phone || "—"}</td>
-                          <td>{customer.city || "—"}</td>
-                          <td>{formatCurrency(customer.credit_limit)}</td>
-                          <td>{formatCurrency(customer.available_credit)}</td>
-                          <td>
-                            <span
-                              className={`status-badge status-${String(
-                                customer.status || "unknown",
-                              ).toLowerCase()}`}
-                            >
-                              {customer.status || "—"}
-                            </span>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+              {!search && (
+                <button
+                  type="button"
+                  className="primary-button"
+                  onClick={openCreateModal}
+                >
+                  <Plus size={17} />
+                  Nuevo cliente
+                </button>
               )}
-            </>
+            </div>
+          ) : (
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>NIT</th>
+                  <th>Cliente</th>
+                  <th>Teléfono</th>
+                  <th>Correo</th>
+                  <th>Ciudad</th>
+                  <th>Cupo</th>
+                  <th>Disponible</th>
+                  <th>Estado</th>
+                  <th className="actions-column">Acciones</th>
+                </tr>
+              </thead>
+
+              <tbody>
+                {filteredCustomers.map((customer) => (
+                  <tr key={customer.id}>
+                    <td>
+                      <strong>{customer.nit || "—"}</strong>
+                    </td>
+
+                    <td>
+                      <div className="customer-name">
+                        {customer.name || "—"}
+                      </div>
+                    </td>
+
+                    <td>{customer.phone || "—"}</td>
+
+                    <td>{customer.email || "—"}</td>
+
+                    <td>{customer.city || "—"}</td>
+
+                    <td>
+                      {formatCurrency(customer.credit_limit)}
+                    </td>
+
+                    <td>
+                      {formatCurrency(customer.available_credit)}
+                    </td>
+
+                    <td>
+                      <span
+                        className={`status-badge ${
+                          customer.status === "active"
+                            ? "status-active"
+                            : "status-inactive"
+                        }`}
+                      >
+                        {customer.status === "active"
+                          ? "Activo"
+                          : "Inactivo"}
+                      </span>
+                    </td>
+
+                    <td>
+                      <div className="cliente-actions">
+                        {/* VER */}
+                        <button
+                          type="button"
+                          className="icon-button view"
+                          onClick={() => openViewModal(customer)}
+                          title="Ver cliente"
+                        >
+                          <Eye size={17} />
+                        </button>
+
+                        {/* EDITAR */}
+                        <button
+                          type="button"
+                          className="icon-button edit"
+                          onClick={() => openEditModal(customer)}
+                          title="Editar cliente"
+                        >
+                          <Pencil size={17} />
+                        </button>
+
+                        {/* ELIMINAR */}
+                        <button
+                          type="button"
+                          className="icon-button delete"
+                          onClick={() => handleDelete(customer)}
+                          disabled={deletingId === customer.id}
+                          title="Eliminar cliente"
+                        >
+                          {deletingId === customer.id ? (
+                            <RefreshCw size={17} className="spin" />
+                          ) : (
+                            <Trash2 size={17} />
+                          )}
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           )}
         </div>
-      </section>
+      </div>
+
+      {/* =====================================================
+          MODAL
+      ===================================================== */}
 
       {showModal && (
         <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            zIndex: 1000,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: "24px",
-            background: "rgba(8, 15, 28, 0.58)",
-          }}
+          className="cliente-modal-backdrop"
           onMouseDown={(event) => {
             if (event.target === event.currentTarget) {
-              closeCreateModal();
+              closeModal();
             }
           }}
         >
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="nuevo-cliente-title"
-            style={{
-              width: "min(720px, 100%)",
-              maxHeight: "90vh",
-              overflowY: "auto",
-              background: "#ffffff",
-              borderRadius: "14px",
-              boxShadow: "0 24px 70px rgba(0, 0, 0, 0.25)",
-            }}
-          >
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                padding: "20px 24px",
-                borderBottom: "1px solid #e5e7eb",
-              }}
-            >
+          <div className="cliente-modal">
+            {/* =================================================
+                HEADER MODAL
+            ================================================= */}
+
+            <div className="cliente-modal-header">
               <div>
-                <h3
-                  id="nuevo-cliente-title"
-                  style={{
-                    margin: 0,
-                    fontSize: "20px",
-                    color: "#111827",
-                  }}
-                >
-                  Nuevo cliente
-                </h3>
-                <p
-                  style={{
-                    margin: "5px 0 0",
-                    fontSize: "13px",
-                    color: "#6b7280",
-                  }}
-                >
-                  Registra la información básica del cliente.
+                <h2>{getModalTitle()}</h2>
+
+                <p>
+                  {modalMode === "create"
+                    ? "Registra la información del nuevo cliente."
+                    : modalMode === "edit"
+                      ? "Actualiza la información del cliente."
+                      : "Consulta la información registrada del cliente."}
                 </p>
               </div>
 
               <button
                 type="button"
-                onClick={closeCreateModal}
+                className="cliente-modal-close"
+                onClick={closeModal}
                 disabled={saving}
-                aria-label="Cerrar"
-                style={{
-                  width: "36px",
-                  height: "36px",
-                  display: "grid",
-                  placeItems: "center",
-                  border: "1px solid #e5e7eb",
-                  borderRadius: "8px",
-                  background: "#ffffff",
-                  color: "#6b7280",
-                  cursor: saving ? "not-allowed" : "pointer",
-                }}
               >
-                <X size={18} />
+                <X size={20} />
               </button>
             </div>
 
-            <form onSubmit={handleSubmit}>
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-                  gap: "16px",
-                  padding: "24px",
-                }}
+            {/* =================================================
+                CONTENIDO
+            ================================================= */}
+
+            {modalMode === "view" ? (
+              <div className="cliente-modal-body">
+                <div className="cliente-detail-grid">
+                  <Detail
+                    label="NIT"
+                    value={form.nit}
+                  />
+
+                  <Detail
+                    label="Nombre"
+                    value={form.name}
+                  />
+
+                  <Detail
+                    label="Teléfono"
+                    value={form.phone}
+                  />
+
+                  <Detail
+                    label="Correo electrónico"
+                    value={form.email}
+                  />
+
+                  <Detail
+                    label="Dirección"
+                    value={form.address}
+                  />
+
+                  <Detail
+                    label="Ciudad"
+                    value={form.city}
+                  />
+
+                  <Detail
+                    label="Cupo de crédito"
+                    value={formatCurrency(form.credit_limit)}
+                  />
+
+                  <Detail
+                    label="Crédito disponible"
+                    value={formatCurrency(form.available_credit)}
+                  />
+
+                  <Detail
+                    label="Estado"
+                    value={
+                      form.status === "active"
+                        ? "Activo"
+                        : "Inactivo"
+                    }
+                  />
+
+                  <div className="cliente-detail cliente-detail-full">
+                    <span>Notas</span>
+
+                    <strong>
+                      {form.notes || "Sin notas"}
+                    </strong>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <form
+                className="cliente-modal-body"
+                onSubmit={handleSubmit}
               >
-                <label style={{ display: "grid", gap: "7px" }}>
-                  <span style={{ fontSize: "13px", fontWeight: 600 }}>
-                    NIT <span style={{ color: "#c62828" }}>*</span>
-                  </span>
-                  <input
+                {/* =============================================
+                    ERROR FORMULARIO
+                ============================================= */}
+
+                {formError && (
+                  <div className="cliente-form-error">
+                    {formError}
+                  </div>
+                )}
+
+                {/* =============================================
+                    CAMPOS
+                ============================================= */}
+
+                <div className="cliente-form-grid">
+                  <Field
+                    label="NIT"
                     name="nit"
                     value={form.nit}
                     onChange={handleChange}
-                    placeholder="900123456-7"
                     required
-                    style={inputStyle}
+                    placeholder="Ej. 900123456-7"
                   />
-                </label>
 
-                <label style={{ display: "grid", gap: "7px" }}>
-                  <span style={{ fontSize: "13px", fontWeight: 600 }}>
-                    Nombre / Razón social{" "}
-                    <span style={{ color: "#c62828" }}>*</span>
-                  </span>
-                  <input
+                  <Field
+                    label="Nombre"
                     name="name"
                     value={form.name}
                     onChange={handleChange}
-                    placeholder="Nombre del cliente"
                     required
-                    style={inputStyle}
+                    placeholder="Nombre del cliente"
                   />
-                </label>
 
-                <label style={{ display: "grid", gap: "7px" }}>
-                  <span style={{ fontSize: "13px", fontWeight: 600 }}>
-                    Teléfono
-                  </span>
-                  <input
+                  <Field
+                    label="Teléfono"
                     name="phone"
                     value={form.phone}
                     onChange={handleChange}
-                    placeholder="3001234567"
-                    style={inputStyle}
+                    placeholder="Ej. 3001234567"
                   />
-                </label>
 
-                <label style={{ display: "grid", gap: "7px" }}>
-                  <span style={{ fontSize: "13px", fontWeight: 600 }}>
-                    Correo electrónico
-                  </span>
-                  <input
-                    type="email"
+                  <Field
+                    label="Correo electrónico"
                     name="email"
+                    type="email"
                     value={form.email}
                     onChange={handleChange}
                     placeholder="correo@empresa.com"
-                    style={inputStyle}
                   />
-                </label>
 
-                <label style={{ display: "grid", gap: "7px" }}>
-                  <span style={{ fontSize: "13px", fontWeight: 600 }}>
-                    Ciudad
-                  </span>
-                  <input
-                    name="city"
-                    value={form.city}
-                    onChange={handleChange}
-                    placeholder="Bucaramanga"
-                    style={inputStyle}
-                  />
-                </label>
-
-                <label style={{ display: "grid", gap: "7px" }}>
-                  <span style={{ fontSize: "13px", fontWeight: 600 }}>
-                    Dirección
-                  </span>
-                  <input
+                  <Field
+                    label="Dirección"
                     name="address"
                     value={form.address}
                     onChange={handleChange}
-                    placeholder="Dirección del cliente"
-                    style={inputStyle}
+                    placeholder="Dirección"
                   />
-                </label>
 
-                <label style={{ display: "grid", gap: "7px" }}>
-                  <span style={{ fontSize: "13px", fontWeight: 600 }}>
-                    Cupo de crédito
-                  </span>
-                  <input
-                    type="number"
-                    min="0"
-                    step="1"
+                  <Field
+                    label="Ciudad"
+                    name="city"
+                    value={form.city}
+                    onChange={handleChange}
+                    placeholder="Ciudad"
+                  />
+
+                  <Field
+                    label="Cupo de crédito"
                     name="credit_limit"
+                    type="number"
                     value={form.credit_limit}
                     onChange={handleChange}
-                    placeholder="0"
-                    style={inputStyle}
-                  />
-                </label>
-
-                <label style={{ display: "grid", gap: "7px" }}>
-                  <span style={{ fontSize: "13px", fontWeight: 600 }}>
-                    Crédito disponible
-                  </span>
-                  <input
-                    type="number"
                     min="0"
-                    step="1"
+                    step="0.01"
+                    placeholder="0"
+                  />
+
+                  <Field
+                    label="Crédito disponible"
                     name="available_credit"
+                    type="number"
                     value={form.available_credit}
                     onChange={handleChange}
-                    placeholder="Igual al cupo si se deja vacío"
-                    style={inputStyle}
+                    min="0"
+                    step="0.01"
+                    placeholder="0"
                   />
-                </label>
 
-                <label
-                  style={{
-                    display: "grid",
-                    gap: "7px",
-                    gridColumn: "1 / -1",
-                  }}
-                >
-                  <span style={{ fontSize: "13px", fontWeight: 600 }}>
-                    Observaciones
-                  </span>
-                  <textarea
-                    name="notes"
-                    value={form.notes}
-                    onChange={handleChange}
-                    placeholder="Observaciones del cliente..."
-                    rows={3}
-                    style={{ ...inputStyle, resize: "vertical" }}
-                  />
-                </label>
-              </div>
+                  <div className="cliente-field">
+                    <label htmlFor="status">
+                      Estado
+                    </label>
 
-              {formError && (
-                <div
-                  style={{
-                    margin: "0 24px 16px",
-                    padding: "11px 13px",
-                    borderRadius: "8px",
-                    border: "1px solid #fecaca",
-                    background: "#fef2f2",
-                    color: "#b91c1c",
-                    fontSize: "13px",
-                  }}
-                >
-                  {formError}
+                    <select
+                      id="status"
+                      name="status"
+                      value={form.status}
+                      onChange={handleChange}
+                    >
+                      <option value="active">
+                        Activo
+                      </option>
+
+                      <option value="inactive">
+                        Inactivo
+                      </option>
+                    </select>
+                  </div>
+
+                  <div className="cliente-field cliente-field-full">
+                    <label htmlFor="notes">
+                      Notas
+                    </label>
+
+                    <textarea
+                      id="notes"
+                      name="notes"
+                      value={form.notes}
+                      onChange={handleChange}
+                      rows="4"
+                      placeholder="Notas adicionales..."
+                    />
+                  </div>
                 </div>
-              )}
 
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "flex-end",
-                  gap: "10px",
-                  padding: "16px 24px 20px",
-                  borderTop: "1px solid #e5e7eb",
-                }}
-              >
+                {/* =============================================
+                    FOOTER FORMULARIO
+                ============================================= */}
+
+                <div className="cliente-modal-footer">
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={closeModal}
+                    disabled={saving}
+                  >
+                    Cancelar
+                  </button>
+
+                  <button
+                    type="submit"
+                    className="primary-button"
+                    disabled={saving}
+                  >
+                    {saving ? (
+                      <>
+                        <RefreshCw
+                          size={17}
+                          className="spin"
+                        />
+
+                        Guardando...
+                      </>
+                    ) : modalMode === "edit" ? (
+                      <>
+                        <Pencil size={17} />
+
+                        Actualizar cliente
+                      </>
+                    ) : (
+                      <>
+                        <Plus size={17} />
+
+                        Crear cliente
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {/* =================================================
+                FOOTER VISTA
+            ================================================= */}
+
+            {modalMode === "view" && (
+              <div className="cliente-modal-footer">
                 <button
                   type="button"
                   className="secondary-button"
-                  onClick={closeCreateModal}
-                  disabled={saving}
+                  onClick={closeModal}
                 >
-                  Cancelar
+                  Cerrar
                 </button>
 
                 <button
-                  type="submit"
+                  type="button"
                   className="primary-button"
-                  disabled={saving}
+                  onClick={() =>
+                    selectedCustomer &&
+                    openEditModal(selectedCustomer)
+                  }
                 >
-                  {saving ? "Guardando..." : "Guardar cliente"}
+                  <Pencil size={17} />
+                  Editar cliente
                 </button>
               </div>
-            </form>
+            )}
           </div>
         </div>
       )}
-    </>
+    </section>
   );
 }
 
-const inputStyle = {
-  width: "100%",
-  boxSizing: "border-box",
-  minHeight: "40px",
-  padding: "9px 11px",
-  border: "1px solid #d1d5db",
-  borderRadius: "8px",
-  outline: "none",
-  background: "#ffffff",
-  color: "#111827",
-  fontSize: "14px",
-};
+// =============================================================
+// COMPONENTE FIELD
+// =============================================================
+
+function Field({
+  label,
+  name,
+  value,
+  onChange,
+  type = "text",
+  required = false,
+  placeholder = "",
+  min,
+  step,
+}) {
+  return (
+    <div className="cliente-field">
+      <label htmlFor={name}>
+        {label}
+
+        {required && (
+          <span className="required-mark">*</span>
+        )}
+      </label>
+
+      <input
+        id={name}
+        name={name}
+        type={type}
+        value={value}
+        onChange={onChange}
+        required={required}
+        placeholder={placeholder}
+        min={min}
+        step={step}
+      />
+    </div>
+  );
+}
+
+// =============================================================
+// COMPONENTE DETAIL
+// =============================================================
+
+function Detail({ label, value }) {
+  return (
+    <div className="cliente-detail">
+      <span>{label}</span>
+
+      <strong>{value || "—"}</strong>
+    </div>
+  );
+}
 
 export default Clientes;
