@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Search, Plus, Users, RefreshCw, X } from "lucide-react";
 import { getCustomers, createCustomer } from "../../services/customer.service";
+import "./Clientes.css";
 
 const initialForm = {
   nit: "",
