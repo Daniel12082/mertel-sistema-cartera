@@ -17,13 +17,67 @@ function parsePositiveId(value) {
 
 function isValidMoney(value) {
   if (typeof value === "number") {
-    return Number.isFinite(value) && value >= 0;
+    return (
+      Number.isFinite(value) &&
+      value >= 0 &&
+      value <= 9999999999999.99 &&
+      Number(value.toFixed(2)) === value
+    );
   }
 
   return (
     typeof value === "string" &&
     value.trim() !== "" &&
-    /^\d+(\.\d{1,2})?$/.test(value.trim())
+    /^\d{1,13}(\.\d{1,2})?$/.test(value.trim())
+  );
+}
+
+function isValidOptionalPositiveId(value) {
+  return value === undefined || value === null ||
+    (Number.isSafeInteger(value) && value > 0);
+}
+
+function isValidOptionalInteger(value) {
+  return value === undefined || value === null ||
+    (Number.isSafeInteger(value) && value >= 0);
+}
+
+function isValidOptionalString(value) {
+  return value === undefined || value === null || typeof value === "string";
+}
+
+function isValidOptionalEmail(value) {
+  if (value === undefined || value === null || value === "") {
+    return true;
+  }
+
+  return typeof value === "string" && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
+function isValidOptionalDate(value) {
+  if (value === undefined || value === null) {
+    return true;
+  }
+
+  const match = typeof value === "string"
+    ? value.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+    : null;
+  if (!match) {
+    return false;
+  }
+
+  const [, yearText, monthText, dayText] = match;
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  const date = new Date(0);
+  date.setUTCFullYear(year, month - 1, day);
+
+  return (
+    year >= 1000 &&
+    date.getUTCFullYear() === year &&
+    date.getUTCMonth() === month - 1 &&
+    date.getUTCDate() === day
   );
 }
 
@@ -35,7 +89,18 @@ function hasRequiredInvoiceFields(body) {
     body.invoice_number.trim().length > 0 &&
     isValidMoney(body?.document_value) &&
     isValidMoney(body?.base_value) &&
-    isValidMoney(body?.iva_value)
+    isValidMoney(body?.iva_value) &&
+    (body?.balance === undefined || isValidMoney(body.balance)) &&
+    (body?.promo_18 === undefined || body.promo_18 === null || isValidMoney(body.promo_18)) &&
+    (body?.discount === undefined || body.discount === null || isValidMoney(body.discount)) &&
+    isValidOptionalDate(body?.issue_date) &&
+    isValidOptionalDate(body?.due_date) &&
+    isValidOptionalPositiveId(body?.company_id) &&
+    isValidOptionalInteger(body?.credit_days) &&
+    isValidOptionalString(body?.status) &&
+    (body?.status === undefined || body.status === null || body.status.trim() !== "") &&
+    isValidOptionalString(body?.notes) &&
+    isValidOptionalEmail(body?.email)
   );
 }
 

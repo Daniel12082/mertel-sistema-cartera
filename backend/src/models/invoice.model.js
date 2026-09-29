@@ -10,7 +10,7 @@ const invoiceColumns = `
   i.document_value,
   i.base_value,
   i.iva_value,
-  i.balance AS balance_days,
+  i.balance,
   i.credit_days,
   i.status,
   i.promo_18,
@@ -45,23 +45,6 @@ async function ensureCustomerExists(customerId) {
   }
 }
 
-export function calculateDiscountFromRule(baseValue, rule) {
-  if (!rule || rule.active !== true) {
-    return null;
-  }
-
-  if (rule.baseCalculation !== "base_value") {
-    throw new Error("Regla de descuento con base de cálculo no soportada");
-  }
-
-  const percentage = Number(rule.percentage);
-  if (!Number.isFinite(percentage) || percentage < 0) {
-    throw new Error("Regla de descuento con porcentaje inválido");
-  }
-
-  return Math.round((Number(baseValue) * percentage) / 100);
-}
-
 export async function getAllInvoices() {
   const [rows] = await pool.query(`
     SELECT ${invoiceColumns}
@@ -90,7 +73,7 @@ export async function getInvoiceById(id) {
   return rows[0] || null;
 }
 
-export async function createInvoice(invoice, discountRule = null) {
+export async function createInvoice(invoice) {
   await ensureCustomerExists(invoice.customer_id);
 
   const {
@@ -102,7 +85,7 @@ export async function createInvoice(invoice, discountRule = null) {
     document_value,
     base_value,
     iva_value,
-    balance_days = 0,
+    balance = 0,
     credit_days = null,
     status = "pending",
     promo_18 = null,
@@ -110,10 +93,6 @@ export async function createInvoice(invoice, discountRule = null) {
     email = null,
     notes = null,
   } = invoice;
-  const resolvedDiscount = discountRule
-    ? calculateDiscountFromRule(base_value, discountRule)
-    : discount;
-
   const [result] = await pool.query(
     `
       INSERT INTO invoices (
@@ -144,11 +123,11 @@ export async function createInvoice(invoice, discountRule = null) {
       document_value,
       base_value,
       iva_value,
-      balance_days,
+      balance,
       credit_days,
       status,
       promo_18,
-      resolvedDiscount,
+      discount,
       email,
       notes,
     ],
@@ -157,7 +136,7 @@ export async function createInvoice(invoice, discountRule = null) {
   return await getInvoiceById(result.insertId);
 }
 
-export async function updateInvoice(id, invoice, discountRule = null) {
+export async function updateInvoice(id, invoice) {
   const existing = await getInvoiceById(id);
   if (!existing) {
     return null;
@@ -174,7 +153,7 @@ export async function updateInvoice(id, invoice, discountRule = null) {
     document_value,
     base_value,
     iva_value,
-        balance_days = 0,
+    balance = 0,
     credit_days = null,
     status = "pending",
     promo_18 = null,
@@ -182,10 +161,6 @@ export async function updateInvoice(id, invoice, discountRule = null) {
     email = null,
     notes = null,
   } = invoice;
-  const resolvedDiscount = discountRule
-    ? calculateDiscountFromRule(base_value, discountRule)
-    : discount;
-
   await pool.query(
     `
       UPDATE invoices
@@ -217,11 +192,11 @@ export async function updateInvoice(id, invoice, discountRule = null) {
       document_value,
       base_value,
       iva_value,
-      balance_days,
+      balance,
       credit_days,
       status,
       promo_18,
-      resolvedDiscount,
+      discount,
       email,
       notes,
       id,
