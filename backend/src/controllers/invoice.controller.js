@@ -90,7 +90,6 @@ function hasRequiredInvoiceFields(body) {
     isValidMoney(body?.document_value) &&
     isValidMoney(body?.base_value) &&
     isValidMoney(body?.iva_value) &&
-    (body?.balance === undefined || isValidMoney(body.balance)) &&
     (body?.promo_18 === undefined || body.promo_18 === null || isValidMoney(body.promo_18)) &&
     (body?.discount === undefined || body.discount === null || isValidMoney(body.discount)) &&
     isValidOptionalDate(body?.issue_date) &&
