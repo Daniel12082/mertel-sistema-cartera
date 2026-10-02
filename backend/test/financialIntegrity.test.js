@@ -1,10 +1,11 @@
 import { after, before, beforeEach, describe, test } from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import dotenv from "dotenv";
 import mysql from "mysql2/promise";
-import express from "express";
+import { loadAuthConfig } from "../src/config/auth.js";
+import { hashPassword } from "../src/utils/password.js";
 
 dotenv.config({ path: new URL("../.env", import.meta.url), quiet: true });
 const configured = Boolean(process.env.DB_HOST && process.env.DB_USER);
@@ -18,6 +19,7 @@ describe("financial integrity HTTP / MySQL integration", { skip: !configured }, 
   let pool;
   let server;
   let baseUrl;
+  let accessToken;
   let customer;
   let otherCustomer;
   let company;
@@ -35,25 +37,26 @@ describe("financial integrity HTTP / MySQL integration", { skip: !configured }, 
     // Unrelated import tables in migration 001 use a reserved identifier on
     // this MySQL version; their schema is deliberately outside this suite.
     const initial = await readFile(new URL("../../database/migrations/001_initial_schema.sql", import.meta.url), "utf8");
-    const tables = new Set(["companies", "users", "customers", "invoices", "payments", "payment_allocations", "payment_promises"]);
+    const tables = new Set(["companies", "roles", "users", "user_roles", "customers", "invoices", "payments", "payment_allocations", "payment_promises", "audit_logs"]);
     for (const match of initial.matchAll(/CREATE TABLE (\w+) \([\s\S]*?;/g)) {
       if (tables.has(match[1])) await admin.query(match[0]);
     }
-    for (const migration of ["002_payment_allocations_soft_delete.sql", "003_active_payment_invoice_allocation_unique.sql"]) {
+    for (const migration of ["002_payment_allocations_soft_delete.sql", "003_active_payment_invoice_allocation_unique.sql", "004_auth_refresh_sessions.sql"]) {
       await admin.query(await readFile(new URL(`../../database/migrations/${migration}`, import.meta.url), "utf8"));
     }
     process.env.DB_NAME = databaseName;
     ({ default: pool } = await import("../src/config/database.js"));
-    const app = express();
-    app.use(express.json());
-    for (const resource of ["customer", "invoice", "payment"]) {
-      const { default: routes } = await import(`../src/routes/${resource}.routes.js`);
-      app.use(`/api/${resource}s`, routes);
-    }
+    const { createApp } = await import("../src/app.js");
+    const app = createApp(loadAuthConfig({ JWT_SECRET: randomBytes(48).toString("base64url"), FRONTEND_URL: "http://localhost:5173", NODE_ENV: "test" }));
+    const password = randomUUID();
+    await pool.query("INSERT INTO users (first_name, email, password_hash) VALUES ('Financial test', 'financial-test@example.test', ?)", [await hashPassword(password)]);
     server = await new Promise((resolve) => {
       const listener = app.listen(0, "127.0.0.1", () => resolve(listener));
     });
     baseUrl = `http://127.0.0.1:${server.address().port}/api`;
+    const session = await request("POST", "/auth/login", { email: "financial-test@example.test", password });
+    assert.equal(session.status, 200);
+    accessToken = session.body.data.access_token;
   });
 
   after(async () => {
@@ -82,7 +85,7 @@ describe("financial integrity HTTP / MySQL integration", { skip: !configured }, 
 
   async function request(method, path, body) {
     const response = await fetch(`${baseUrl}${path}`, {
-      method, headers: { "Content-Type": "application/json" },
+      method, headers: { "Content-Type": "application/json", ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}) },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
     return { status: response.status, body: response.status === 204 ? null : await response.json() };
