@@ -2,6 +2,7 @@ import { Route, Routes } from "react-router-dom";
 import MainLayout from "./layouts/MainLayout";
 import Dashboard from "./pages/Dashboard/Dashboard";
 import Clientes from "./pages/Clientes/Clientes";
+import Facturas from "./pages/Factura/Facturas";
 
 function PlaceholderPage({ title }) {
   return (
@@ -25,7 +26,7 @@ function App() {
 
         <Route
           path="/facturas"
-          element={<PlaceholderPage title="Facturas" />}
+          element={<Facturas />}
         />
 
         <Route
