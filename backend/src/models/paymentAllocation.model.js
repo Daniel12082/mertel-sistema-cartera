@@ -21,7 +21,7 @@ export async function getAllocationsByPayment(paymentId, db = pool) {
 export async function getInvoiceForUpdate(invoiceId, db, includeDeleted = false) {
   const activeFilter = includeDeleted ? "" : "AND deleted_at IS NULL";
   const [rows] = await db.query(`
-    SELECT id, customer_id, balance, status
+    SELECT id, company_id, customer_id, balance, status
     FROM invoices
     WHERE id = ? ${activeFilter}
     LIMIT 1

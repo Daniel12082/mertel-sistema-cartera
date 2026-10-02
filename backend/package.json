@@ -5,6 +5,7 @@
   "main": "index.js",
   "scripts": {
     "test": "node --test",
+    "test:financial": "node --test test/financialIntegrity.test.js",
     "dev": "nodemon src/server.js",
     "start": "node src/server.js"
   },

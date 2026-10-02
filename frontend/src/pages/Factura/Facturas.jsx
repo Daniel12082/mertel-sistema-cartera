@@ -4,7 +4,7 @@ import { getCustomers } from "../../services/customer.service";
 import { createInvoice, deleteInvoice, getInvoiceById, getInvoices, updateInvoice } from "../../services/invoice.service";
 import "./Facturas.css";
 
-const blankInvoice = { customer_id: "", invoice_number: "", issue_date: "", due_date: "", document_value: "", base_value: "", iva_value: "", balance: "0", credit_days: "", status: "pending", promo_18: "", discount: "", email: "", notes: "" };
+const blankInvoice = { customer_id: "", invoice_number: "", issue_date: "", due_date: "", document_value: "", base_value: "", iva_value: "", credit_days: "", status: "pending", promo_18: "", discount: "", email: "", notes: "" };
 const unwrap = (result) => result?.data ?? result;
 const currency = (value) => value === null || value === undefined || value === "" ? "—" : Number.isFinite(Number(value)) ? new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 2 }).format(Number(value)) : "—";
 function formatDate(value) {
@@ -84,7 +84,7 @@ export default function Facturas() {
       const current = unwrap(result);
       const list = unwrap(customerResult);
       setCustomers(Array.isArray(list) ? list : []);
-      setForm({ ...blankInvoice, ...current, customer_id: String(current.customer_id ?? ""), issue_date: String(current.issue_date ?? "").slice(0, 10), due_date: String(current.due_date ?? "").slice(0, 10), document_value: current.document_value ?? "", base_value: current.base_value ?? "", iva_value: current.iva_value ?? "", balance: current.balance ?? "0", credit_days: current.credit_days ?? "", promo_18: current.promo_18 ?? "", discount: current.discount ?? "" });
+      setForm({ ...blankInvoice, ...current, customer_id: String(current.customer_id ?? ""), issue_date: String(current.issue_date ?? "").slice(0, 10), due_date: String(current.due_date ?? "").slice(0, 10), document_value: current.document_value ?? "", base_value: current.base_value ?? "", iva_value: current.iva_value ?? "", credit_days: current.credit_days ?? "", promo_18: current.promo_18 ?? "", discount: current.discount ?? "" });
       setModal({ type: "form", editing: true, id: invoice.id });
     } catch (requestError) { setError(errorMessage(requestError)); }
     finally { setSaving(false); }
@@ -99,11 +99,12 @@ export default function Facturas() {
   async function submit(event) {
     event.preventDefault(); setError(""); setNotice("");
     if (!form.customer_id) { setError("Selecciona un cliente para continuar."); return; }
-    for (const field of ["document_value", "base_value", "iva_value", "balance", "promo_18", "discount"]) {
+    for (const field of ["document_value", "base_value", "iva_value", "promo_18", "discount"]) {
       if (form[field] !== "" && (!/^\d{1,13}(\.\d{1,2})?$/.test(String(form[field])) || !Number.isFinite(Number(form[field])))) { setError("Ingresa valores monetarios válidos, con máximo dos decimales."); return; }
     }
     if (form.credit_days !== "" && (!/^\d+$/.test(String(form.credit_days)) || !Number.isSafeInteger(Number(form.credit_days)))) { setError("Los días de crédito deben ser un número entero igual o mayor que cero."); return; }
-    const payload = { ...form, customer_id: Number(form.customer_id), document_value: Number(form.document_value), base_value: Number(form.base_value), iva_value: Number(form.iva_value), balance: form.balance === "" ? 0 : Number(form.balance), credit_days: form.credit_days === "" ? null : Number(form.credit_days), promo_18: form.promo_18 === "" ? null : Number(form.promo_18), discount: form.discount === "" ? null : Number(form.discount), issue_date: form.issue_date || null, due_date: form.due_date || null, email: form.email || null, notes: form.notes || null };
+    const payload = { ...form, customer_id: Number(form.customer_id), document_value: Number(form.document_value), base_value: Number(form.base_value), iva_value: Number(form.iva_value), credit_days: form.credit_days === "" ? null : Number(form.credit_days), promo_18: form.promo_18 === "" ? null : Number(form.promo_18), discount: form.discount === "" ? null : Number(form.discount), issue_date: form.issue_date || null, due_date: form.due_date || null, email: form.email || null, notes: form.notes || null };
+    delete payload.balance;
     setSaving(true);
     try {
       if (modal.editing) await updateInvoice(modal.id, payload); else await createInvoice(payload);
@@ -134,10 +135,9 @@ export default function Facturas() {
         <Field label="Número de factura" name="invoice_number" value={form.invoice_number} onChange={change} required />
         <Field label="Fecha de emisión" name="issue_date" value={form.issue_date} onChange={change} type="date" />
         <Field label="Fecha de vencimiento" name="due_date" value={form.due_date} onChange={change} type="date" />
-        <Field label="Valor del documento" name="document_value" value={form.document_value} onChange={change} type="number" min="0" step="0.01" required />
+        <Field label="Valor del documento" name="document_value" value={form.document_value} onChange={change} type="number" min="0.01" step="0.01" required />
         <Field label="Valor base" name="base_value" value={form.base_value} onChange={change} type="number" min="0" step="0.01" required />
         <Field label="Valor IVA" name="iva_value" value={form.iva_value} onChange={change} type="number" min="0" step="0.01" required />
-        <Field label="Saldo" name="balance" value={form.balance} onChange={change} type="number" min="0" step="0.01" />
         <Field label="Días de crédito" name="credit_days" value={form.credit_days} onChange={change} type="number" min="0" step="1" />
         <Field label="Estado" name="status" value={form.status} onChange={change}><input id="status" name="status" value={form.status} onChange={change} required /></Field>
         <Field label="PROMO 18" name="promo_18" value={form.promo_18} onChange={change} type="number" min="0" step="0.01" />

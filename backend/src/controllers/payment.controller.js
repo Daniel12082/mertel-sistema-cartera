@@ -79,6 +79,7 @@ function normalizePayment(body = {}) {
 }
 
 function publicError(res, error) {
+  if (error.status) return res.status(error.status).json({ success: false, message: error.message });
   const knownErrors = {
     CUSTOMER_NOT_FOUND: [404, "Cliente no encontrado"],
     COMPANY_NOT_FOUND: [404, "Empresa no encontrada"],
@@ -86,9 +87,9 @@ function publicError(res, error) {
     PAYMENT_NOT_FOUND: [404, "Pago no encontrado"],
     INVOICE_NOT_FOUND: [404, "Factura no encontrada"],
     ALLOCATION_NOT_FOUND: [404, "Asignación no encontrada para este pago"],
-    CUSTOMER_MISMATCH: [400, "El pago y la factura pertenecen a clientes diferentes"],
-    PAYMENT_OVERALLOCATION: [400, "El valor supera el disponible del pago"],
-    INVOICE_OVERALLOCATION: [400, "El valor supera el saldo disponible de la factura"],
+    CUSTOMER_MISMATCH: [409, "El pago y la factura pertenecen a clientes diferentes"],
+    PAYMENT_OVERALLOCATION: [409, "El valor supera el disponible del pago"],
+    INVOICE_OVERALLOCATION: [409, "El valor supera el saldo disponible de la factura"],
     INVOICE_BALANCE_CONFLICT: [409, "No fue posible actualizar el saldo de la factura"],
     ALLOCATION_ALREADY_EXISTS: [409, "Este pago ya tiene una asignación activa para la factura"],
     ALLOCATION_ALREADY_REVERSED: [409, "La asignación ya fue revertida"],
@@ -101,6 +102,9 @@ function publicError(res, error) {
   if (mapped) return res.status(mapped[0]).json({ success: false, message: mapped[1] });
   if (error.code === "ER_DUP_ENTRY") {
     return res.status(409).json({ success: false, message: "Ya existe una asignación para esta pareja de pago y factura" });
+  }
+  if (error.code === "ER_NO_REFERENCED_ROW_2") {
+    return res.status(404).json({ success: false, message: "No se encontró una referencia del pago" });
   }
   console.error("Error procesando pagos:", error);
   return res.status(500).json({ success: false, message: "No se pudo procesar la solicitud de pagos" });

@@ -1,4 +1,5 @@
 import pool from "../config/database.js";
+import { financialError } from "../utils/financialIntegrity.js";
 
 export async function getAllCustomers() {
   const [rows] = await pool.query(`
@@ -171,15 +172,34 @@ export async function updateCustomer(id, customer) {
 }
 
 export async function deleteCustomer(id) {
-  const [result] = await pool.query(
-    `
-      UPDATE customers
-      SET deleted_at = NOW()
-      WHERE id = ?
-        AND deleted_at IS NULL
-    `,
-    [id],
-  );
-
-  return result.affectedRows > 0;
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+    // Creations/reassignments lock this same parent before writing.
+    const [customers] = await connection.query(
+      "SELECT id FROM customers WHERE id = ? AND deleted_at IS NULL FOR UPDATE", [id],
+    );
+    if (!customers[0]) { await connection.commit(); return false; }
+    const [dependencies] = await connection.query(`
+      SELECT
+        EXISTS(SELECT 1 FROM invoices WHERE customer_id = ? AND deleted_at IS NULL AND balance > 0) AS debt,
+        EXISTS(SELECT 1 FROM payments WHERE customer_id = ?) AS payments,
+        EXISTS(SELECT 1 FROM payment_allocations a
+          JOIN invoices i ON i.id = a.invoice_id
+          JOIN payments p ON p.id = a.payment_id
+          WHERE a.deleted_at IS NULL AND (i.customer_id = ? OR p.customer_id = ?)) AS allocations,
+        EXISTS(SELECT 1 FROM payment_promises WHERE customer_id = ? AND status = 'pending') AS promises
+    `, [id, id, id, id, id]);
+    const dependency = dependencies[0];
+    if (dependency.debt) throw financialError("CUSTOMER_HAS_DEBT", "El cliente no puede eliminarse porque tiene cartera pendiente.");
+    if (dependency.payments) throw financialError("CUSTOMER_HAS_PAYMENTS", "El cliente no puede eliminarse porque tiene pagos registrados e historial financiero.");
+    if (dependency.allocations) throw financialError("CUSTOMER_HAS_ALLOCATIONS", "El cliente no puede eliminarse porque tiene aplicaciones de pago activas.");
+    if (dependency.promises) throw financialError("CUSTOMER_HAS_PROMISES", "El cliente no puede eliminarse porque tiene promesas de pago pendientes.");
+    await connection.query("UPDATE customers SET deleted_at = NOW() WHERE id = ? AND deleted_at IS NULL", [id]);
+    await connection.commit();
+    return true;
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally { connection.release(); }
 }

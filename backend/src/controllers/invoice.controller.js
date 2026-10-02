@@ -88,6 +88,7 @@ function hasRequiredInvoiceFields(body) {
     typeof body?.invoice_number === "string" &&
     body.invoice_number.trim().length > 0 &&
     isValidMoney(body?.document_value) &&
+    Number(body.document_value) > 0 &&
     isValidMoney(body?.base_value) &&
     isValidMoney(body?.iva_value) &&
     (body?.promo_18 === undefined || body.promo_18 === null || isValidMoney(body.promo_18)) &&
@@ -149,6 +150,8 @@ export async function createInvoice(req, res) {
     const invoice = await addInvoice(req.body);
     return res.status(201).json({ success: true, data: invoice });
   } catch (error) {
+    if (error.status) return res.status(error.status).json({ success: false, message: error.message });
+    if (error.code === "ER_DUP_ENTRY") return res.status(409).json({ success: false, message: "Ya existe una factura con ese número y empresa" });
     if (error.code === "CUSTOMER_NOT_FOUND" || error.code === "ER_NO_REFERENCED_ROW_2") {
       return res.status(404).json({ success: false, message: "Cliente no encontrado" });
     }
@@ -181,6 +184,8 @@ export async function updateInvoice(req, res) {
     }
     return res.status(200).json({ success: true, data: invoice });
   } catch (error) {
+    if (error.status) return res.status(error.status).json({ success: false, message: error.message });
+    if (error.code === "ER_DUP_ENTRY") return res.status(409).json({ success: false, message: "Ya existe una factura con ese número y empresa" });
     if (error.code === "INVOICE_VALUE_BELOW_ALLOCATIONS") {
       return res.status(409).json({
         success: false,
@@ -212,6 +217,7 @@ export async function deleteInvoice(req, res) {
     }
     return res.status(200).json({ success: true, message: "Factura eliminada correctamente" });
   } catch (error) {
+    if (error.status) return res.status(error.status).json({ success: false, message: error.message });
     console.error("Error eliminando factura:", error);
     return res.status(500).json({
       success: false,

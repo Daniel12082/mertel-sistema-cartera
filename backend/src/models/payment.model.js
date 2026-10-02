@@ -46,7 +46,7 @@ export async function getPaymentById(id, db = pool) {
 
 export async function getPaymentForUpdate(id, db) {
   const [rows] = await db.query(`
-    SELECT id, customer_id, amount
+    SELECT id, company_id, customer_id, amount, status
     FROM payments
     WHERE id = ?
     LIMIT 1
