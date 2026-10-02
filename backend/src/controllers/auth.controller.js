@@ -7,13 +7,17 @@ function setRefreshCookie(res, session, config) {
 export function authControllers(config) {
   return {
     async login(req, res, next) {
-      const { email, password } = req.body ?? {};
-      if (typeof email !== "string" || email.length > 150 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) ||
+      const { email, login: identifier, password } = req.body ?? {};
+      const identity = identifier ?? email;
+      const validEmail = value => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+      const validUsername = value => /^[a-zA-Z0-9][a-zA-Z0-9._-]{2,49}$/.test(value);
+      if ((identifier !== undefined && email !== undefined) || typeof identity !== "string" || identity.length > 150 ||
+          !(identifier !== undefined ? validEmail(identity.trim()) || validUsername(identity.trim()) : validEmail(identity.trim())) ||
           typeof password !== "string" || !password || Buffer.byteLength(password) > 1024) {
-        return res.status(400).json({ success: false, message: "Email válido y contraseña son obligatorios" });
+        return res.status(400).json({ success: false, message: "Login válido y contraseña son obligatorios" });
       }
       try {
-        const session = await login(email.trim(), password, config, req.ip);
+        const session = await login(identity.trim(), password, config, req.ip);
         setRefreshCookie(res, session, config);
         return res.status(200).json({ success: true, data: session.response });
       } catch (error) { return next(error); }

@@ -41,7 +41,7 @@ describe("financial integrity HTTP / MySQL integration", { skip: !configured }, 
     for (const match of initial.matchAll(/CREATE TABLE (\w+) \([\s\S]*?;/g)) {
       if (tables.has(match[1])) await admin.query(match[0]);
     }
-    for (const migration of ["002_payment_allocations_soft_delete.sql", "003_active_payment_invoice_allocation_unique.sql", "004_auth_refresh_sessions.sql"]) {
+    for (const migration of ["002_payment_allocations_soft_delete.sql", "003_active_payment_invoice_allocation_unique.sql", "004_auth_refresh_sessions.sql", "005_users_username.sql"]) {
       await admin.query(await readFile(new URL(`../../database/migrations/${migration}`, import.meta.url), "utf8"));
     }
     process.env.DB_NAME = databaseName;
@@ -49,7 +49,9 @@ describe("financial integrity HTTP / MySQL integration", { skip: !configured }, 
     const { createApp } = await import("../src/app.js");
     const app = createApp(loadAuthConfig({ JWT_SECRET: randomBytes(48).toString("base64url"), FRONTEND_URL: "http://localhost:5173", AUTH_COOKIE_SAME_SITE: "lax", NODE_ENV: "test" }));
     const password = randomUUID();
-    await pool.query("INSERT INTO users (first_name, email, password_hash) VALUES ('Financial test', 'financial-test@example.test', ?)", [await hashPassword(password)]);
+    const [testUser] = await pool.query("INSERT INTO users (first_name, email, password_hash) VALUES ('Financial test', 'financial-test@example.test', ?)", [await hashPassword(password)]);
+    await pool.query("INSERT INTO roles (name) VALUES ('admin')");
+    await pool.query("INSERT INTO user_roles (user_id, role_id) SELECT ?, id FROM roles WHERE name='admin'", [testUser.insertId]);
     server = await new Promise((resolve) => {
       const listener = app.listen(0, "127.0.0.1", () => resolve(listener));
     });

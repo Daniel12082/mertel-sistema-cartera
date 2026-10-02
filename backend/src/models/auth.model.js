@@ -1,8 +1,10 @@
 import pool from "../config/database.js";
+import { permissionsForRoles } from "../config/permissions.js";
 const userColumns = `CAST(id AS CHAR) AS id, CAST(company_id AS CHAR) AS company_id,
-  first_name, last_name, email, status, deleted_at`;
-export async function findUserByEmail(email, db = pool) {
-  const [rows] = await db.query(`SELECT ${userColumns}, password_hash FROM users WHERE email = ? LIMIT 1`, [email]);
+  first_name, last_name, username, email, status, deleted_at`;
+export async function findUserByLogin(identifier, db = pool) {
+  const column = identifier.includes("@") ? "email" : "username";
+  const [rows] = await db.query(`SELECT ${userColumns}, password_hash FROM users WHERE ${column} = ? LIMIT 1`, [identifier]);
   return rows[0] ?? null;
 }
 export async function findUserById(id, db = pool, lock = false, includeHash = false) {
@@ -11,10 +13,15 @@ export async function findUserById(id, db = pool, lock = false, includeHash = fa
   return rows[0] ?? null;
 }
 export function isActiveUser(user) { return Boolean(user && user.status === "active" && user.deleted_at === null); }
-export async function publicUser(user, db = pool) {
+export async function userRoles(userId, db = pool) {
   const [roles] = await db.query(`SELECT CAST(r.id AS CHAR) AS id, r.name FROM roles r
-    INNER JOIN user_roles ur ON ur.role_id = r.id WHERE ur.user_id = ? ORDER BY r.id`, [user.id]);
-  return { id: user.id, email: user.email, name: [user.first_name, user.last_name].filter(Boolean).join(" "), company_id: user.company_id, roles };
+    INNER JOIN user_roles ur ON ur.role_id = r.id WHERE ur.user_id = ? ORDER BY r.id`, [userId]);
+  return roles;
+}
+export async function publicUser(user, db = pool) {
+  const roles = user.roles ?? await userRoles(user.id, db);
+  return { id: user.id, username: user.username, email: user.email, name: [user.first_name, user.last_name].filter(Boolean).join(" "),
+    company_id: user.company_id, roles, permissions: permissionsForRoles(roles) };
 }
 export async function findRefreshSession(hash, db = pool, lock = false) {
   const [rows] = await db.query(`SELECT CAST(id AS CHAR) AS id, CAST(user_id AS CHAR) AS user_id,

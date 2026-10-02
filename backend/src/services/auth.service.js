@@ -1,7 +1,7 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import jwt from "jsonwebtoken";
 import pool from "../config/database.js";
-import { auditAuth, findRefreshSession, findUserByEmail, findUserById, insertRefreshSession,
+import { auditAuth, findRefreshSession, findUserByLogin, findUserById, insertRefreshSession,
   isActiveUser, publicUser, revokeRefreshFamily } from "../models/auth.model.js";
 import { verifyPassword } from "../utils/password.js";
 const invalidCredentials = () => Object.assign(new Error("Credenciales inválidas"), { status: 401 });
@@ -25,8 +25,8 @@ async function tokenResponse(user, config, db) {
   return { access_token: issueAccessToken(user.id, config), token_type: "Bearer",
     expires_in: config.accessSeconds, user: await publicUser(user, db) };
 }
-export async function login(email, password, config, ip) {
-  const candidate = await findUserByEmail(email);
+export async function login(identifier, password, config, ip) {
+  const candidate = await findUserByLogin(identifier);
   const matches = await verifyPassword(candidate?.password_hash, password);
   if (!matches || !isActiveUser(candidate)) {
     await auditAuth("login_failed", null, ip); throw invalidCredentials();

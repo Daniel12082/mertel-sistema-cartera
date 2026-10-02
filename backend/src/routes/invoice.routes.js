@@ -1,4 +1,5 @@
 import express from "express";
+import { requirePermission } from "../middleware/requirePermission.js";
 import {
   getInvoices,
   getInvoiceById,
@@ -9,10 +10,10 @@ import {
 
 const router = express.Router();
 
-router.get("/", getInvoices);
-router.post("/", createInvoice);
-router.get("/:id", getInvoiceById);
-router.put("/:id", updateInvoice);
-router.delete("/:id", deleteInvoice);
+router.get("/", requirePermission("invoices.view"), getInvoices);
+router.post("/", requirePermission("invoices.create"), createInvoice);
+router.get("/:id", requirePermission("invoices.view"), getInvoiceById);
+router.put("/:id", requirePermission("invoices.update"), updateInvoice);
+router.delete("/:id", requirePermission("invoices.delete"), deleteInvoice);
 
 export default router;

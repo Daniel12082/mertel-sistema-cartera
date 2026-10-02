@@ -3,6 +3,10 @@
 Revisión: 2 de octubre de 2026. Se implementa autenticación; autorización e
 aislamiento por empresa siguen pendientes.
 
+Reporte histórico de FASE 4.6A: la autorización provisional aquí descrita es
+sustituida por [FASE 4.6B — roles y permisos](FASE_4_6B_ROLES_PERMISOS.md).
+El aislamiento por empresa continúa pendiente de FASE 4.6C.
+
 ## 1. Inspección real y datos existentes
 
 Se revisaron migraciones 001–003, `information_schema.COLUMNS` y

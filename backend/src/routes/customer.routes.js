@@ -1,4 +1,5 @@
 import express from "express";
+import { requirePermission } from "../middleware/requirePermission.js";
 
 import {
   getCustomers,
@@ -10,14 +11,14 @@ import {
 
 const router = express.Router();
 
-router.get("/", getCustomers);
+router.get("/", requirePermission("customers.view"), getCustomers);
 
-router.post("/", createCustomer);
+router.post("/", requirePermission("customers.create"), createCustomer);
 
-router.get("/:id", getCustomerById);
+router.get("/:id", requirePermission("customers.view"), getCustomerById);
 
-router.put("/:id", updateCustomer);
+router.put("/:id", requirePermission("customers.update"), updateCustomer);
 
-router.delete("/:id", deleteCustomer);
+router.delete("/:id", requirePermission("customers.delete"), deleteCustomer);
 
 export default router;

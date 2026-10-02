@@ -10,6 +10,7 @@ import customerRoutes from "./routes/customer.routes.js";
 import invoiceRoutes from "./routes/invoice.routes.js";
 import paymentRoutes from "./routes/payment.routes.js";
 import portfolioRoutes from "./routes/portfolio.routes.js";
+import adminRoutes from "./routes/admin.routes.js";
 export function createApp(config = loadAuthConfig()) {
   const app = express();
   app.set("trust proxy", config.trustProxyHops);
@@ -34,6 +35,7 @@ export function createApp(config = loadAuthConfig()) {
   app.use("/api/invoices", authenticate, invoiceRoutes);
   app.use("/api/payments", authenticate, paymentRoutes);
   app.use("/api/portfolio", authenticate, portfolioRoutes);
+  app.use("/api/admin", authenticate, adminRoutes);
   // There are no collection HTTP routes yet; the pure engine is unchanged.
   app.use((req, res) => res.status(404).json({ success: false, message: "Ruta no encontrada" }));
   app.use((error, req, res, next) => {

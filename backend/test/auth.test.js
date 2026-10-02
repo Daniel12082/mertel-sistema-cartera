@@ -42,7 +42,7 @@ describe("secure authentication HTTP / MySQL integration", { skip: !configured }
       if (tables.has(match[1])) await admin.query(match[0]);
     }
     await admin.query("INSERT INTO roles (name) VALUES ('admin'), ('collector'), ('supervisor')");
-    for (const migration of ["002_payment_allocations_soft_delete.sql", "003_active_payment_invoice_allocation_unique.sql", "004_auth_refresh_sessions.sql"]) {
+    for (const migration of ["002_payment_allocations_soft_delete.sql", "003_active_payment_invoice_allocation_unique.sql", "004_auth_refresh_sessions.sql", "005_users_username.sql"]) {
       await admin.query(await readFile(new URL(`../../database/migrations/${migration}`, import.meta.url), "utf8"));
     }
     process.env.DB_NAME = databaseName;
@@ -170,13 +170,14 @@ describe("secure authentication HTTP / MySQL integration", { skip: !configured }
       await assertStatus(method, path, { body: method === "POST" || method === "PUT" ? {} : undefined }, 401);
     }
   });
-  test("authenticated collector and user without roles can access financial routes provisionally", async () => {
+  test("authenticated collector can read financial routes; removing roles denies access with 403", async () => {
     const s = await session();
     for (const path of ["/api/customers", "/api/invoices", "/api/payments", "/api/portfolio?reference_date=2026-10-02", "/api/portfolio/summary?reference_date=2026-10-02"]) {
       await assertStatus("GET", path, { token: s.token }, 200);
     }
     await pool.query("DELETE FROM user_roles WHERE user_id=?", [userId]);
-    await assertStatus("GET", `/api/customers/${customerId}`, { token: s.token }, 200);
+    await assertStatus("GET", `/api/customers/${customerId}`, { token: s.token }, 403);
+    await assertStatus("GET", "/api/auth/me", { token: s.token }, 200);
   });
   test("technical health remains public and discloses no database name or financial data", async () => {
     for (const path of ["/api/health", "/api/health/db"]) {
