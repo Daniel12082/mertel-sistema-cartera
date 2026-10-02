@@ -4,6 +4,7 @@ import Dashboard from "./pages/Dashboard/Dashboard";
 import Clientes from "./pages/Clientes/Clientes";
 import Facturas from "./pages/Factura/Facturas";
 import Pagos from "./pages/Pagos/Pagos";
+import Cartera from "./pages/Cartera/Cartera";
 
 function PlaceholderPage({ title }) {
   return (
@@ -32,7 +33,7 @@ function App() {
 
         <Route
           path="/cartera"
-          element={<PlaceholderPage title="Cartera" />}
+          element={<Cartera />}
         />
 
         <Route
