@@ -159,7 +159,7 @@ export async function updateInvoice(id, invoice) {
     email = null,
     notes = null,
   } = invoice;
-  await pool.query(
+  const [result] = await pool.query(
     `
       UPDATE invoices
       SET
@@ -176,9 +176,21 @@ export async function updateInvoice(id, invoice) {
         promo_18 = ?,
         discount = ?,
         email = ?,
-        notes = ?
+        notes = ?,
+        balance = CAST(? AS DECIMAL(15,2)) - COALESCE((
+          SELECT SUM(pa.amount)
+          FROM payment_allocations pa
+          WHERE pa.invoice_id = invoices.id
+            AND pa.deleted_at IS NULL
+        ), 0)
       WHERE id = ?
         AND deleted_at IS NULL
+        AND CAST(? AS DECIMAL(15,2)) >= COALESCE((
+          SELECT SUM(pa.amount)
+          FROM payment_allocations pa
+          WHERE pa.invoice_id = invoices.id
+            AND pa.deleted_at IS NULL
+        ), 0)
     `,
     [
       company_id,
@@ -195,9 +207,19 @@ export async function updateInvoice(id, invoice) {
       discount,
       email,
       notes,
+      document_value,
       id,
+      document_value,
     ],
   );
+
+  if (result.affectedRows === 0) {
+    const current = await getInvoiceById(id);
+    if (!current) return null;
+    const error = new Error("El valor del documento no puede ser menor que las asignaciones activas");
+    error.code = "INVOICE_VALUE_BELOW_ALLOCATIONS";
+    throw error;
+  }
 
   return await getInvoiceById(id);
 }

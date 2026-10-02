@@ -181,6 +181,12 @@ export async function updateInvoice(req, res) {
     }
     return res.status(200).json({ success: true, data: invoice });
   } catch (error) {
+    if (error.code === "INVOICE_VALUE_BELOW_ALLOCATIONS") {
+      return res.status(409).json({
+        success: false,
+        message: "El valor del documento no puede ser menor que las asignaciones activas",
+      });
+    }
     if (error.code === "CUSTOMER_NOT_FOUND" || error.code === "ER_NO_REFERENCED_ROW_2") {
       return res.status(404).json({ success: false, message: "Cliente no encontrado" });
     }
