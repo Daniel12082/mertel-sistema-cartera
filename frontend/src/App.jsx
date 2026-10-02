@@ -3,6 +3,7 @@ import MainLayout from "./layouts/MainLayout";
 import Dashboard from "./pages/Dashboard/Dashboard";
 import Clientes from "./pages/Clientes/Clientes";
 import Facturas from "./pages/Factura/Facturas";
+import Pagos from "./pages/Pagos/Pagos";
 
 function PlaceholderPage({ title }) {
   return (
@@ -41,7 +42,7 @@ function App() {
 
         <Route
           path="/pagos"
-          element={<PlaceholderPage title="Pagos" />}
+          element={<Pagos />}
         />
 
         <Route
