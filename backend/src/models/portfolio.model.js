@@ -1,4 +1,5 @@
 import pool from "../config/database.js";
+import { companyFilter } from "../utils/companyScope.js";
 
 const portfolioBase = `
   FROM invoices i
@@ -59,8 +60,9 @@ const aggregateColumns = `
   CAST(COALESCE(SUM(CASE WHEN i.due_date >= CAST(? AS DATE) THEN i.balance ELSE 0 END), 0) AS DECIMAL(15,2)) AS total_current_balance,
   CAST(COALESCE(SUM(CASE WHEN i.due_date IS NULL THEN i.balance ELSE 0 END), 0) AS DECIMAL(15,2)) AS total_no_due_date_balance`;
 
-export async function getPortfolioInvoices(criteria) {
+export async function getPortfolioInvoices(criteria, scope) {
   const filters = openInvoiceFilters(criteria);
+  const company = companyFilter(scope, "i.company_id", "c.company_id");
   const [rows] = await pool.query(`
     SELECT
       i.id AS invoice_id,
@@ -74,21 +76,24 @@ export async function getPortfolioInvoices(criteria) {
       i.balance,
       i.status AS invoice_status
     ${portfolioBase}
-      ${filters.sql}
+      ${filters.sql} ${company.sql}
     ORDER BY ${invoiceOrder(criteria)}
-  `, filters.values);
+  `, [...filters.values, ...company.values]);
   return rows;
 }
 
-export async function getPortfolioTotals(referenceDate) {
+export async function getPortfolioTotals(referenceDate, scope) {
+  const company = companyFilter(scope, "i.company_id", "c.company_id");
   const [rows] = await pool.query(`
     SELECT ${aggregateColumns}
     ${portfolioBase}
-  `, [referenceDate, referenceDate]);
+    ${company.sql}
+  `, [referenceDate, referenceDate, ...company.values]);
   return rows[0];
 }
 
-export async function getPortfolioCustomers(referenceDate) {
+export async function getPortfolioCustomers(referenceDate, scope) {
+  const company = companyFilter(scope, "i.company_id", "c.company_id");
   const [rows] = await pool.query(`
     SELECT
       i.customer_id,
@@ -97,32 +102,36 @@ export async function getPortfolioCustomers(referenceDate) {
       ${aggregateColumns},
       COUNT(*) AS open_invoice_count
     ${portfolioBase}
+    ${company.sql}
     GROUP BY i.customer_id, c.name, c.nit
     ORDER BY c.name ASC, i.customer_id ASC
-  `, [referenceDate, referenceDate]);
+  `, [referenceDate, referenceDate, ...company.values]);
   return rows;
 }
 
-export async function getActiveCustomer(customerId) {
+export async function getActiveCustomer(customerId, scope) {
+  const company = companyFilter(scope, "company_id");
   const [rows] = await pool.query(`
     SELECT id AS customer_id, name AS customer_name, nit AS customer_nit
     FROM customers
-    WHERE id = ? AND deleted_at IS NULL
+    WHERE id = ? AND deleted_at IS NULL ${company.sql}
     LIMIT 1
-  `, [customerId]);
+  `, [customerId, ...company.values]);
   return rows[0] || null;
 }
 
-export async function getCustomerPortfolioTotals(customerId, referenceDate) {
+export async function getCustomerPortfolioTotals(customerId, referenceDate, scope) {
+  const company = companyFilter(scope, "i.company_id", "c.company_id");
   const [rows] = await pool.query(`
     SELECT ${aggregateColumns}
     ${portfolioBase}
-      AND i.customer_id = ?
-  `, [referenceDate, referenceDate, customerId]);
+      AND i.customer_id = ? ${company.sql}
+  `, [referenceDate, referenceDate, customerId, ...company.values]);
   return rows[0];
 }
 
-export async function getPortfolioReconciliation() {
+export async function getPortfolioReconciliation(scope) {
+  const company = companyFilter(scope, "i.company_id", "c.company_id");
   const [rows] = await pool.query(`
     SELECT
       i.id AS invoice_id,
@@ -144,8 +153,9 @@ export async function getPortfolioReconciliation() {
     ) a ON a.invoice_id = i.id
     WHERE i.deleted_at IS NULL
       AND c.deleted_at IS NULL
+      ${company.sql}
       AND i.balance <> i.document_value - COALESCE(a.active_allocated, 0)
     ORDER BY i.id ASC
-  `);
+  `, company.values);
   return rows;
 }

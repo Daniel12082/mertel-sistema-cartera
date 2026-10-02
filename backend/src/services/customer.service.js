@@ -6,22 +6,22 @@ import {
   deleteCustomer,
 } from "../models/customer.model.js";
 
-export async function listCustomers() {
-  return await getAllCustomers();
+export async function listCustomers(scope) {
+  return await getAllCustomers(scope);
 }
 
-export async function getCustomer(id) {
-  return await getCustomerById(id);
+export async function getCustomer(id, scope) {
+  return await getCustomerById(id, scope);
 }
 
-export async function addCustomer(customer) {
-  return await createCustomer(customer);
+export async function addCustomer(customer, scope) {
+  return await createCustomer(customer, scope);
 }
 
-export async function editCustomer(id, customer) {
-  return await updateCustomer(id, customer);
+export async function editCustomer(id, customer, scope) {
+  return await updateCustomer(id, customer, scope);
 }
 
-export async function removeCustomer(id) {
-  return await deleteCustomer(id);
+export async function removeCustomer(id, scope) {
+  return await deleteCustomer(id, scope);
 }

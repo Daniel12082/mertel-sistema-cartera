@@ -19,29 +19,29 @@ function addCalculatedState(invoices, referenceDate) {
   }));
 }
 
-export async function listPortfolio(criteria) {
-  const invoices = await getPortfolioInvoices(criteria);
+export async function listPortfolio(criteria, scope) {
+  const invoices = await getPortfolioInvoices(criteria, scope);
   return addCalculatedState(invoices, criteria.referenceDate);
 }
 
-export async function getPortfolioSummary(referenceDate) {
-  return getPortfolioTotals(referenceDate);
+export async function getPortfolioSummary(referenceDate, scope) {
+  return getPortfolioTotals(referenceDate, scope);
 }
 
-export async function listPortfolioCustomers(referenceDate) {
-  return getPortfolioCustomers(referenceDate);
+export async function listPortfolioCustomers(referenceDate, scope) {
+  return getPortfolioCustomers(referenceDate, scope);
 }
 
-export async function getCustomerPortfolio(customerId, criteria) {
-  const customer = await getActiveCustomer(customerId);
+export async function getCustomerPortfolio(customerId, criteria, scope) {
+  const customer = await getActiveCustomer(customerId, scope);
   if (!customer) return null;
   const [totals, invoices] = await Promise.all([
-    getCustomerPortfolioTotals(customerId, criteria.referenceDate),
-    getPortfolioInvoices({ ...criteria, customerId }),
+    getCustomerPortfolioTotals(customerId, criteria.referenceDate, scope),
+    getPortfolioInvoices({ ...criteria, customerId }, scope),
   ]);
   return { customer, totals, invoices: addCalculatedState(invoices, criteria.referenceDate) };
 }
 
-export async function listPortfolioInconsistencies() {
-  return getPortfolioReconciliation();
+export async function listPortfolioInconsistencies(scope) {
+  return getPortfolioReconciliation(scope);
 }

@@ -76,7 +76,7 @@ export async function getPortfolio(req, res) {
   const parsed = parseCriteria(req.query);
   if (parsed.error) return badRequest(res, parsed.error);
   try {
-    const invoices = await listPortfolio(parsed.criteria);
+    const invoices = await listPortfolio(parsed.criteria, req.companyScope);
     return res.status(200).json({ success: true, reference_date: parsed.criteria.referenceDate, data: invoices });
   } catch (error) { return serverError(res, error); }
 }
@@ -85,7 +85,7 @@ export async function getPortfolioSummary(req, res) {
   const parsed = parseCriteria(req.query);
   if (parsed.error) return badRequest(res, parsed.error);
   try {
-    const totals = await fetchPortfolioSummary(parsed.criteria.referenceDate);
+    const totals = await fetchPortfolioSummary(parsed.criteria.referenceDate, req.companyScope);
     return res.status(200).json({ success: true, reference_date: parsed.criteria.referenceDate, data: totals });
   } catch (error) { return serverError(res, error); }
 }
@@ -94,7 +94,7 @@ export async function getPortfolioByCustomer(req, res) {
   const parsed = parseCriteria(req.query);
   if (parsed.error) return badRequest(res, parsed.error);
   try {
-    const data = await listPortfolioCustomers(parsed.criteria.referenceDate);
+    const data = await listPortfolioCustomers(parsed.criteria.referenceDate, req.companyScope);
     return res.status(200).json({ success: true, reference_date: parsed.criteria.referenceDate, data });
   } catch (error) { return serverError(res, error); }
 }
@@ -105,7 +105,7 @@ export async function getCustomerPortfolioById(req, res) {
   const parsed = parseCriteria(req.query);
   if (parsed.error) return badRequest(res, parsed.error);
   try {
-    const data = await getCustomerPortfolio(customerId, parsed.criteria);
+    const data = await getCustomerPortfolio(customerId, parsed.criteria, req.companyScope);
     if (!data) return res.status(404).json({ success: false, message: "Cliente no encontrado" });
     return res.status(200).json({ success: true, reference_date: parsed.criteria.referenceDate, data });
   } catch (error) { return serverError(res, error); }
@@ -113,7 +113,7 @@ export async function getCustomerPortfolioById(req, res) {
 
 export async function getPortfolioReconciliation(req, res) {
   try {
-    const data = await listPortfolioInconsistencies();
+    const data = await listPortfolioInconsistencies(req.companyScope);
     return res.status(200).json({ success: true, data });
   } catch (error) { return serverError(res, error); }
 }

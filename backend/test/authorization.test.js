@@ -18,7 +18,7 @@ describe("role authorization and internal admin provisioning HTTP / MySQL", { sk
   const password = randomBytes(32).toString("base64url");
   const config = loadAuthConfig({ JWT_SECRET: randomBytes(48).toString("base64url"), FRONTEND_URL: "http://localhost:5173",
     AUTH_COOKIE_SAME_SITE: "lax", NODE_ENV: "test", AUTH_RATE_LIMIT_MAX: "1000" });
-  let db; let pool; let server; let url; let userId; let email; let storedHash;
+  let db; let pool; let server; let url; let userId; let email; let storedHash; let companyId;
   before(async () => {
     db = await mysql.createConnection({ host: process.env.DB_HOST, port: Number(process.env.DB_PORT), user: process.env.DB_USER,
       password: process.env.DB_PASSWORD, multipleStatements: true });
@@ -31,6 +31,8 @@ describe("role authorization and internal admin provisioning HTTP / MySQL", { sk
       await db.query(await readFile(new URL(`../../database/migrations/${file}`, import.meta.url), "utf8"));
     }
     assert.ok((await applyAuthMigrations(db)).every(result => result.applied));
+    const [company] = await db.query("INSERT INTO companies (name) VALUES ('Authorization fixture company')");
+    companyId = company.insertId;
     process.env.DB_NAME = databaseName;
     ({ default: pool } = await import("../src/config/database.js"));
     const { createApp } = await import("../src/app.js");
@@ -50,7 +52,7 @@ describe("role authorization and internal admin provisioning HTTP / MySQL", { sk
   beforeEach(async () => {
     await db.query("DELETE FROM users");
     email = `${randomUUID()}@example.test`;
-    const [user] = await db.query("INSERT INTO users (first_name,email,password_hash) VALUES ('Authorization fixture',?,?)", [email, storedHash]);
+    const [user] = await db.query("INSERT INTO users (company_id,first_name,email,password_hash) VALUES (?,'Authorization fixture',?,?)", [companyId, email, storedHash]);
     userId = String(user.insertId);
     await role("collector");
   });

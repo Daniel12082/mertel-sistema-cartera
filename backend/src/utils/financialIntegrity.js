@@ -1,3 +1,5 @@
+import { companyFilter } from "./companyScope.js";
+
 export function financialError(code, message, status = 409) {
   return Object.assign(new Error(message), { code, status });
 }
@@ -12,12 +14,13 @@ export function isApplicablePayment(status) {
   return status === "confirmed";
 }
 
-export async function lockActiveCustomer(customerId, db) {
+export async function lockActiveCustomer(customerId, db, scope) {
+  const filter = companyFilter(scope, "company_id");
   const [rows] = await db.query(`
-    SELECT id, company_id, status FROM customers
-    WHERE id = ? AND deleted_at IS NULL
+    SELECT id, CAST(company_id AS CHAR) AS company_id, status FROM customers
+    WHERE id = ? AND deleted_at IS NULL ${filter.sql}
     LIMIT 1 FOR UPDATE
-  `, [customerId]);
+  `, [customerId, ...filter.values]);
   if (!rows[0]) throw financialError("CUSTOMER_NOT_FOUND", "Cliente no encontrado", 404);
   if (rows[0].status !== "active") {
     throw financialError("CUSTOMER_INACTIVE", "El cliente no está activo");

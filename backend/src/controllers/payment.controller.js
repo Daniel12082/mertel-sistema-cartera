@@ -66,7 +66,7 @@ function normalizePayment(body = {}) {
   if (typeof status !== "string" || status.trim() === "") return null;
 
   return {
-    company_id: company.value,
+    company_id: body.company_id === undefined ? undefined : company.value,
     customer_id: body.customer_id,
     payment_date: body.payment_date,
     amount,
@@ -112,7 +112,7 @@ function publicError(res, error) {
 
 export async function getPayments(req, res) {
   try {
-    return res.status(200).json({ success: true, data: await listPayments() });
+    return res.status(200).json({ success: true, data: await listPayments(req.companyScope) });
   } catch (error) { return publicError(res, error); }
 }
 
@@ -120,7 +120,7 @@ export async function getPaymentById(req, res) {
   const id = parsePositiveId(req.params.id);
   if (id === null) return res.status(400).json({ success: false, message: "ID inválido" });
   try {
-    const payment = await getPayment(id);
+    const payment = await getPayment(id, req.companyScope);
     if (!payment) return res.status(404).json({ success: false, message: "Pago no encontrado" });
     return res.status(200).json({ success: true, data: payment });
   } catch (error) { return publicError(res, error); }
@@ -130,7 +130,7 @@ export async function createPayment(req, res) {
   const payment = normalizePayment(req.body);
   if (!payment) return res.status(400).json({ success: false, message: "Cliente, fecha y valor positivo del pago son obligatorios y válidos" });
   try {
-    return res.status(201).json({ success: true, data: await addPayment(payment) });
+    return res.status(201).json({ success: true, data: await addPayment(payment, req.companyScope) });
   } catch (error) { return publicError(res, error); }
 }
 
@@ -140,7 +140,7 @@ export async function updatePayment(req, res) {
   const payment = normalizePayment(req.body);
   if (!payment) return res.status(400).json({ success: false, message: "Cliente, fecha y valor positivo del pago son obligatorios y válidos" });
   try {
-    const updated = await editPayment(id, payment);
+    const updated = await editPayment(id, payment, req.companyScope);
     if (!updated) return res.status(404).json({ success: false, message: "Pago no encontrado" });
     return res.status(200).json({ success: true, data: updated });
   } catch (error) { return publicError(res, error); }
@@ -150,7 +150,7 @@ export async function deletePayment(req, res) {
   const id = parsePositiveId(req.params.id);
   if (id === null) return res.status(400).json({ success: false, message: "ID inválido" });
   try {
-    const removed = await removePayment(id);
+    const removed = await removePayment(id, req.companyScope);
     if (!removed) return res.status(404).json({ success: false, message: "Pago no encontrado" });
     return res.status(204).end();
   } catch (error) {
@@ -164,7 +164,7 @@ export async function getPaymentAllocations(req, res) {
   const paymentId = parsePositiveId(req.params.paymentId);
   if (paymentId === null) return res.status(400).json({ success: false, message: "ID de pago inválido" });
   try {
-    return res.status(200).json({ success: true, data: await listPaymentAllocations(paymentId) });
+    return res.status(200).json({ success: true, data: await listPaymentAllocations(paymentId, req.companyScope) });
   } catch (error) { return publicError(res, error); }
 }
 
@@ -175,7 +175,7 @@ export async function createPaymentAllocation(req, res) {
   if (paymentId === null) return res.status(400).json({ success: false, message: "ID de pago inválido" });
   if (!isPositiveId(invoiceId) || !amount) return res.status(400).json({ success: false, message: "Factura y valor positivo de asignación son obligatorios y válidos" });
   try {
-    const allocation = await addPaymentAllocation(paymentId, { invoice_id: invoiceId, amount });
+    const allocation = await addPaymentAllocation(paymentId, { invoice_id: invoiceId, amount }, req.companyScope);
     return res.status(201).json({ success: true, data: allocation });
   } catch (error) { return publicError(res, error); }
 }
@@ -185,6 +185,6 @@ export async function deletePaymentAllocation(req, res) {
   const allocationId = parsePositiveId(req.params.allocationId);
   if (paymentId === null || allocationId === null) return res.status(400).json({ success: false, message: "ID inválido" });
   try {
-    return res.status(200).json({ success: true, data: await reversePaymentAllocation(paymentId, allocationId) });
+    return res.status(200).json({ success: true, data: await reversePaymentAllocation(paymentId, allocationId, req.companyScope) });
   } catch (error) { return publicError(res, error); }
 }

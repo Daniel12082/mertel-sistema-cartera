@@ -1,7 +1,9 @@
 import pool from "../config/database.js";
 import { financialError } from "../utils/financialIntegrity.js";
+import { companyFilter, sameCompany, scopeError, validCompanyId } from "../utils/companyScope.js";
 
-export async function getAllCustomers() {
+export async function getAllCustomers(scope) {
+  const filter = companyFilter(scope, "company_id");
   const [rows] = await pool.query(`
     SELECT
       id,
@@ -19,14 +21,15 @@ export async function getAllCustomers() {
       created_at,
       updated_at
     FROM customers
-    WHERE deleted_at IS NULL
+    WHERE deleted_at IS NULL ${filter.sql}
     ORDER BY name ASC
-  `);
+  `, filter.values);
 
   return rows;
 }
 
-export async function getCustomerById(id) {
+export async function getCustomerById(id, scope) {
+  const filter = companyFilter(scope, "company_id");
   const [rows] = await pool.query(
     `
       SELECT
@@ -46,18 +49,22 @@ export async function getCustomerById(id) {
         updated_at
       FROM customers
       WHERE id = ?
-        AND deleted_at IS NULL
+        AND deleted_at IS NULL ${filter.sql}
       LIMIT 1
     `,
-    [id],
+    [id, ...filter.values],
   );
 
   return rows[0] || null;
 }
 
-export async function createCustomer(customer) {
+export async function createCustomer(customer, scope) {
+  companyFilter(scope, "company_id");
+  const companyId = scope.companyId ?? customer.company_id;
+  if (!validCompanyId(companyId)) throw scopeError("Se requiere una empresa existente para crear el cliente", 400);
+  const [companies] = await pool.query("SELECT id FROM companies WHERE id=? AND status='active' AND deleted_at IS NULL", [companyId]);
+  if (!companies.length) throw scopeError("Empresa no encontrada", 404);
   const {
-    company_id = null,
     nit,
     name,
     phone = null,
@@ -69,6 +76,7 @@ export async function createCustomer(customer) {
     status = "active",
     notes = null,
   } = customer;
+  const company_id = companyId;
 
   const [result] = await pool.query(
     `
@@ -118,7 +126,15 @@ export async function createCustomer(customer) {
   };
 }
 
-export async function updateCustomer(id, customer) {
+export async function updateCustomer(id, customer, scope) {
+  const filter = companyFilter(scope, "company_id");
+  const [current] = await pool.query(`SELECT CAST(company_id AS CHAR) AS company_id
+    FROM customers WHERE id=? AND deleted_at IS NULL ${filter.sql}`, [id, ...filter.values]);
+  const existing = current[0];
+  if (!existing) return null;
+  if (scope.globalAdmin && customer.company_id !== undefined && !sameCompany(customer.company_id, existing.company_id)) {
+    throw scopeError("No se puede cambiar la empresa del cliente", 409);
+  }
   const {
     nit,
     name,
@@ -147,7 +163,7 @@ export async function updateCustomer(id, customer) {
         status = ?,
         notes = ?
       WHERE id = ?
-        AND deleted_at IS NULL
+        AND deleted_at IS NULL ${filter.sql}
     `,
     [
       nit,
@@ -161,6 +177,7 @@ export async function updateCustomer(id, customer) {
       status,
       notes,
       id,
+      ...filter.values,
     ],
   );
 
@@ -168,16 +185,17 @@ export async function updateCustomer(id, customer) {
     return null;
   }
 
-  return await getCustomerById(id);
+  return await getCustomerById(id, scope);
 }
 
-export async function deleteCustomer(id) {
+export async function deleteCustomer(id, scope) {
+  const filter = companyFilter(scope, "company_id");
   const connection = await pool.getConnection();
   try {
     await connection.beginTransaction();
     // Creations/reassignments lock this same parent before writing.
     const [customers] = await connection.query(
-      "SELECT id FROM customers WHERE id = ? AND deleted_at IS NULL FOR UPDATE", [id],
+      `SELECT id FROM customers WHERE id = ? AND deleted_at IS NULL ${filter.sql} FOR UPDATE`, [id, ...filter.values],
     );
     if (!customers[0]) { await connection.commit(); return false; }
     const [dependencies] = await connection.query(`
@@ -195,7 +213,7 @@ export async function deleteCustomer(id) {
     if (dependency.payments) throw financialError("CUSTOMER_HAS_PAYMENTS", "El cliente no puede eliminarse porque tiene pagos registrados e historial financiero.");
     if (dependency.allocations) throw financialError("CUSTOMER_HAS_ALLOCATIONS", "El cliente no puede eliminarse porque tiene aplicaciones de pago activas.");
     if (dependency.promises) throw financialError("CUSTOMER_HAS_PROMISES", "El cliente no puede eliminarse porque tiene promesas de pago pendientes.");
-    await connection.query("UPDATE customers SET deleted_at = NOW() WHERE id = ? AND deleted_at IS NULL", [id]);
+    await connection.query(`UPDATE customers SET deleted_at = NOW() WHERE id = ? AND deleted_at IS NULL ${filter.sql}`, [id, ...filter.values]);
     await connection.commit();
     return true;
   } catch (error) {

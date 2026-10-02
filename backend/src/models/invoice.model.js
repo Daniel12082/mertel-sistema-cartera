@@ -1,5 +1,6 @@
 import pool from "../config/database.js";
 import { financialError, lockActiveCustomer, validateCompanyCustomer } from "../utils/financialIntegrity.js";
+import { assertCompanyCustomerReference, companyFilter, documentCompany } from "../utils/companyScope.js";
 
 const invoiceColumns = `
   i.id,
@@ -23,40 +24,44 @@ const invoiceColumns = `
   c.name AS customer_name,
   c.nit AS customer_nit`;
 
-export async function getAllInvoices() {
+export async function getAllInvoices(scope) {
+  const filter = companyFilter(scope, "i.company_id", "c.company_id");
   const [rows] = await pool.query(`
     SELECT ${invoiceColumns}
     FROM invoices i
     INNER JOIN customers c ON c.id = i.customer_id
-    WHERE i.deleted_at IS NULL
+    WHERE i.deleted_at IS NULL ${filter.sql}
     ORDER BY i.created_at DESC, i.id DESC
-  `);
+  `, filter.values);
 
   return rows;
 }
 
-export async function getInvoiceById(id, db = pool) {
+export async function getInvoiceById(id, scope, db = pool) {
+  const filter = companyFilter(scope, "i.company_id", "c.company_id");
   const [rows] = await db.query(
     `
       SELECT ${invoiceColumns}
       FROM invoices i
       INNER JOIN customers c ON c.id = i.customer_id
       WHERE i.id = ?
-        AND i.deleted_at IS NULL
+        AND i.deleted_at IS NULL ${filter.sql}
       LIMIT 1
     `,
-    [id],
+    [id, ...filter.values],
   );
 
   return rows[0] || null;
 }
 
-export async function createInvoice(invoice) {
+export async function createInvoice(invoice, scope) {
+  companyFilter(scope, "company_id");
   const connection = await pool.getConnection();
   try {
     await connection.beginTransaction();
-    const customer = await lockActiveCustomer(invoice.customer_id, connection);
-    await validateCompanyCustomer(invoice.company_id, customer, connection);
+    const customer = await lockActiveCustomer(invoice.customer_id, connection, scope);
+    await validateCompanyCustomer(scope.companyId ?? invoice.company_id ?? customer.company_id, customer, connection);
+    invoice = { ...invoice, company_id: documentCompany(invoice, customer, scope) };
     const {
       company_id = null,
       customer_id,
@@ -113,7 +118,7 @@ export async function createInvoice(invoice) {
       ],
     );
 
-    const created = await getInvoiceById(result.insertId, connection);
+    const created = await getInvoiceById(result.insertId, scope, connection);
     await connection.commit();
     return created;
   } catch (error) {
@@ -122,16 +127,19 @@ export async function createInvoice(invoice) {
   } finally { connection.release(); }
 }
 
-export async function updateInvoice(id, invoice) {
+export async function updateInvoice(id, invoice, scope) {
+  const filter = companyFilter(scope, "company_id");
   const connection = await pool.getConnection();
   try {
     await connection.beginTransaction();
-    const customer = await lockActiveCustomer(invoice.customer_id, connection);
+    const customer = await lockActiveCustomer(invoice.customer_id, connection, scope);
     const [rows] = await connection.query(
-      "SELECT id, customer_id, company_id FROM invoices WHERE id = ? AND deleted_at IS NULL FOR UPDATE", [id],
+      `SELECT id, customer_id, CAST(company_id AS CHAR) AS company_id FROM invoices WHERE id = ? AND deleted_at IS NULL ${filter.sql} FOR UPDATE`, [id, ...filter.values],
     );
     const existing = rows[0];
     if (!existing) { await connection.commit(); return null; }
+    await assertCompanyCustomerReference(existing, connection, scope, "Factura no encontrada");
+    invoice = { ...invoice, company_id: documentCompany(invoice, customer, scope, existing) };
     const [history] = await connection.query(
       "SELECT COUNT(*) > 0 AS has_history FROM payment_allocations WHERE invoice_id = ?", [id],
     );
@@ -195,7 +203,7 @@ export async function updateInvoice(id, invoice) {
           ), 0) END,
           document_value = ?
         WHERE id = ?
-          AND deleted_at IS NULL
+          AND deleted_at IS NULL ${filter.sql}
           AND CAST(? AS DECIMAL(15,2)) >= COALESCE((
             SELECT SUM(pa.amount)
             FROM payment_allocations pa
@@ -221,19 +229,20 @@ export async function updateInvoice(id, invoice) {
         document_value,
         document_value,
         id,
+        ...filter.values,
         document_value,
       ],
     );
 
     if (result.affectedRows === 0) {
-      const current = await getInvoiceById(id, connection);
+      const current = await getInvoiceById(id, scope, connection);
       if (!current) { await connection.commit(); return null; }
       const error = new Error("El valor del documento no puede ser menor que las asignaciones activas");
       error.code = "INVOICE_VALUE_BELOW_ALLOCATIONS";
       throw error;
     }
 
-    const updated = await getInvoiceById(id, connection);
+    const updated = await getInvoiceById(id, scope, connection);
     await connection.commit();
     return updated;
   } catch (error) {
@@ -242,14 +251,16 @@ export async function updateInvoice(id, invoice) {
   } finally { connection.release(); }
 }
 
-export async function deleteInvoice(id) {
+export async function deleteInvoice(id, scope) {
+  const filter = companyFilter(scope, "company_id");
   const connection = await pool.getConnection();
   try {
     await connection.beginTransaction();
     const [rows] = await connection.query(
-      "SELECT balance FROM invoices WHERE id = ? AND deleted_at IS NULL FOR UPDATE", [id],
+      `SELECT balance, customer_id FROM invoices WHERE id = ? AND deleted_at IS NULL ${filter.sql} FOR UPDATE`, [id, ...filter.values],
     );
     if (!rows[0]) { await connection.commit(); return false; }
+    await assertCompanyCustomerReference(rows[0], connection, scope, "Factura no encontrada");
     if (Number(rows[0].balance) > 0) throw financialError("INVOICE_HAS_BALANCE", "La factura no puede eliminarse porque tiene saldo pendiente.");
     const [allocations] = await connection.query(
       "SELECT COUNT(*) > 0 AS active FROM payment_allocations WHERE invoice_id = ? AND deleted_at IS NULL", [id],
@@ -259,7 +270,7 @@ export async function deleteInvoice(id) {
       "SELECT COUNT(*) > 0 AS pending FROM payment_promises WHERE invoice_id = ? AND status = 'pending'", [id],
     );
     if (promises[0].pending) throw financialError("INVOICE_HAS_PROMISES", "La factura no puede eliminarse porque tiene promesas de pago pendientes.");
-    await connection.query("UPDATE invoices SET deleted_at = NOW() WHERE id = ? AND deleted_at IS NULL", [id]);
+    await connection.query(`UPDATE invoices SET deleted_at = NOW() WHERE id = ? AND deleted_at IS NULL ${filter.sql}`, [id, ...filter.values]);
     await connection.commit();
     return true;
   } catch (error) {

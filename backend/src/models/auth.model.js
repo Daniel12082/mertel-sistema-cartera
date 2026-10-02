@@ -1,5 +1,6 @@
 import pool from "../config/database.js";
 import { permissionsForRoles } from "../config/permissions.js";
+import { companyContext } from "../utils/companyScope.js";
 const userColumns = `CAST(id AS CHAR) AS id, CAST(company_id AS CHAR) AS company_id,
   first_name, last_name, username, email, status, deleted_at`;
 export async function findUserByLogin(identifier, db = pool) {
@@ -21,7 +22,8 @@ export async function userRoles(userId, db = pool) {
 export async function publicUser(user, db = pool) {
   const roles = user.roles ?? await userRoles(user.id, db);
   return { id: user.id, username: user.username, email: user.email, name: [user.first_name, user.last_name].filter(Boolean).join(" "),
-    company_id: user.company_id, roles, permissions: permissionsForRoles(roles) };
+    company_id: user.company_id, is_global_admin: companyContext({ ...user, roles }).globalAdmin,
+    roles, permissions: permissionsForRoles(roles) };
 }
 export async function findRefreshSession(hash, db = pool, lock = false) {
   const [rows] = await db.query(`SELECT CAST(id AS CHAR) AS id, CAST(user_id AS CHAR) AS user_id,

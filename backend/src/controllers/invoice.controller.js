@@ -106,9 +106,10 @@ function hasRequiredInvoiceFields(body) {
 
 export async function getInvoices(req, res) {
   try {
-    const invoices = await listInvoices();
+    const invoices = await listInvoices(req.companyScope);
     return res.status(200).json({ success: true, data: invoices });
   } catch (error) {
+    if (error.status) return res.status(error.status).json({ success: false, message: error.message });
     console.error("Error obteniendo facturas:", error);
     return res.status(500).json({
       success: false,
@@ -124,12 +125,13 @@ export async function getInvoiceById(req, res) {
   }
 
   try {
-    const invoice = await getInvoice(id);
+    const invoice = await getInvoice(id, req.companyScope);
     if (!invoice) {
       return res.status(404).json({ success: false, message: "Factura no encontrada" });
     }
     return res.status(200).json({ success: true, data: invoice });
   } catch (error) {
+    if (error.status) return res.status(error.status).json({ success: false, message: error.message });
     console.error("Error obteniendo factura:", error);
     return res.status(500).json({
       success: false,
@@ -147,7 +149,7 @@ export async function createInvoice(req, res) {
   }
 
   try {
-    const invoice = await addInvoice(req.body);
+    const invoice = await addInvoice(req.body, req.companyScope);
     return res.status(201).json({ success: true, data: invoice });
   } catch (error) {
     if (error.status) return res.status(error.status).json({ success: false, message: error.message });
@@ -178,7 +180,7 @@ export async function updateInvoice(req, res) {
   }
 
   try {
-    const invoice = await editInvoice(id, req.body);
+    const invoice = await editInvoice(id, req.body, req.companyScope);
     if (!invoice) {
       return res.status(404).json({ success: false, message: "Factura no encontrada" });
     }
@@ -211,7 +213,7 @@ export async function deleteInvoice(req, res) {
   }
 
   try {
-    const deleted = await removeInvoice(id);
+    const deleted = await removeInvoice(id, req.companyScope);
     if (!deleted) {
       return res.status(404).json({ success: false, message: "Factura no encontrada" });
     }

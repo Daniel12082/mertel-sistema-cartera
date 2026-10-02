@@ -1,4 +1,5 @@
 import pool from "../config/database.js";
+import { assertCompanyCustomerReference, companyFilter } from "../utils/companyScope.js";
 
 const paymentSelect = `
   SELECT
@@ -27,31 +28,36 @@ const paymentSelect = `
     GROUP BY payment_id
   ) a ON a.payment_id = p.id`;
 
-export async function getAllPayments(db = pool) {
+export async function getAllPayments(scope, db = pool) {
+  const filter = companyFilter(scope, "p.company_id", "c.company_id");
   const [rows] = await db.query(`
     ${paymentSelect}
+    WHERE 1=1 ${filter.sql}
     ORDER BY p.payment_date DESC, p.id DESC
-  `);
+  `, filter.values);
   return rows;
 }
 
-export async function getPaymentById(id, db = pool) {
+export async function getPaymentById(id, scope, db = pool) {
+  const filter = companyFilter(scope, "p.company_id", "c.company_id");
   const [rows] = await db.query(`
     ${paymentSelect}
-    WHERE p.id = ?
+    WHERE p.id = ? ${filter.sql}
     LIMIT 1
-  `, [id]);
+  `, [id, ...filter.values]);
   return rows[0] || null;
 }
 
-export async function getPaymentForUpdate(id, db) {
+export async function getPaymentForUpdate(id, db, scope) {
+  const filter = companyFilter(scope, "company_id");
   const [rows] = await db.query(`
-    SELECT id, company_id, customer_id, amount, status
+    SELECT id, CAST(company_id AS CHAR) AS company_id, customer_id, amount, status, created_by
     FROM payments
-    WHERE id = ?
+    WHERE id = ? ${filter.sql}
     LIMIT 1
     FOR UPDATE
-  `, [id]);
+  `, [id, ...filter.values]);
+  await assertCompanyCustomerReference(rows[0], db, scope, "Pago no encontrado");
   return rows[0] || null;
 }
 
@@ -128,7 +134,8 @@ export async function createPayment(payment, db = pool) {
   return result.insertId;
 }
 
-export async function updatePayment(id, payment, db) {
+export async function updatePayment(id, payment, db, scope) {
+  const filter = companyFilter(scope, "company_id");
   const {
     company_id = null,
     customer_id,
@@ -145,6 +152,6 @@ export async function updatePayment(id, payment, db) {
     SET company_id = ?, customer_id = ?, payment_date = ?,
         amount = CAST(? AS DECIMAL(15,2)), payment_method = ?,
         reference = ?, status = ?, notes = ?, created_by = ?
-    WHERE id = ?
-  `, [company_id, customer_id, payment_date, amount, payment_method, reference, status, notes, created_by, id]);
+    WHERE id = ? ${filter.sql}
+  `, [company_id, customer_id, payment_date, amount, payment_method, reference, status, notes, created_by, id, ...filter.values]);
 }

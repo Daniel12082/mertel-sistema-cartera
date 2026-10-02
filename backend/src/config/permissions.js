@@ -1,5 +1,6 @@
 // Política inicial de FASE 4.6B. Los permisos previstos no autorizan rutas hasta implementarlas.
 const entries = [
+  ["companies", "Empresas", [["view", "Consultar empresas como administrador global", true]]],
   ["customers", "Clientes", [["view", "Ver clientes", true], ["create", "Crear clientes", true], ["update", "Editar clientes", true], ["delete", "Eliminar clientes", true]]],
   ["invoices", "Facturas", [["view", "Ver facturas", true], ["create", "Crear facturas", true], ["update", "Editar facturas", true], ["delete", "Eliminar facturas", true]]],
   ["payments", "Pagos", [["view", "Ver pagos", true], ["create", "Crear pagos", true], ["update", "Editar pagos", true], ["delete", "Eliminar pagos", true]]],
@@ -32,6 +33,6 @@ export function permissionsForRoles(roles = []) {
 export function roleCatalog() {
   return Object.entries(ROLE_LABELS).map(([name, label]) => ({ name, label,
     permissions: PERMISSIONS.map(permission => ({ ...permission, enabled: ROLE_PERMISSIONS[name].includes(permission.name),
-      scope: name === "collector" && permission.name === "history.view" ? "own_user" : "all" })),
+      scope: permission.name === "companies.view" ? "global_admin" : name === "collector" && permission.name === "history.view" ? "own_user" : "all" })),
   }));
 }

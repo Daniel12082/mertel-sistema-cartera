@@ -6,6 +6,7 @@ import pool from "./config/database.js";
 import { loadAuthConfig } from "./config/auth.js";
 import { authRoutes } from "./routes/auth.routes.js";
 import { authenticateToken } from "./middleware/authenticateToken.js";
+import { requireCompanyScope } from "./middleware/companyScope.js";
 import customerRoutes from "./routes/customer.routes.js";
 import invoiceRoutes from "./routes/invoice.routes.js";
 import paymentRoutes from "./routes/payment.routes.js";
@@ -31,10 +32,10 @@ export function createApp(config = loadAuthConfig()) {
   });
   app.use("/api/auth", authRoutes(config));
   const authenticate = authenticateToken(config);
-  app.use("/api/customers", authenticate, customerRoutes);
-  app.use("/api/invoices", authenticate, invoiceRoutes);
-  app.use("/api/payments", authenticate, paymentRoutes);
-  app.use("/api/portfolio", authenticate, portfolioRoutes);
+  app.use("/api/customers", authenticate, requireCompanyScope, customerRoutes);
+  app.use("/api/invoices", authenticate, requireCompanyScope, invoiceRoutes);
+  app.use("/api/payments", authenticate, requireCompanyScope, paymentRoutes);
+  app.use("/api/portfolio", authenticate, requireCompanyScope, portfolioRoutes);
   app.use("/api/admin", authenticate, adminRoutes);
   // There are no collection HTTP routes yet; the pure engine is unchanged.
   app.use((req, res) => res.status(404).json({ success: false, message: "Ruta no encontrada" }));

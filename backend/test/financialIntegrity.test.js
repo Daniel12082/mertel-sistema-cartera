@@ -168,10 +168,11 @@ describe("financial integrity HTTP / MySQL integration", { skip: !configured }, 
     await pool.query("INSERT INTO payment_promises (customer_id, invoice_id, promised_date, promised_amount) VALUES (?, ?, '2026-10-02', 100)", [customer, i.id]);
     await expectStatus("DELETE", `/invoices/${i.id}`, undefined, 409);
   });
-  test("invoice customer and company can change without application history", async () => {
+  test("invoice customer can change without application history but company stays immutable", async () => {
     const i = await invoice();
-    const updated = await expectStatus("PUT", `/invoices/${i.id}`, { ...i, customer_id: otherCustomer, company_id: company, issue_date: null, due_date: null }, 200);
-    assert.equal(updated.customer_id, otherCustomer); assert.equal(updated.company_id, company);
+    const updated = await expectStatus("PUT", `/invoices/${i.id}`, { ...i, customer_id: otherCustomer, issue_date: null, due_date: null }, 200);
+    assert.equal(updated.customer_id, otherCustomer); assert.equal(updated.company_id, null);
+    await expectStatus("PUT", `/invoices/${i.id}`, { ...i, customer_id: otherCustomer, company_id: company, issue_date: null, due_date: null }, 409);
   });
   test("invoice customer and company cannot change with active or reversed applications", async () => {
     const { i, p, a } = await pair();
@@ -258,11 +259,15 @@ describe("financial integrity HTTP / MySQL integration", { skip: !configured }, 
     const i = await invoice({ customer_id: otherCustomer }); const p = await payment();
     await allocate(p, i, "50.00", 409);
   });
-  test("allocation rejects incompatible companies and accepts nullable sides", async () => {
-    const i = await invoice({ company_id: company }); const p = await payment({ company_id: otherCompany });
+  test("allocation rejects incompatible and mixed-null companies; global admin retains same-null legacy operations", async () => {
+    const i = await invoice(); const p = await payment();
+    // Deliberately inconsistent historical fixtures, only inside this disposable database.
+    await pool.query("UPDATE invoices SET company_id=? WHERE id=?", [company, i.id]);
+    await pool.query("UPDATE payments SET company_id=? WHERE id=?", [otherCompany, p.id]);
     await allocate(p, i, "50.00", 409);
-    const nullable = await payment(); await allocate(nullable, i);
-    const noCompany = await invoice(); await allocate(p, noCompany);
+    const nullable = await payment(); await allocate(nullable, i, "50.00", 409);
+    const noCompany = await invoice(); await allocate(p, noCompany, "50.00", 409);
+    await allocate(nullable, noCompany);
   });
   test("documents reject incompatible customer company and absent company", async () => {
     await pool.query("UPDATE customers SET company_id = ? WHERE id = ?", [company, customer]);

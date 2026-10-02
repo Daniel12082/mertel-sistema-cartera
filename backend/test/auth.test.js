@@ -75,7 +75,7 @@ describe("secure authentication HTTP / MySQL integration", { skip: !configured }
     const [user] = await pool.query("INSERT INTO users (company_id, first_name, last_name, email, password_hash) VALUES (?, 'Auth', 'Test', ?, ?)", [companyId, email, storedHash]);
     userId = String(user.insertId);
     await pool.query("INSERT INTO user_roles (user_id, role_id) SELECT ?, id FROM roles WHERE name='collector'", [userId]);
-    const [customer] = await pool.query("INSERT INTO customers (nit, name) VALUES (?, 'Auth test customer')", [randomUUID()]);
+    const [customer] = await pool.query("INSERT INTO customers (company_id, nit, name) VALUES (?, ?, 'Auth test customer')", [companyId, randomUUID()]);
     customerId = customer.insertId;
   });
   async function serve(app) {

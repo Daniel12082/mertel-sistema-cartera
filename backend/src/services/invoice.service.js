@@ -39,22 +39,22 @@ export function calculateDiscountFromRule(baseValue, rule) {
   return Number(((base * percentage) / 100).toFixed(2));
 }
 
-export async function listInvoices() {
-  return await getAllInvoices();
+export async function listInvoices(scope) {
+  return await getAllInvoices(scope);
 }
 
-export async function getInvoice(id) {
-  return await getInvoiceById(id);
+export async function getInvoice(id, scope) {
+  return await getInvoiceById(id, scope);
 }
 
-export async function addInvoice(invoice) {
-  return await createInvoice(invoice);
+export async function addInvoice(invoice, scope) {
+  return await createInvoice(invoice, scope);
 }
 
-export async function editInvoice(id, invoice) {
-  return await updateInvoice(id, invoice);
+export async function editInvoice(id, invoice, scope) {
+  return await updateInvoice(id, invoice, scope);
 }
 
-export async function removeInvoice(id) {
-  return await deleteInvoice(id);
+export async function removeInvoice(id, scope) {
+  return await deleteInvoice(id, scope);
 }

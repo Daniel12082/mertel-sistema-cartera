@@ -16,7 +16,7 @@ test("collector and supervisor receive the exact initial active grants", () => {
     "payment_allocations.create", "payment_allocations.view", "portfolio.view"].sort());
   assert.deepEqual(permissionsForRoles([{ name: "supervisor" }]).sort(), ["customers.view", "customers.update", "invoices.view", "invoices.update",
     "payments.create", "payments.view", "payments.update", "payment_allocations.create", "payment_allocations.view", "payment_allocations.reverse", "portfolio.view"].sort());
-  assert.equal(permissionsForRoles([{ name: "admin" }]).length, 17);
+  assert.equal(permissionsForRoles([{ name: "admin" }]).length, 18);
 });
 test("unknown/missing roles fail closed; multi-role grants are a unique union", () => {
   assert.deepEqual(permissionsForRoles(), []);

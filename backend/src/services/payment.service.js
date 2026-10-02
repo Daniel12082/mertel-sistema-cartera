@@ -25,7 +25,8 @@ import {
   reduceInvoiceBalance,
   softDeleteAllocation,
 } from "../models/paymentAllocation.model.js";
-import { compatibleCompanies, financialError, isApplicablePayment, lockActiveCustomer, validateCompanyCustomer } from "../utils/financialIntegrity.js";
+import { financialError, isApplicablePayment, lockActiveCustomer, validateCompanyCustomer } from "../utils/financialIntegrity.js";
+import { companyFilter, documentCompany, sameCompany } from "../utils/companyScope.js";
 
 function paymentError(code, message) {
   const error = new Error(message);
@@ -33,29 +34,32 @@ function paymentError(code, message) {
   return error;
 }
 
-async function validateReferences(payment, db) {
-  const customer = await lockActiveCustomer(payment.customer_id, db);
-  await validateCompanyCustomer(payment.company_id, customer, db);
+async function validateReferences(payment, db, scope, existing) {
+  const customer = await lockActiveCustomer(payment.customer_id, db, scope);
+  await validateCompanyCustomer(existing ? existing.company_id : scope.companyId ?? payment.company_id ?? customer.company_id, customer, db);
+  payment.company_id = documentCompany(payment, customer, scope, existing);
   if (payment.created_by != null && !(await userExists(payment.created_by, db))) {
     throw paymentError("USER_NOT_FOUND", "Usuario creador no encontrado");
   }
 }
 
-export async function listPayments() {
-  return getAllPayments();
+export async function listPayments(scope) {
+  return getAllPayments(scope);
 }
 
-export async function getPayment(id) {
-  return getPaymentById(id);
+export async function getPayment(id, scope) {
+  return getPaymentById(id, scope);
 }
 
-export async function addPayment(payment) {
+export async function addPayment(payment, scope) {
+  companyFilter(scope, "company_id");
+  payment = { ...payment, created_by: scope.actorId };
   const connection = await pool.getConnection();
   try {
     await connection.beginTransaction();
-    await validateReferences(payment, connection);
+    await validateReferences(payment, connection, scope);
     const id = await createPayment(payment, connection);
-    const created = await getPaymentById(id, connection);
+    const created = await getPaymentById(id, scope, connection);
     await connection.commit();
     return created;
   } catch (error) {
@@ -64,16 +68,21 @@ export async function addPayment(payment) {
   } finally { connection.release(); }
 }
 
-export async function editPayment(id, payment) {
+export async function editPayment(id, payment, scope) {
+  companyFilter(scope, "company_id");
+  payment = { ...payment };
   const connection = await pool.getConnection();
   try {
     await connection.beginTransaction();
-    const existing = await getPaymentForUpdate(id, connection);
+    const existing = await getPaymentForUpdate(id, connection, scope);
     if (!existing) {
       await connection.commit();
       return null;
     }
 
+    // Resolve company inside the same transaction before checking financial history.
+    payment.created_by = existing.created_by;
+    await validateReferences(payment, connection, scope, existing);
     const allocated = await getActiveAllocatedAmount(id, connection);
     const hasAllocations = await hasAnyAllocationRows(id, connection);
     if (Number(allocated) > 0 && !isApplicablePayment(payment.status)) {
@@ -98,10 +107,9 @@ export async function editPayment(id, payment) {
       }
     }
 
-    await validateReferences(payment, connection);
-    await updatePayment(id, payment, connection);
+    await updatePayment(id, payment, connection, scope);
     await connection.commit();
-    return getPaymentById(id);
+    return getPaymentById(id, scope);
   } catch (error) {
     await connection.rollback();
     throw error;
@@ -110,39 +118,41 @@ export async function editPayment(id, payment) {
   }
 }
 
-export async function removePayment(id) {
-  const payment = await getPaymentById(id);
+export async function removePayment(id, scope) {
+  const payment = await getPaymentById(id, scope);
   if (!payment) return null;
   throw paymentError("PAYMENT_DELETE_UNSUPPORTED", "Los pagos no se eliminan físicamente y esta tabla no dispone de baja lógica");
 }
 
-export async function listPaymentAllocations(paymentId) {
-  const payment = await getPaymentById(paymentId);
+export async function listPaymentAllocations(paymentId, scope) {
+  const payment = await getPaymentById(paymentId, scope);
   if (!payment) throw paymentError("PAYMENT_NOT_FOUND", "Pago no encontrado");
-  return getAllocationsByPayment(paymentId);
+  return getAllocationsByPayment(paymentId, scope);
 }
 
-export async function addPaymentAllocation(paymentId, allocation) {
+export async function addPaymentAllocation(paymentId, allocation, scope) {
+  companyFilter(scope, "company_id");
   const connection = await pool.getConnection();
   try {
     await connection.beginTransaction();
 
     // Preserve parent lock order: payment -> customer -> invoice -> allocation.
     // Customer locks also serialize document creation with customer deletion.
-    const payment = await getPaymentForUpdate(paymentId, connection);
+    const payment = await getPaymentForUpdate(paymentId, connection, scope);
     if (!payment) throw paymentError("PAYMENT_NOT_FOUND", "Pago no encontrado");
 
     if (!isApplicablePayment(payment.status)) {
       throw financialError("PAYMENT_NOT_APPLICABLE", "Solo un pago confirmado puede recibir aplicaciones de pago.");
     }
-    const customer = await lockActiveCustomer(payment.customer_id, connection);
+    const customer = await lockActiveCustomer(payment.customer_id, connection, scope);
+    documentCompany(payment, customer, scope, payment);
     await validateCompanyCustomer(payment.company_id, customer, connection);
-    const invoice = await getInvoiceForUpdate(allocation.invoice_id, connection);
+    const invoice = await getInvoiceForUpdate(allocation.invoice_id, connection, scope);
     if (!invoice) throw paymentError("INVOICE_NOT_FOUND", "Factura no encontrada");
     if (String(payment.customer_id) !== String(invoice.customer_id)) {
       throw paymentError("CUSTOMER_MISMATCH", "El pago y la factura pertenecen a clientes diferentes");
     }
-    if (!compatibleCompanies(payment.company_id, invoice.company_id)) {
+    if (!sameCompany(payment.company_id, invoice.company_id)) {
       throw financialError("COMPANY_MISMATCH", "El pago y la factura pertenecen a empresas diferentes.");
     }
     await validateCompanyCustomer(invoice.company_id, customer, connection);
@@ -167,9 +177,9 @@ export async function addPaymentAllocation(paymentId, allocation) {
 
     await connection.commit();
     const [created, updatedPayment, invoiceBalance] = await Promise.all([
-      getAllocationById(allocationId),
-      getPaymentById(paymentId),
-      getInvoiceBalance(allocation.invoice_id),
+      getAllocationById(allocationId, scope),
+      getPaymentById(paymentId, scope),
+      getInvoiceBalance(allocation.invoice_id, scope),
     ]);
     return { ...created, payment_available: updatedPayment.available_amount, invoice_balance: invoiceBalance };
   } catch (error) {
@@ -180,17 +190,18 @@ export async function addPaymentAllocation(paymentId, allocation) {
   }
 }
 
-export async function reversePaymentAllocation(paymentId, allocationId) {
-  const invoiceId = await getAllocationInvoiceId(paymentId, allocationId);
+export async function reversePaymentAllocation(paymentId, allocationId, scope) {
+  const invoiceId = await getAllocationInvoiceId(paymentId, allocationId, scope);
   if (invoiceId === null) throw paymentError("ALLOCATION_NOT_FOUND", "Asignación no encontrada para este pago");
 
   const connection = await pool.getConnection();
   try {
     await connection.beginTransaction();
-    const payment = await getPaymentForUpdate(paymentId, connection);
+    const payment = await getPaymentForUpdate(paymentId, connection, scope);
     if (!payment) throw paymentError("PAYMENT_NOT_FOUND", "Pago no encontrado");
-    const invoice = await getInvoiceForUpdate(invoiceId, connection, true);
+    const invoice = await getInvoiceForUpdate(invoiceId, connection, scope, true);
     if (!invoice) throw paymentError("INVOICE_NOT_FOUND", "Factura no encontrada");
+    if (!sameCompany(payment.company_id, invoice.company_id)) throw financialError("COMPANY_MISMATCH", "El pago y la factura pertenecen a empresas diferentes.");
     const allocation = await getAllocationForUpdate(paymentId, allocationId, connection);
     if (!allocation) throw paymentError("ALLOCATION_NOT_FOUND", "Asignación no encontrada para este pago");
     if (allocation.deleted_at !== null) {
@@ -206,8 +217,8 @@ export async function reversePaymentAllocation(paymentId, allocationId) {
 
     await connection.commit();
     const [updatedPayment, invoiceBalance] = await Promise.all([
-      getPaymentById(paymentId),
-      getInvoiceBalance(invoiceId),
+      getPaymentById(paymentId, scope),
+      getInvoiceBalance(invoiceId, scope),
     ]);
     return { allocation_id: allocationId, payment_available: updatedPayment.available_amount, invoice_balance: invoiceBalance };
   } catch (error) {

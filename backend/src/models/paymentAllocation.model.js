@@ -1,6 +1,8 @@
 import pool from "../config/database.js";
+import { assertCompanyCustomerReference, companyFilter } from "../utils/companyScope.js";
 
-export async function getAllocationsByPayment(paymentId, db = pool) {
+export async function getAllocationsByPayment(paymentId, scope, db = pool) {
+  const filter = companyFilter(scope, "p.company_id", "i.company_id", "c.company_id");
   const [rows] = await db.query(`
     SELECT
       pa.id,
@@ -11,22 +13,26 @@ export async function getAllocationsByPayment(paymentId, db = pool) {
       pa.created_at
     FROM payment_allocations pa
     INNER JOIN invoices i ON i.id = pa.invoice_id
+    INNER JOIN payments p ON p.id = pa.payment_id
+    INNER JOIN customers c ON c.id = i.customer_id
     WHERE pa.payment_id = ?
-      AND pa.deleted_at IS NULL
+      AND pa.deleted_at IS NULL ${filter.sql}
     ORDER BY pa.created_at ASC, pa.id ASC
-  `, [paymentId]);
+  `, [paymentId, ...filter.values]);
   return rows;
 }
 
-export async function getInvoiceForUpdate(invoiceId, db, includeDeleted = false) {
+export async function getInvoiceForUpdate(invoiceId, db, scope, includeDeleted = false) {
+  const filter = companyFilter(scope, "company_id");
   const activeFilter = includeDeleted ? "" : "AND deleted_at IS NULL";
   const [rows] = await db.query(`
-    SELECT id, company_id, customer_id, balance, status
+    SELECT id, CAST(company_id AS CHAR) AS company_id, customer_id, balance, status
     FROM invoices
-    WHERE id = ? ${activeFilter}
+    WHERE id = ? ${activeFilter} ${filter.sql}
     LIMIT 1
     FOR UPDATE
-  `, [invoiceId]);
+  `, [invoiceId, ...filter.values]);
+  await assertCompanyCustomerReference(rows[0], db, scope, "Factura no encontrada");
   return rows[0] || null;
 }
 
@@ -50,7 +56,8 @@ export async function insertAllocation(paymentId, invoiceId, amount, db) {
   return result.insertId;
 }
 
-export async function getAllocationById(id, db = pool) {
+export async function getAllocationById(id, scope, db = pool) {
+  const filter = companyFilter(scope, "p.company_id", "i.company_id");
   const [rows] = await db.query(`
     SELECT
       pa.id,
@@ -62,9 +69,10 @@ export async function getAllocationById(id, db = pool) {
       pa.deleted_at
     FROM payment_allocations pa
     INNER JOIN invoices i ON i.id = pa.invoice_id
-    WHERE pa.id = ?
+    INNER JOIN payments p ON p.id = pa.payment_id
+    WHERE pa.id = ? ${filter.sql}
     LIMIT 1
-  `, [id]);
+  `, [id, ...filter.values]);
   return rows[0] || null;
 }
 
@@ -79,13 +87,16 @@ export async function getAllocationForUpdate(paymentId, allocationId, db) {
   return rows[0] || null;
 }
 
-export async function getAllocationInvoiceId(paymentId, allocationId, db = pool) {
+export async function getAllocationInvoiceId(paymentId, allocationId, scope, db = pool) {
+  const filter = companyFilter(scope, "p.company_id", "i.company_id");
   const [rows] = await db.query(`
-    SELECT invoice_id
-    FROM payment_allocations
-    WHERE payment_id = ? AND id = ?
+    SELECT pa.invoice_id
+    FROM payment_allocations pa
+    INNER JOIN payments p ON p.id=pa.payment_id
+    INNER JOIN invoices i ON i.id=pa.invoice_id
+    WHERE pa.payment_id = ? AND pa.id = ? ${filter.sql}
     LIMIT 1
-  `, [paymentId, allocationId]);
+  `, [paymentId, allocationId, ...filter.values]);
   return rows[0]?.invoice_id ?? null;
 }
 
@@ -135,7 +146,8 @@ export async function hasEnoughInvoiceBalance(balance, amount, db) {
   return Boolean(rows[0].sufficient);
 }
 
-export async function getInvoiceBalance(invoiceId, db = pool) {
-  const [rows] = await db.query("SELECT balance FROM invoices WHERE id = ? LIMIT 1", [invoiceId]);
+export async function getInvoiceBalance(invoiceId, scope, db = pool) {
+  const filter = companyFilter(scope, "company_id");
+  const [rows] = await db.query(`SELECT balance FROM invoices WHERE id = ? ${filter.sql} LIMIT 1`, [invoiceId, ...filter.values]);
   return rows[0]?.balance ?? null;
 }

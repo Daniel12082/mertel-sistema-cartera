@@ -8,6 +8,7 @@
     "test:financial": "node --test test/financialIntegrity.test.js",
     "test:auth": "node --test test/auth.test.js test/auth.unit.test.js",
     "test:authorization": "node --test test/authorization.test.js test/authorization.unit.test.js",
+    "test:multi-company": "node --test test/multiCompany.test.js test/multiCompany.unit.test.js",
     "migrate:auth": "node scripts/migrate-auth.js",
     "provision:admin": "node scripts/provision-admin.js",
     "dev": "nodemon src/server.js",
