@@ -6,6 +6,8 @@ import Facturas from "./pages/Factura/Facturas";
 import Pagos from "./pages/Pagos/Pagos";
 import Cartera from "./pages/Cartera/Cartera";
 import Configuracion from "./pages/Configuracion/Configuracion";
+import LoginPage from "./pages/Login/LoginPage";
+import ProtectedRoute from "./auth/ProtectedRoute";
 
 function PlaceholderPage({ title }) {
   return (
@@ -19,6 +21,8 @@ function PlaceholderPage({ title }) {
 function App() {
   return (
     <Routes>
+      <Route path="/login" element={<LoginPage />} />
+      <Route element={<ProtectedRoute />}>
       <Route element={<MainLayout />}>
         <Route path="/" element={<Dashboard />} />
 
@@ -61,6 +65,7 @@ function App() {
           path="*"
           element={<PlaceholderPage title="Página no encontrada" />}
         />
+      </Route>
       </Route>
     </Routes>
   );

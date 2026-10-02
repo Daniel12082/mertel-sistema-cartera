@@ -1,0 +1,4 @@
+.session-actions { margin-left: auto; display: flex; align-items: center; gap: 16px; }
+.session-actions button { display: flex; align-items: center; gap: 7px; padding: 9px 12px; border: 1px solid #dfe4ec; border-radius: 8px; background: #fff; color: #172033; font-size: 12px; }
+.session-actions button:focus-visible { outline: 2px solid #e30613; outline-offset: 3px; }
+@media (max-width: 700px) { .session-actions > span { display: none; } }

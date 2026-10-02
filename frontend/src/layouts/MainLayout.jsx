@@ -1,4 +1,5 @@
 import { NavLink, Outlet } from "react-router-dom";
+import SessionActions from "../auth/SessionActions";
 import {
   LayoutDashboard,
   Users,
@@ -62,6 +63,7 @@ function MainLayout() {
             <h1>MERTEL</h1>
             <span>Sistema de gestión de cartera</span>
           </div>
+          <SessionActions />
         </header>
 
         <main className="mertel-content">
