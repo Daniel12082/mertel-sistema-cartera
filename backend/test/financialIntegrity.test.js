@@ -47,7 +47,7 @@ describe("financial integrity HTTP / MySQL integration", { skip: !configured }, 
     process.env.DB_NAME = databaseName;
     ({ default: pool } = await import("../src/config/database.js"));
     const { createApp } = await import("../src/app.js");
-    const app = createApp(loadAuthConfig({ JWT_SECRET: randomBytes(48).toString("base64url"), FRONTEND_URL: "http://localhost:5173", NODE_ENV: "test" }));
+    const app = createApp(loadAuthConfig({ JWT_SECRET: randomBytes(48).toString("base64url"), FRONTEND_URL: "http://localhost:5173", AUTH_COOKIE_SAME_SITE: "lax", NODE_ENV: "test" }));
     const password = randomUUID();
     await pool.query("INSERT INTO users (first_name, email, password_hash) VALUES ('Financial test', 'financial-test@example.test', ?)", [await hashPassword(password)]);
     server = await new Promise((resolve) => {

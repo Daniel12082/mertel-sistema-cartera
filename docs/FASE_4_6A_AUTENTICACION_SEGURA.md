@@ -97,8 +97,8 @@ Referencia: [jsonwebtoken](https://github.com/auth0/node-jsonwebtoken).
 
 Refresh opaco de **32 bytes aleatorios** (256 bits, base64url). Solo se devuelve
 en cookie `mertel_refresh`, **HttpOnly**, host-only, Path `/api/auth`, SameSite
-Lax por defecto y Secure en producción. No aparece en JSON y no se acepta
-desde body, query string ni Authorization.
+elegido explícitamente por `AUTH_COOKIE_SAME_SITE` y Secure en producción.
+No aparece en JSON y no se acepta desde body, query string ni Authorization.
 
 La base almacena únicamente SHA-256 del token. Cada login crea una familia de
 sesión independiente; cada refresh bloquea usuario y sesión, comprueba existencia,
@@ -150,11 +150,15 @@ conectividad, sin nombre de base ni datos financieros. Helmet sigue activo.
 
 ## 6. CORS, límites y configuración
 
-`FRONTEND_URL` define uno o más orígenes exactos separados por coma, sin wildcard,
+En producción, `FRONTEND_URL` debe ser únicamente
+`https://mertelimportaciones.com`; el backend rechaza al arrancar cualquier otro
+origen o una lista con varios orígenes. La API es
+`https://api.mertelimportaciones.com`, que no se admite como origen del frontend.
+Desarrollo/test permiten orígenes exactos separados por coma, sin wildcard,
 rutas ni credenciales embebidas. CORS permite cookies (`credentials: true`),
 Content-Type y Authorization, y rechaza orígenes ajenos antes de ejecutar rutas.
-Producción exige HTTPS. Desarrollo local se declara explícitamente en
-`backend/.env.example`; no se codifica un dominio de producción.
+Los ejemplos declaran HTTP local para backend y la URL HTTPS de API para frontend;
+`.env.local` del frontend conserva su URL de desarrollo y no se modifica.
 
 Rate limit exclusivo del login: por IP, **10 fallos / 15 minutos** por defecto,
 HTTP 429 genérico con Retry-After. Los logins exitosos no consumen ese presupuesto.
@@ -207,15 +211,17 @@ Para activar en el entorno real:
 
 1. Ejecutar solo la nueva migración 004 mediante el procedimiento habitual de
    base de datos; no volver a ejecutar la 001.
-2. Configurar JWT_SECRET aleatorio en secret manager o `.env` ignorado y
-   FRONTEND_URL con los orígenes reales; en producción, HTTPS y NODE_ENV=production.
+2. Configurar JWT_SECRET aleatorio en secret manager o `.env` ignorado; en
+   producción, `NODE_ENV=production`, `AUTH_COOKIE_SAME_SITE=lax` y
+   `FRONTEND_URL=https://mertelimportaciones.com`. Servir la API por HTTPS en
+   `https://api.mertelimportaciones.com` y mantener MySQL en la red interna.
 3. Provisionar el primer usuario de forma controlada con un hash Argon2id,
    identidad y contraseña decididas por su dueño, sin valores por defecto.
 4. Reiniciar backend y probar login/me/refresh/logout.
 
 El server falla explícitamente al arrancar si falta la configuración obligatoria;
-no escucha una API financiera sin protección. No se modifica frontend en esta
-fase. Sus pantallas financieras recibirán 401 hasta la integración de login y
+no escucha una API financiera sin protección. En el frontend solo se añade el
+ejemplo ENV de la URL de API. Sus pantallas financieras recibirán 401 hasta la integración de login y
 Bearer prevista para FASE 4.6D; el backend se prueba directamente por HTTP.
 
 ## 9. Archivos de FASE 4.6A
@@ -237,15 +243,17 @@ Bearer prevista para FASE 4.6D; el backend se prueba directamente por HTTP.
 - database/migrations/004_auth_refresh_sessions.sql — tabla de sesiones nueva.
 - docs/FASE_4_6A_AUTENTICACION_SEGURA.md — este reporte.
 
-Son 17 archivos de esta fase. No se modifica fuente financiera FASE 4.5B,
-motor puro FASE 4.3, frontend ni datos de aplicación. La migración 001 conserva
+La implementación inicial incluyó 17 archivos; el cierre añade
+`frontend/.env.example` con `VITE_API_URL=https://api.mertelimportaciones.com/api`.
+No se modifica fuente financiera FASE 4.5B, motor puro FASE 4.3, código del
+frontend ni datos de aplicación. La migración 001 conserva
 su modificación local preexistente y se excluye del commit.
 
 ## 10. Verificación y resultados
 
-- `npm test`: **86/86** aprobadas, sin skips: 30 auth, 37 integridad financiera
+- `npm test`: **90/90** aprobadas, sin skips: 34 auth, 37 integridad financiera
   y 19 cartera/cobranza preexistentes.
-- `npm run test:auth`: **30/30** aprobadas, sin skips.
+- `npm run test:auth`: **34/34** aprobadas, sin skips.
 - `npm run test:financial`: **37/37** aprobadas, sin skips, sobre API autenticada.
 - `npm run lint` frontend: aprobado; backend no tiene lint configurado.
 - `npm run build` frontend: aprobado.
@@ -292,3 +300,96 @@ con varias instancias requerirá rate-limit compartido. Retención/limpieza de
 sesiones expiradas y política de revocación ante futuros cambios de contraseña
 se deben coordinar cuando existan esos flujos. No se borra historial de sesión
 automáticamente en esta fase.
+
+## 12. Cookie y arquitectura final de producción
+
+`AUTH_COOKIE_SAME_SITE` es obligatorio: acepta `lax`, `strict` o `none` en
+minúsculas. Su ausencia o un valor inválido impiden iniciar el backend. El ejemplo
+declara `lax` para desarrollo y producción; se elimina la selección implícita
+del código. Producción utiliza exclusivamente esta arquitectura:
+
+- Frontend: `https://mertelimportaciones.com`.
+- Backend/API: `https://api.mertelimportaciones.com`.
+- MySQL: red interna; no expuesta públicamente. No se configura ni modifica su
+  infraestructura desde este repositorio.
+
+| Despliegue | NODE_ENV | AUTH_COOKIE_SAME_SITE | Secure | HttpOnly |
+| --- | --- | --- | --- | --- |
+| HTTP local, mismo host y distintos puertos | development | lax | false | true |
+| HTTPS, frontend/API finales de MERTEL | production | lax | true | true |
+
+Frontend y API finales tienen orígenes distintos, por lo que requieren CORS,
+pero comparten esquema HTTPS y dominio registrable `mertelimportaciones.com`:
+son same-site y `SameSite=Lax` es compatible con refresh por POST. CORS y
+SameSite son controles distintos; un origen distinto no obliga a usar None.
+En local, no mezclar `localhost` con `127.0.0.1`.
+Referencias: [SameSite en MDN](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Set-Cookie)
+y [same-site frente a same-origin](https://web.dev/articles/same-site-same-origin).
+
+Para producción final, configurar `NODE_ENV=production`,
+`AUTH_COOKIE_SAME_SITE=lax` y `FRONTEND_URL=https://mertelimportaciones.com`.
+Secure es siempre true en producción, sin variable para desactivarlo;
+HttpOnly es siempre true. La validación de None se conserva: `none` se rechaza
+en desarrollo/test porque allí Secure es false; no es la opción del despliegue
+final. Se conservan host-only (cookie de la API, sin Domain) y Path `/api/auth`.
+El frontend deberá activar `credentials: "include"` en fetch o
+`withCredentials: true` en Axios; CORS ya permite credenciales y solo orígenes
+autorizados. Se restringe la configuración de CORS de producción al frontend
+final; se conserva su middleware y el resto de las reglas de autenticación.
+
+Las pruebas verifican encabezados Set-Cookie del servidor y el origen real del
+frontend con solicitudes HTTP de prueba. No simulan la política de cookies de
+un navegador ni un despliegue TLS; esa validación queda para el despliegue e
+integración del frontend. No se publican servicios ni se aplican migraciones
+contra la base real durante este cierre.
+
+Verificación de la revisión previa de cookie: `npm run test:auth` **33/33** y `npm test`
+**89/89**, sin fallos ni omisiones. La matriz cubre NODE_ENV ausente,
+development, test y production, valores SameSite ausentes/inválidos y rechazo
+de None sin Secure. La integración comprueba Lax local y Lax/Strict/None en
+producción durante login, rotación, logout y borrado por refresh rechazado.
+La única adaptación del test financiero es declarar SameSite en su fixture.
+La revisión anterior se mantuvo sin commit hasta recibir esta arquitectura
+final. El usuario ahora autoriza commit `feat: implementar autenticacion segura`
+y push a `origin/main`, condicionados a todas las verificaciones del cierre.
+
+## 13. Cierre con los dominios finales
+
+Resultado del cierre: auth **34/34**, backend completo **90/90**, sin fallos ni
+omisiones. El incremento frente a 33/89 corresponde a un nuevo test de CORS de
+producción: permite el frontend final, rechaza dominios retirados, la URL de la
+API, otros subdominios, localhost y wildcard, y comprueba que un login rechazado
+no emite cookies ni crea sesiones. La matriz de configuración también verifica
+que producción rechace listas de orígenes adicionales o duplicados.
+
+Lint y build del frontend aprobados; se verificó también un build con la URL
+final de API y su presencia en el bundle generado. Para construir el frontend del despliegue,
+definir `VITE_API_URL=https://api.mertelimportaciones.com/api` en el entorno de
+build; el archivo local de desarrollo no se modifica. Los ejemplos ENV no
+contienen secretos ni credenciales iniciales. No existe registro público ni
+recuperación de contraseña; no se provisionan usuarios en la base real.
+Las integraciones ejecutan únicamente sus fixtures existentes en bases
+temporales y aplican allí la migración 004, nunca en la base de aplicación.
+
+Archivos del commit de cierre (solo estos siete):
+
+- `backend/.env.example`.
+- `backend/src/config/auth.js`.
+- `backend/test/auth.test.js`.
+- `backend/test/auth.unit.test.js`.
+- `backend/test/financialIntegrity.test.js` (solo SameSite explícito del fixture).
+- `frontend/.env.example`.
+- `docs/FASE_4_6A_AUTENTICACION_SEGURA.md`.
+
+La migración 001 permanece fuera del commit y conserva el hash Git
+`e2f0b2c49c979991914a187dc9531d9c5d2117ce` de su modificación local anterior.
+La migración 004 se revisa y permanece sin cambios en este cierre. No hay
+referencias activas de producción a los dominios retirados; las únicas
+referencias añadidas son casos negativos de pruebas que deben rechazarlos.
+No se implementan permisos, roles nuevos, aislamiento por empresa, frontend de
+login ni WhatsApp, y no se modifican reglas financieras.
+
+Se realiza `git diff --check` y revisión de diff/status antes del commit,
+se añaden rutas explícitas y se verifica la exclusión de la migración 001 en el
+índice. El hash del commit y el resultado del push se entregan en el reporte
+final; no se incrustan en el propio commit.

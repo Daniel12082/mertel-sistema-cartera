@@ -30,9 +30,15 @@ export function loadAuthConfig(env = process.env) {
       throw new Error("FRONTEND_URL debe contener orígenes exactos; HTTPS en producción");
     }
   }
-  const sameSite = env.AUTH_COOKIE_SAME_SITE ?? "lax";
-  if (!["lax", "strict", "none"].includes(sameSite) || (sameSite === "none" && !production)) {
-    throw new Error("AUTH_COOKIE_SAME_SITE inválido; none requiere cookie Secure en producción");
+  if (production && (origins.length !== 1 || origins[0] !== "https://mertelimportaciones.com")) {
+    throw new Error("FRONTEND_URL en producción debe ser únicamente https://mertelimportaciones.com");
+  }
+  const sameSite = env.AUTH_COOKIE_SAME_SITE;
+  if (!["lax", "strict", "none"].includes(sameSite)) {
+    throw new Error("AUTH_COOKIE_SAME_SITE es obligatorio y debe ser lax, strict o none");
+  }
+  if (sameSite === "none" && !production) {
+    throw new Error("AUTH_COOKIE_SAME_SITE=none requiere Secure; solo se admite con NODE_ENV=production");
   }
   const issuer = env.JWT_ISSUER ?? "mertel-api";
   const audience = env.JWT_AUDIENCE ?? "mertel-access";

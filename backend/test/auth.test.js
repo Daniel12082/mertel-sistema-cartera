@@ -17,7 +17,7 @@ describe("secure authentication HTTP / MySQL integration", { skip: !configured }
   const password = randomBytes(24).toString("base64url");
   const secret = randomBytes(48).toString("base64url");
   const origin = "http://localhost:5173";
-  const config = loadAuthConfig({ JWT_SECRET: secret, FRONTEND_URL: origin, AUTH_RATE_LIMIT_MAX: "1000", NODE_ENV: "test" });
+  const config = loadAuthConfig({ JWT_SECRET: secret, FRONTEND_URL: origin, AUTH_COOKIE_SAME_SITE: "lax", AUTH_RATE_LIMIT_MAX: "1000", NODE_ENV: "test" });
   const logs = [];
   const logMethods = {};
   let admin;
@@ -114,6 +114,7 @@ describe("secure authentication HTTP / MySQL integration", { skip: !configured }
     assert.equal(result.headers.get("cache-control"), "no-store");
     const cookie = result.headers.getSetCookie()[0];
     assert.match(cookie, /HttpOnly/); assert.match(cookie, /SameSite=Lax/); assert.match(cookie, /Path=\/api\/auth/);
+    assert.doesNotMatch(cookie, /; Secure(?:;|$)/);
     assertNoSecrets(result, [cookieToken(result.cookie)]);
     const [rows] = await pool.query("SELECT token_hash, revoked_at FROM auth_refresh_sessions WHERE user_id=?", [userId]);
     assert.equal(rows.length, 1); assert.equal(rows[0].token_hash, cookieHash(result.cookie));
@@ -250,18 +251,72 @@ describe("secure authentication HTTP / MySQL integration", { skip: !configured }
       await assertStatus("POST", path, { cookie: s.cookie, headers: { "Sec-Fetch-Site": "cross-site" } }, 403);
     }
   });
-  test("production response marks refresh cookie Secure; Helmet headers remain enabled", async () => {
-    const production = createApp(loadAuthConfig({ JWT_SECRET: secret, FRONTEND_URL: "https://mertel.example", NODE_ENV: "production" }));
-    const listener = await serve(production);
+  for (const [nodeEnv, sameSite] of [["development", "lax"], ["production", "lax"], ["production", "strict"], ["production", "none"]]) {
+    test(`refresh cookie attributes on login/rotation/clear: ${nodeEnv}, SameSite=${sameSite}`, async () => {
+      const frontendOrigin = nodeEnv === "production" ? "https://mertelimportaciones.com" : origin;
+      const app = createApp(loadAuthConfig({ JWT_SECRET: secret, FRONTEND_URL: frontendOrigin,
+        NODE_ENV: nodeEnv, AUTH_COOKIE_SAME_SITE: sameSite }));
+      const listener = await serve(app);
+      const url = `http://127.0.0.1:${listener.address().port}`;
+      // Node fetch checks server headers here; it does not enforce browser cookie policies or HTTPS.
+      function assertCookie(result) {
+        const cookie = result.headers.getSetCookie()[0];
+        assert.match(cookie, /; HttpOnly(?:;|$)/);
+        assert.match(cookie, /; Path=\/api\/auth(?:;|$)/);
+        assert.match(cookie, new RegExp(`; SameSite=${sameSite[0].toUpperCase()}${sameSite.slice(1)}(?:;|$)`));
+        assert.doesNotMatch(cookie, /; Domain=/);
+        if (nodeEnv === "production") assert.match(cookie, /; Secure(?:;|$)/);
+        else assert.doesNotMatch(cookie, /; Secure(?:;|$)/);
+      }
+      try {
+        const s = await request("POST", "/api/auth/login", { url, body: { email, password }, headers: { Origin: frontendOrigin } });
+        assert.equal(s.status, 200); assertCookie(s);
+        assert.equal(s.headers.get("access-control-allow-origin"), frontendOrigin);
+        assert.equal(s.headers.get("access-control-allow-credentials"), "true");
+        assert.equal(s.headers.get("x-content-type-options"), "nosniff");
+        assert.ok(s.headers.get("content-security-policy"));
+        const cookie = s.headers.getSetCookie()[0].split(";")[0];
+        const headers = { Origin: frontendOrigin, "Sec-Fetch-Site": "same-site" };
+        const rotated = await assertStatus("POST", "/api/auth/refresh", { url, cookie, headers }, 200);
+        assertCookie(rotated);
+        const nextCookie = rotated.headers.getSetCookie()[0].split(";")[0];
+        assert.notEqual(nextCookie, cookie);
+        const cleared = await assertStatus("POST", "/api/auth/logout", { url, cookie: nextCookie, headers }, 200);
+        assertCookie(cleared);
+        assert.match(cleared.headers.getSetCookie()[0], /Expires=Thu, 01 Jan 1970/);
+        const expired = await assertStatus("POST", "/api/auth/refresh", { url, cookie: nextCookie, headers }, 401);
+        assertCookie(expired);
+        assert.match(expired.headers.getSetCookie()[0], /Expires=Thu, 01 Jan 1970/);
+      } finally { await new Promise(resolve => listener.close(resolve)); }
+    });
+  }
+  test("production CORS admits only the final frontend and rejects other origins before login", async () => {
+    const frontendOrigin = "https://mertelimportaciones.com";
+    const app = createApp(loadAuthConfig({ JWT_SECRET: secret, FRONTEND_URL: frontendOrigin,
+      NODE_ENV: "production", AUTH_COOKIE_SAME_SITE: "lax" }));
+    const listener = await serve(app);
+    const url = `http://127.0.0.1:${listener.address().port}`;
     try {
-      const s = await session({}, `http://127.0.0.1:${listener.address().port}`);
-      assert.match(s.headers.getSetCookie()[0], /; Secure/);
-      assert.equal(s.headers.get("x-content-type-options"), "nosniff");
-      assert.ok(s.headers.get("content-security-policy"));
+      const preflight = await fetch(`${url}/api/auth/refresh`, { method: "OPTIONS", headers: {
+        Origin: frontendOrigin, "Access-Control-Request-Method": "POST", "Access-Control-Request-Headers": "content-type",
+      } });
+      assert.equal(preflight.status, 204);
+      assert.equal(preflight.headers.get("access-control-allow-origin"), frontendOrigin);
+      assert.equal(preflight.headers.get("access-control-allow-credentials"), "true");
+      for (const deniedOrigin of ["*", "https://mertel.hostifycol.com", "https://api.mertel.hostifycol.com",
+        "https://api.mertelimportaciones.com", "https://www.mertelimportaciones.com", origin, "https://untrusted.example"]) {
+        const denied = await assertStatus("POST", "/api/auth/login", {
+          url, body: { email, password }, headers: { Origin: deniedOrigin },
+        }, 403);
+        assert.equal(denied.headers.get("access-control-allow-origin"), null);
+        assert.equal(denied.headers.getSetCookie().length, 0);
+      }
+      const [sessions] = await pool.query("SELECT COUNT(*) AS count FROM auth_refresh_sessions WHERE user_id=?", [userId]);
+      assert.equal(sessions[0].count, 0);
     } finally { await new Promise(resolve => listener.close(resolve)); }
   });
   test("login-specific rate limit counts failures and leaves health/financial routes available", async () => {
-    const app = createApp(loadAuthConfig({ JWT_SECRET: secret, FRONTEND_URL: origin, AUTH_RATE_LIMIT_MAX: "2", NODE_ENV: "test" }));
+    const app = createApp(loadAuthConfig({ JWT_SECRET: secret, FRONTEND_URL: origin, AUTH_COOKIE_SAME_SITE: "lax", AUTH_RATE_LIMIT_MAX: "2", NODE_ENV: "test" }));
     const listener = await serve(app); const url = `http://127.0.0.1:${listener.address().port}`;
     try {
       const valid = await session({}, url);
