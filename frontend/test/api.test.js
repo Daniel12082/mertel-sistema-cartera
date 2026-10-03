@@ -11,6 +11,30 @@ function unauthorized(config) {
   return Promise.reject(new AxiosError("Unauthorized", "ERR_BAD_REQUEST", config, {}, response(config, {}, 401)));
 }
 beforeEach(() => { clearSession(); });
+describe("API environment", () => {
+  it("rejects missing or unsafe production API configuration", async () => {
+    try {
+      for (const value of [undefined, "http://localhost:3000", "https://user:password@example.test", "https://api.mertelimportaciones.com/api?key=example"]) {
+        vi.resetModules(); vi.stubEnv("PROD", true); vi.stubEnv("VITE_API_URL", value);
+        await expect(import("../src/services/api")).rejects.toThrow(/VITE_API_URL/);
+      }
+    } finally { vi.unstubAllEnvs(); vi.resetModules(); }
+  });
+  it("preserves the production /api compatibility and local development fallback", async () => {
+    try {
+      for (const [production, value, expected] of [
+        [true, "https://api.mertelimportaciones.com", "https://api.mertelimportaciones.com/api"],
+        [true, "https://api.mertelimportaciones.com/api/", "https://api.mertelimportaciones.com/api"],
+        [false, undefined, "http://localhost:3000/api"],
+      ]) {
+        vi.resetModules(); vi.stubEnv("PROD", production); vi.stubEnv("VITE_API_URL", value);
+        const { default: configuredApi } = await import("../src/services/api");
+        expect(configuredApi.defaults.baseURL).toBe(expected);
+        expect(configuredApi.defaults.withCredentials).toBe(true);
+      }
+    } finally { vi.unstubAllEnvs(); vi.resetModules(); }
+  });
+});
 describe("centralized authentication", () => {
   it("uses credentials and keeps the session only in memory after login and /me", async () => {
     const requests = [];
@@ -68,6 +92,29 @@ describe("centralized authentication", () => {
     const adapter = vi.fn(config => Promise.reject(new AxiosError("Forbidden", "ERR_BAD_REQUEST", config, {}, response(config, {}, 403))));
     api.defaults.adapter = adapter; await expect(api.get("/admin/roles")).rejects.toBeTruthy();
     expect(adapter).toHaveBeenCalledTimes(1); expect(getSession()).not.toBeNull();
+  });
+  it("does not expose the Bearer token through a rejected request's diagnostic metadata", async () => {
+    const token = "disposable-sensitive-access";
+    acceptSession(sessionData(token));
+    api.defaults.adapter = config => Promise.reject(new AxiosError("Forbidden", "ERR_BAD_REQUEST", config,
+      { diagnosticHeader: config.headers.get("Authorization") }, response(config, {}, 403)));
+    const failure = await api.get("/customers").catch(error => error);
+    expect(failure.response.status).toBe(403);
+    expect(failure.config.headers.get("Authorization")).toBeUndefined();
+    expect(failure.response.config.headers.get("Authorization")).toBeUndefined();
+    expect(failure.request).toBeUndefined();
+    expect(JSON.stringify(failure.toJSON())).not.toContain(token);
+    expect(getSession().accessToken).toBe(token);
+  });
+  it("does not expose the login password through a rejected request's diagnostic metadata", async () => {
+    const password = "disposable-sensitive-password";
+    api.defaults.adapter = config => unauthorized(config);
+    const failure = await loginSession(user.email, password).catch(error => error);
+    expect(failure.response.status).toBe(401);
+    expect(failure.config.data).toBeUndefined();
+    expect(failure.response.config.data).toBeUndefined();
+    expect(JSON.stringify(failure.toJSON())).not.toContain(password);
+    expect(getSession()).toBeNull();
   });
   it("logs out with credentials and clears memory even on a connection failure", async () => {
     acceptSession(sessionData("access"));

@@ -1,7 +1,16 @@
 import axios from "axios";
 
 // Support the documented origin and existing configurations ending in /api.
-const origin = (import.meta.env.VITE_API_URL || "http://localhost:3000").replace(/\/+$/, "");
+const configuredOrigin = import.meta.env.VITE_API_URL?.trim();
+if (import.meta.env.PROD && !configuredOrigin) throw new Error("VITE_API_URL es obligatorio en producción");
+const origin = (configuredOrigin || "http://localhost:3000").replace(/\/+$/, "");
+let apiUrl;
+try { apiUrl = new URL(origin); }
+catch { throw new Error("VITE_API_URL debe ser un origen HTTP/HTTPS válido, opcionalmente terminado en /api"); }
+if (!["http:", "https:"].includes(apiUrl.protocol) || apiUrl.username || apiUrl.password || apiUrl.search || apiUrl.hash ||
+    !["/", "/api"].includes(apiUrl.pathname) || (import.meta.env.PROD && apiUrl.protocol !== "https:")) {
+  throw new Error("VITE_API_URL debe ser un origen sin credenciales; HTTPS en producción y prefijo /api opcional");
+}
 const api = axios.create({
   baseURL: origin.endsWith("/api") ? origin : `${origin}/api`,
   withCredentials: true, timeout: 15000,
@@ -90,5 +99,23 @@ api.interceptors.response.use(response => response, async error => {
   if (config.headers.get("Authorization") === `Bearer ${session.accessToken}`) await refreshSession();
   if (!session || config.sessionRevision !== revision) throw error;
   return api(config);
+});
+// Sanitize only after refresh/retry has finished; callers may log Axios errors.
+api.interceptors.response.use(undefined, error => {
+  if (axios.isAxiosError(error)) {
+    const redactConfig = config => {
+      if (!config) return config;
+      const safe = { ...config, headers: new axios.AxiosHeaders(config.headers) };
+      safe.headers.delete("Authorization");
+      safe.headers.delete("Cookie");
+      delete safe.auth;
+      delete safe.data;
+      return safe;
+    };
+    error.config = redactConfig(error.config);
+    if (error.response) error.response = { ...error.response, config: redactConfig(error.response.config) };
+    error.request = undefined;
+  }
+  return Promise.reject(error);
 });
 export default api;

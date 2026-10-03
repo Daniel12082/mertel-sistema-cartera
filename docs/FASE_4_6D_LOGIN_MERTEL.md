@@ -45,6 +45,47 @@ Capturas de revisión en `tmp/login-desktop.png`, `tmp/login-tablet.png`, `tmp/l
 
 ## Git
 
-Commit previsto: `feat: implementar login de MERTEL`; push a `origin main` según la solicitud. El hash y resultado definitivo se reportan en el chat después de ejecutar ambas operaciones.
+Commit de implementación verificado: `066118ee78906de23855b979c30ab3f85a5fecdc`, `feat: implementar login de MERTEL`. Está incluido en `origin/main`, cuyo HEAD remoto al iniciar la auditoría de cierre es `8609585e74caf075b85db2e0beb384f675d008c0`.
 
 El repositorio tenía cambios locales previos en backend, migraciones y configuración de roles. El chat concurrente de FASE 4.6B terminó su commit `631c6d1` y push antes de preparar el commit de login, excluyendo los cambios de esta fase. FASE 4.6D se apoya sobre ese commit y conserva su configuración y componentes base. Solo se incluyen los cambios de login. La modificación previa de `database/migrations/001_initial_schema.sql` permanece fuera del commit y no fue editada.
+
+## Auditoría de cierre — 2 de octubre de 2026
+
+Estado: COMPLETA CON OBSERVACIONES. El propietario autorizó expresamente el cierre y el commit selectivo de las correcciones verificadas. La prueba funcional con el administrador real continúa pendiente; no se presenta como realizada.
+
+### Alcance y hallazgos
+
+Se revisaron LoginPage, LoginForm, PasswordField, ProtectedRoute/SessionLoading, SessionActions, AuthProvider/AuthContext/useAuth, main.jsx, App.jsx, MainLayout, servicios de auth/API, ejemplos de entorno y pruebas de frontend. En backend se revisaron app.js, configuración auth, rutas/controladores/servicios/modelos auth, middleware de autenticación/permisos y hashing de contraseñas. No se editaron backend, módulos financieros, cobranza, esquema, usuarios ni contraseñas.
+
+La sesión procede de login y /me o de refresh validado por el servidor. ProtectedRoute controla navegación, mientras el backend exige JWT, usuario activo y permisos; todos los montajes financieros rechazan llamadas directas sin autenticación. Las credenciales incorrectas y usuarios inactivos/eliminados reciben el mismo 401 genérico. Los 403 no provocan refresh. El access token permanece en memoria, sin localStorage/sessionStorage.
+
+La cookie refresh es HttpOnly, host-only y Path=/api/auth. Secure es obligatorio en producción; SameSite se configura explícitamente mediante ENV. Para https://mertelimportaciones.com y https://api.mertelimportaciones.com corresponde lax: son cross-origin pero same-site. CORS admite únicamente el frontend final en producción y permite credentials. La rotación mantiene la expiración absoluta y detecta reutilización. Logout revoca la familia refresh y elimina la cookie; un access JWT ya emitido puede seguir siendo válido hasta su expiración si el usuario permanece activo. No se cambió esta regla.
+
+Se detectaron dos fallas directamente relacionadas con el cliente auth: los errores Axios retenían Authorization/cuerpo de login en sus metadatos, y una configuración de producción sin VITE_API_URL podía utilizar el fallback local.
+
+### Correcciones
+
+- services/api.js elimina Authorization, Cookie, auth, cuerpo y objeto request de los metadatos de errores Axios que llegan a los consumidores. Se aplica después del manejo de refresh/reintento para preservar ese flujo; mantiene status y respuesta de error. No se editaron los módulos que imprimen errores.
+- services/api.js exige VITE_API_URL en producción y HTTPS; valida origen sin credenciales, query, fragmento ni rutas ajenas al prefijo opcional /api. Conserva el fallback http://localhost:3000 solo en desarrollo y la compatibilidad con URLs terminadas en /api.
+- frontend/.env.example documenta esas restricciones, sin modificar archivos .env locales.
+- test/api.test.js añade cuatro pruebas necesarias para estas fallas: metadatos sin Bearer, errores sin contraseña, rechazo de configuración insegura y compatibilidad de configuración válida. Las dos pruebas de filtración fallaron sobre la implementación previa y pasaron después de la corrección.
+
+### Verificación ejecutada
+
+- Backend completo, npm test: 138/138, sin fallos ni omisiones; incluye auth, autorización, aislamiento empresarial y regresiones existentes. Integración MySQL en esquemas temporales generados y retirados por las pruebas, sin migraciones sobre la base de aplicación.
+- Frontend final, npm test: 25/25 en dos archivos.
+- E2E final, npm run test:e2e: 6/6 Chromium; API simulada. Incluye login/me, recuperación al recargar, logout, redirecciones, campos, teclado y cuatro tamaños de pantalla. No sustituye la prueba del administrador real.
+- npm run lint: correcto.
+- npm run build con VITE_API_URL=https://api.mertelimportaciones.com: correcto; el bundle contiene ese origen. No se desplegó producción.
+- git diff --check: correcto al revisar las correcciones; el cambio previo de 001 permanece intacto.
+- Revisión de secretos: comparación del JWT_SECRET y DB_PASSWORD locales contra 123 archivos versionados actuales y 1417 blobs de historial accesible, además de patrones de claves privadas y tokens conocidos. No se encontraron esos secretos ni credenciales reales en el alcance revisado; la coincidencia de clave privada en documentación histórica de dotenv corresponde a ejemplos incompletos con puntos suspensivos. Los archivos .env locales no están versionados. Este escaneo no certifica la ausencia de cualquier formato posible de secreto.
+
+### Prueba funcional local y pendientes
+
+Se inició temporalmente el API en loopback:3000 con NODE_ENV=development, origen http://localhost:5173 y SameSite=lax suministrados únicamente al proceso. El frontend local apunta al API local. No se modificaron .env ni producción. La página de login abrió correctamente y un intento inválido contra el backend real mostró el mensaje genérico esperado.
+
+Se verificaron además llamadas GET directas sin Bearer a /api/auth/me, customers, invoices, payments, payments/1/allocations, portfolio, admin/roles y admin/companies: las ocho devolvieron 401. El preflight local de refresh devolvió 204, origen explícito y credentials=true.
+
+El acceso válido con el administrador existente requiere que el propietario introduzca su contraseña directamente en el navegador. Se dejó el formulario preparado y se solicitó ese paso; no se conoce, solicita por chat, imprime ni cambia su contraseña. Hasta completar ese paso, siguen pendientes el panel real, /me, recarga y logout de esa identidad. Las comprobaciones automatizadas de esos flujos ya pasaron con fixtures/API simulada.
+
+El propietario autorizó expresamente un commit selectivo y push a origin/main con el mensaje feat: cerrar login y gestion de sesion. Solo se incluyen frontend/src/services/api.js, frontend/test/api.test.js, frontend/.env.example y este informe. El cambio local previo de database/migrations/001_initial_schema.sql permanece intacto y excluido; no se ejecuta git add . ni se revierte o stagea ese archivo. El hash y la confirmación del push se entregan en el reporte de cierre.
