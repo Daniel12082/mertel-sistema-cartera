@@ -5,13 +5,13 @@ import jwt from "jsonwebtoken";
 import { loadAuthConfig } from "../src/config/auth.js";
 import { hashPassword, verifyPassword } from "../src/utils/password.js";
 import { issueAccessToken, verifyAccessToken } from "../src/services/auth.service.js";
-const env = { JWT_SECRET: randomBytes(48).toString("base64url"), FRONTEND_URL: "http://localhost:5173", AUTH_COOKIE_SAME_SITE: "lax" };
+const env = { JWT_SECRET: randomBytes(48).toString("base64url"), FRONTEND_URL: "http://localhost:5173", AUTH_COOKIE_SAME_SITE: "lax", NODE_ENV: "test" };
 const config = loadAuthConfig(env);
 test("auth requires explicit secret and origin; invalid values fail closed", () => {
   for (const invalid of [{ JWT_SECRET: undefined }, { JWT_SECRET: "short" }, { FRONTEND_URL: "" },
     { FRONTEND_URL: "*" }, { FRONTEND_URL: "http://localhost:5173/path" }, { FRONTEND_URL: "https://user:pass@example.test" },
     { JWT_ACCESS_EXPIRES_IN: "0m" }, { JWT_ACCESS_EXPIRES_IN: "2h" }, { AUTH_REFRESH_EXPIRES_IN: "91d" },
-    { AUTH_COOKIE_SAME_SITE: undefined }, { AUTH_COOKIE_SAME_SITE: "" }, { AUTH_COOKIE_SAME_SITE: "Lax" },
+    { AUTH_COOKIE_SAME_SITE: undefined }, { AUTH_COOKIE_SAME_SITE: "" },
     { AUTH_COOKIE_SAME_SITE: "invalid" }, { AUTH_COOKIE_SAME_SITE: "none" },
     { AUTH_RATE_LIMIT_MAX: "0" }, { TRUST_PROXY_HOPS: "true" }, { NODE_ENV: "Production" }]) {
     assert.throws(() => loadAuthConfig({ ...env, ...invalid }));
@@ -31,7 +31,11 @@ test("explicit SameSite preserves HttpOnly and enforces Secure according to NODE
           httpOnly: true, secure: nodeEnv === "production", sameSite, path: "/api/auth",
         });
       }
-      assert.throws(() => loadAuthConfig({ ...settings, AUTH_COOKIE_SAME_SITE: undefined }), /AUTH_COOKIE_SAME_SITE es obligatorio/);
+      if (nodeEnv === "test" || nodeEnv === "production") {
+        assert.throws(() => loadAuthConfig({ ...settings, AUTH_COOKIE_SAME_SITE: undefined }), /AUTH_COOKIE_SAME_SITE es obligatorio/);
+      } else {
+        assert.equal(loadAuthConfig({ ...settings, AUTH_COOKIE_SAME_SITE: undefined }).cookieOptions.sameSite, "lax");
+      }
     }
   }
   for (const origin of ["*", "https://mertel.hostifycol.com", "https://api.mertel.hostifycol.com",
@@ -39,6 +43,32 @@ test("explicit SameSite preserves HttpOnly and enforces Secure according to NODE
     "https://mertelimportaciones.com,https://untrusted.example", "https://mertelimportaciones.com,https://mertelimportaciones.com"]) {
     assert.throws(() => loadAuthConfig({ ...env, NODE_ENV: "production", FRONTEND_URL: origin }));
   }
+});
+
+test("local defaults only apply in development and keep explicit invalid values rejected", () => {
+  for (const nodeEnv of [undefined, "development"]) {
+    const local = loadAuthConfig({ JWT_SECRET: env.JWT_SECRET, NODE_ENV: nodeEnv });
+    assert.deepEqual(local.origins, ["http://localhost:5173"]);
+    assert.deepEqual(local.cookieOptions, { httpOnly: true, secure: false, sameSite: "lax", path: "/api/auth" });
+    assert.throws(() => loadAuthConfig({ JWT_SECRET: env.JWT_SECRET, NODE_ENV: nodeEnv, FRONTEND_URL: "" }), /FRONTEND_URL/);
+    assert.throws(() => loadAuthConfig({ JWT_SECRET: env.JWT_SECRET, NODE_ENV: nodeEnv, AUTH_COOKIE_SAME_SITE: "" }), /AUTH_COOKIE_SAME_SITE/);
+    assert.throws(() => loadAuthConfig({ JWT_SECRET: env.JWT_SECRET, NODE_ENV: nodeEnv, AUTH_COOKIE_SAME_SITE: "None" }), /none requiere Secure/);
+  }
+  assert.equal(loadAuthConfig({ ...env, AUTH_COOKIE_SAME_SITE: "Lax" }).cookieOptions.sameSite, "lax");
+});
+
+test("production has no local fallback and accepts explicit None only with Secure and HttpOnly", () => {
+  const productionEnv = { JWT_SECRET: env.JWT_SECRET, NODE_ENV: "production", FRONTEND_URL: "https://mertelimportaciones.com", AUTH_COOKIE_SAME_SITE: "None" };
+  const production = loadAuthConfig(productionEnv);
+  assert.deepEqual(production.origins, ["https://mertelimportaciones.com"]);
+  assert.deepEqual(production.cookieOptions, { httpOnly: true, secure: true, sameSite: "none", path: "/api/auth" });
+  for (const field of ["FRONTEND_URL", "AUTH_COOKIE_SAME_SITE"]) {
+    for (const missing of [undefined, ""]) assert.throws(() => loadAuthConfig({ ...productionEnv, [field]: missing }));
+  }
+  for (const origin of ["http://localhost:5173", "*", "http://mertelimportaciones.com"]) {
+    assert.throws(() => loadAuthConfig({ ...productionEnv, FRONTEND_URL: origin }));
+  }
+  assert.throws(() => loadAuthConfig({ ...productionEnv, AUTH_COOKIE_SAME_SITE: "invalid" }));
 });
 test("password hashing uses salted Argon2id; mismatches/legacy formats fail safely", async () => {
   const first = await hashPassword("temporary-test-pass"); const second = await hashPassword("temporary-test-pass");

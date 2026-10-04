@@ -24,7 +24,7 @@ describe("multi-company HTTP / MySQL isolation", { skip: !(process.env.DB_HOST &
       password: process.env.DB_PASSWORD, multipleStatements: true });
     await db.query(`CREATE DATABASE \`${databaseName}\``); await db.query(`USE \`${databaseName}\``);
     const schema = await readFile(new URL("../../database/migrations/001_initial_schema.sql", import.meta.url), "utf8");
-    const tables = new Set(["companies","roles","users","user_roles","customers","invoices","payments","payment_allocations","payment_promises","audit_logs","settings","message_templates"]);
+    const tables = new Set(["companies","roles","users","user_roles","customers","invoices","payments","payment_allocations","payment_promises","audit_logs","settings","message_templates","messages","collection_actions"]);
     for (const match of schema.matchAll(/CREATE TABLE (\w+) \([\s\S]*?;/g)) if (tables.has(match[1])) await db.query(match[0]);
     await db.query("INSERT INTO roles (name) VALUES ('admin'),('supervisor'),('collector')");
     for (const file of ["002_payment_allocations_soft_delete.sql", "003_active_payment_invoice_allocation_unique.sql"]) {
@@ -184,7 +184,7 @@ describe("multi-company HTTP / MySQL isolation", { skip: !(process.env.DB_HOST &
   test("NULL company never grants global scope to collector/supervisor or a roleless user", async () => {
     for (const actor of [unassigned,await user(null,"supervisor"),await user(null,null)]) {
       await expect("GET","/auth/me",actor,200);
-      for (const path of ["/customers","/invoices","/payments","/portfolio?reference_date=2026-10-02","/portfolio/reconciliation"]) {
+      for (const path of ["/customers","/invoices","/payments","/portfolio?reference_date=2026-10-02","/portfolio/reconciliation","/collection?reference_date=2026-10-02"]) {
         await expect("GET",path,actor,403);
       }
       await expect("POST","/payments",actor,403,paymentBody(a.customer,{company_id:a.companyId}));
@@ -297,6 +297,58 @@ describe("multi-company HTTP / MySQL isolation", { skip: !(process.env.DB_HOST &
     assert.equal(evaluateCompanyCollection({...input,rules:rulesA})[0].eligible,true);
     assert.equal(evaluateCompanyCollection({...input,rules:rulesB})[0].eligible,false);
     assert.throws(()=>evaluateCompanyCollection({...input,rules:rulesA,invoices:[{...input.invoices[0],company_id:b.companyId}]}));
+  });
+  test("collection endpoint groups authorized pending invoices, honors configured rules and stays read-only", async () => {
+    const rules = [
+      { key: "two_days_before", active: true, priority: 10, days_before_due: 2 },
+      { key: "overdue", active: true, priority: 20, condition: "overdue" },
+    ];
+    await db.query("INSERT INTO settings (company_id,setting_key,setting_value,value_type) VALUES (?, 'collection_rules', ?, 'json')", [a.companyId, JSON.stringify(rules)]);
+    const [noDue] = await db.query("INSERT INTO invoices (company_id,customer_id,invoice_number,document_value,base_value,iva_value,balance,due_date) VALUES (?,?,'no-due',25,25,0,25,NULL)", [a.companyId, a.customer]);
+    const [zero] = await db.query("INSERT INTO invoices (company_id,customer_id,invoice_number,document_value,base_value,iva_value,balance,due_date) VALUES (?,?,'zero',0,0,0,0,'2026-09-30')", [a.companyId, a.customer]);
+    const untouched = await financialState();
+    const activityCounts = async () => {
+      const counts = {};
+      for (const table of ["collection_actions", "messages", "payment_promises"]) {
+        const [[row]] = await db.query(`SELECT COUNT(*) AS total FROM \`${table}\``); counts[table] = row.total;
+      }
+      return counts;
+    };
+    const beforeActivities = await activityCounts();
+    const path = "/collection?reference_date=2026-10-02";
+    const response = await expect("GET", path, a, 200);
+    assert.equal(response.reference_date, "2026-10-02");
+    assert.equal(response.status, "ready");
+    assert.equal(response.summary.total_balance, "125.00");
+    assert.equal(response.summary.eligible_balance, "100.00");
+    assert.equal(response.customers.length, 1);
+    assert.equal(response.customers[0].stage, "two_days_before");
+    assert.equal(response.customers[0].total_balance, "125.00");
+    assert.equal(response.customers[0].eligible_balance, "100.00");
+    assert.equal(response.customers[0].invoices.length, 2);
+    assert.equal(response.customers[0].invoices.find(item => item.invoice.invoice_id === noDue.insertId).stage, "no_eligible");
+    assert.equal(response.customers[0].invoices.some(item => item.invoice.invoice_id === zero.insertId), false);
+    assert.deepEqual(await expect("GET", `/collection?reference_date=2026-10-02&company_id=${b.companyId}`, a, 200), response);
+    assert.deepEqual(await expect("GET", `/collection?reference_date=2026-10-02&company_id=${a.companyId}`, global, 200), response);
+    assert.equal((await request("GET", "/collection", { token: a.token })).status, 400);
+    assert.equal((await request("GET", "/collection?reference_date=2026-02-30", { token: a.token })).status, 400);
+    assert.deepEqual(await financialState(), untouched);
+    assert.deepEqual(await activityCounts(), beforeActivities);
+  });
+  test("collection rejects missing permission and requires explicit company scope for a global admin", async () => {
+    const roleless = await user(a.companyId, null);
+    assert.equal((await request("GET", "/collection?reference_date=2026-10-02", { token: roleless.token })).status, 403);
+    assert.equal((await request("GET", "/collection?reference_date=2026-10-02", { token: global.token })).status, 400);
+    const collector = await user(a.companyId, "collector");
+    assert.equal((await request("GET", "/collection?reference_date=2026-10-02", { token: collector.token })).status, 200);
+  });
+  test("collection does not inherit legacy NULL rules and reports missing company configuration", async () => {
+    await db.query("INSERT INTO settings (company_id,setting_key,setting_value,value_type) VALUES (NULL,'collection_rules',?,'json')", [JSON.stringify([{ key: "legacy", active: true, priority: 999, condition: "overdue" }])]);
+    const result = await expect("GET", "/collection?reference_date=2026-10-02", a, 200);
+    assert.equal(result.status, "no_rules_configured");
+    assert.equal(result.rules_configured, false);
+    assert.match(result.message, /No hay reglas/);
+    assert.deepEqual(result.customers, []);
   });
   test("authentication audits retain real company context and global events retain NULL", async () => {
     const [rows]=await db.query("SELECT company_id,user_id FROM audit_logs WHERE action='login_success' AND user_id IN (?,?,?)",[a.id,b.id,global.id]);

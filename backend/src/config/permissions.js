@@ -6,7 +6,7 @@ const entries = [
   ["payments", "Pagos", [["view", "Ver pagos", true], ["create", "Crear pagos", true], ["update", "Editar pagos", true], ["delete", "Eliminar pagos", true]]],
   ["payment_allocations", "Asignaciones", [["view", "Ver asignaciones", true], ["create", "Crear asignaciones", true], ["reverse", "Reversar asignaciones", true]]],
   ["portfolio", "Cartera", [["view", "Ver cartera, resumen y conciliación", true], ["export", "Exportar cartera", false]]],
-  ["collection", "Cobranza", [["view", "Ver cobranza", false], ["manage", "Gestionar cobranza", false]]],
+  ["collection", "Cobranza", [["view", "Ver cobranza", true], ["manage", "Gestionar cobranza", false]]],
   ["reports", "Reportes", [["view", "Ver reportes", false], ["export", "Exportar reportes", false]]],
   ["history", "Historial", [["view", "Ver historial; collector limitado a su propia actividad", false]]],
   ["messages", "Mensajes", [["view", "Ver mensajes", false], ["manage", "Gestionar mensajes", false]]],
@@ -18,9 +18,9 @@ export const PERMISSIONS = Object.freeze(entries.flatMap(([module, moduleLabel, 
   operations.map(([action, description, implemented]) => Object.freeze({ name: `${module}.${action}`, module, moduleLabel, description, implemented }))));
 const supervisor = ["customers.view", "customers.update", "invoices.view", "invoices.update",
   "payments.view", "payments.create", "payments.update", "payment_allocations.view", "payment_allocations.create", "payment_allocations.reverse",
-  "portfolio.view", "portfolio.export", "collection.manage", "reports.view", "reports.export", "history.view", "messages.view", "messages.manage"];
+  "portfolio.view", "portfolio.export", "collection.view", "collection.manage", "reports.view", "reports.export", "history.view", "messages.view", "messages.manage"];
 const collector = ["customers.view", "invoices.view", "payments.view", "payments.create", "payment_allocations.view", "payment_allocations.create",
-  "portfolio.view", "collection.manage", "reports.view", "history.view", "messages.manage"];
+  "portfolio.view", "collection.view", "collection.manage", "reports.view", "history.view", "messages.manage"];
 export const ROLE_PERMISSIONS = Object.freeze({
   admin: Object.freeze(PERMISSIONS.map(permission => permission.name)),
   supervisor: Object.freeze(supervisor), collector: Object.freeze(collector),

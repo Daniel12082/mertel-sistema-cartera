@@ -24,7 +24,7 @@ describe("role authorization and internal admin provisioning HTTP / MySQL", { sk
       password: process.env.DB_PASSWORD, multipleStatements: true });
     await db.query(`CREATE DATABASE \`${databaseName}\``); await db.query(`USE \`${databaseName}\``);
     const schema = await readFile(new URL("../../database/migrations/001_initial_schema.sql", import.meta.url), "utf8");
-    const tables = new Set(["companies", "roles", "users", "user_roles", "customers", "invoices", "payments", "payment_allocations", "payment_promises", "audit_logs"]);
+    const tables = new Set(["companies", "roles", "users", "user_roles", "customers", "invoices", "payments", "payment_allocations", "payment_promises", "audit_logs", "settings"]);
     for (const match of schema.matchAll(/CREATE TABLE (\w+) \([\s\S]*?;/g)) if (tables.has(match[1])) await db.query(match[0]);
     await db.query("INSERT INTO roles (name) VALUES ('admin'), ('supervisor'), ('collector')");
     for (const file of ["002_payment_allocations_soft_delete.sql", "003_active_payment_invoice_allocation_unique.sql"]) {
@@ -81,12 +81,12 @@ describe("role authorization and internal admin provisioning HTTP / MySQL", { sk
     ["DELETE", "/payments/999999/allocations/999999", "payment_allocations.reverse", 404],
     ["GET", "/portfolio?reference_date=2026-10-02", "portfolio.view", 200], ["GET", "/portfolio/summary?reference_date=2026-10-02", "portfolio.view", 200],
     ["GET", "/portfolio/customers?reference_date=2026-10-02", "portfolio.view", 200], ["GET", "/portfolio/customer/999999?reference_date=2026-10-02", "portfolio.view", 404],
-    ["GET", "/portfolio/reconciliation", "portfolio.view", 200], ["GET", "/admin/roles", "roles.view", 200],
+    ["GET", "/portfolio/reconciliation", "portfolio.view", 200], ["GET", "/collection?reference_date=2026-10-02", "collection.view", 200], ["GET", "/admin/roles", "roles.view", 200],
   ];
   const grants = {
-    collector: new Set(["customers.view", "invoices.view", "payments.view", "payments.create", "payment_allocations.view", "payment_allocations.create", "portfolio.view"]),
+    collector: new Set(["customers.view", "invoices.view", "payments.view", "payments.create", "payment_allocations.view", "payment_allocations.create", "portfolio.view", "collection.view"]),
     supervisor: new Set(["customers.view", "customers.update", "invoices.view", "invoices.update", "payments.view", "payments.create", "payments.update",
-      "payment_allocations.view", "payment_allocations.create", "payment_allocations.reverse", "portfolio.view"]),
+      "payment_allocations.view", "payment_allocations.create", "payment_allocations.reverse", "portfolio.view", "collection.view"]),
   };
   for (const roleName of ["admin", "supervisor", "collector"]) {
     test(`${roleName} is authorized only for its route operations`, async () => {
@@ -147,7 +147,7 @@ describe("role authorization and internal admin provisioning HTTP / MySQL", { sk
     const refreshed = await request("POST", "/auth/refresh", { cookie }); assert.equal(refreshed.status, 200);
     assert.equal((await request("POST", "/auth/logout", { cookie: refreshed.headers.getSetCookie()[0].split(";")[0] })).status, 200);
     await role("admin");
-    for (const path of ["/collection", "/reports", "/messages", "/history", "/settings", "/users"]) assert.equal((await request("GET", path, { token: session.body.data.access_token })).status, 404);
+    for (const path of ["/reports", "/messages", "/history", "/settings", "/users"]) assert.equal((await request("GET", path, { token: session.body.data.access_token })).status, 404);
     for (const path of ["/auth/register", "/auth/signup", "/auth/forgot-password"]) assert.equal((await request("POST", path, { body: {} })).status, 404);
   });
   test("provisioning creates one active username admin with Argon2id and authenticates by username/email", async () => {

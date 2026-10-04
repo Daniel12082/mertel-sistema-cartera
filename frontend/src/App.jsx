@@ -5,6 +5,7 @@ import Clientes from "./pages/Clientes/Clientes";
 import Facturas from "./pages/Factura/Facturas";
 import Pagos from "./pages/Pagos/Pagos";
 import Cartera from "./pages/Cartera/Cartera";
+import Cobranza from "./pages/Cobranza/Cobranza";
 import Configuracion from "./pages/Configuracion/Configuracion";
 import LoginPage from "./pages/Login/LoginPage";
 import ProtectedRoute from "./auth/ProtectedRoute";
@@ -43,7 +44,7 @@ function App() {
 
         <Route
           path="/cobranza"
-          element={<PlaceholderPage title="Cobranza" />}
+          element={<Cobranza />}
         />
 
         <Route

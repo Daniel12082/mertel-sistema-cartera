@@ -21,7 +21,10 @@ export function loadAuthConfig(env = process.env) {
     throw new Error("JWT_SECRET es obligatorio y debe contener al menos 32 bytes aleatorios");
   }
   const production = env.NODE_ENV === "production";
-  const origins = String(env.FRONTEND_URL ?? "").split(",").map(value => value.trim()).filter(Boolean);
+  // Missing NODE_ENV follows Node's existing local-development convention.
+  // Test and production still require explicit origins and cookie policy.
+  const development = env.NODE_ENV === undefined || env.NODE_ENV === "development";
+  const origins = String(env.FRONTEND_URL ?? (development ? "http://localhost:5173" : "")).split(",").map(value => value.trim()).filter(Boolean);
   if (!origins.length) throw new Error("FRONTEND_URL debe definir al menos un origen explícito");
   for (const origin of origins) {
     let url;
@@ -33,7 +36,7 @@ export function loadAuthConfig(env = process.env) {
   if (production && (origins.length !== 1 || origins[0] !== "https://mertelimportaciones.com")) {
     throw new Error("FRONTEND_URL en producción debe ser únicamente https://mertelimportaciones.com");
   }
-  const sameSite = env.AUTH_COOKIE_SAME_SITE;
+  const sameSite = (env.AUTH_COOKIE_SAME_SITE ?? (development ? "lax" : undefined))?.trim().toLowerCase();
   if (!["lax", "strict", "none"].includes(sameSite)) {
     throw new Error("AUTH_COOKIE_SAME_SITE es obligatorio y debe ser lax, strict o none");
   }
