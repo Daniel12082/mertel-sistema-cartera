@@ -1,12 +1,12 @@
 # Plan maestro MERTEL
 
-Actualizado: 05/10/2026. Producto exclusivo: MERTEL Importaciones — Sistema de Cobranza. **La orden vigente autoriza exclusivamente 4.9; ninguna fase siguiente queda autorizada automáticamente**.
+Actualizado: 05/10/2026. Producto exclusivo: MERTEL Importaciones — Sistema de Cobranza. **La orden vigente autoriza Fase 5: reglas comerciales confirmadas y representación operativa. No autoriza Fase 6**.
 
 ## Dónde estamos
 
 - Cerradas: 4.6D autenticación/sesión, 4.7A backend, 4.7B frontend, 4.7 cobranza de consulta y 4.8 en su alcance técnico autorizado.
 - Base de implementación: `main`, commit `53a9a1093073076f5a0d4ba00ae7924c3b1c2af5`, mensaje `feat: implementar cobranza MERTEL`.
-- La orden actual implementa exclusivamente 4.9 sobre el cierre de 4.8, commit `41f1d96ff6de1e756ff327ae84871b19bd93c400`.
+- Base de Fase 5: `2db4e231835319b1348542fc2e60d4951c5c4cd9`, cierre publicado de gestión manual 4.9.
 - Estado actual: **4.9 IMPLEMENTADA Y VALIDADA en su alcance manual**, ver [informe de implementación](architecture/MERTEL_PHASE_4_9.md). Incluye registro/consulta de promesas por autorización expresa; su ciclo de cumplimiento y automatización continúa futuro. No se aprueba un catálogo comercial por usar texto libre.
 - Salvedad de 4.7: consulta autenticada con datos reales de MERTEL no disponible. Inspección local 05/10/2026: cero compañías, settings comerciales legacy NULL y sin collection_rules; no crear datos para aparentar validación real.
 - Archivo protegido: `database/migrations/001_initial_schema.sql` con cambio local previo; nunca editar, revertir ni incluir en commit de estas órdenes. Hash de contenido auditado: `e2f0b2c49c979991914a187dc9531d9c5d2117ce`.
@@ -25,6 +25,7 @@ Documentos de fases anteriores y VALIDACION-4.7.md son evidencia histórica, no 
 |---|---|---|
 | 4.8 | Reglas reales de cobranza | CERRADA; activación de Pronto Pago pendiente |
 | 4.9 | Gestiones, promesas manuales, historial y borrador temporal | IMPLEMENTADA Y VALIDADA; contexto real pendiente |
+| 5 | Reglas comerciales confirmadas, beneficios independientes y facturas no vencidas | Implementación y validación documentadas en el informe específico |
 | 5.0 | Ciclo de cumplimiento, cambios y efectos operativos de promesas | FUTURA |
 | 5.1 | Importación/actualización de cartera | FUTURA |
 | 5.2 | Motor operativo de cobranza | FUTURA |
@@ -105,3 +106,13 @@ La siguiente fase de implementación es 4.9 — Gestiones e historial, únicamen
 ## Actualización autorizada de 4.9 — 05/10/2026
 
 La orden posterior permite texto libre extensible para el tipo de gestión y registro manual de promesas pendientes con permisos existentes. Esta precisión sustituye la dependencia anterior de catálogo aprobado para el registro básico y adelanta exclusivamente registro/consulta desde 5.0. D08/D35 y todas las reglas de cumplimiento, prioridad y mensajería siguen abiertas. Backend 176/176, frontend 68/68, lint/build OK y E2E 15/15. El informe 4.9 detalla contrato, inventario y limitación de datos reales. Ninguna fase posterior se inicia.
+
+## Fase 5 — autorización posterior del 05/10/2026
+
+La orden Fase 5 sustituye los pendientes de calendario/límites de Pronto Pago: diez días calendario desde issue_date, días 0 a 10 incluidos. El usuario confirmó después redondeo al peso colombiano entero, convencional half-up; no a dos decimales. 3% sobre base_value antes de IVA, sin aplicar al saldo.
+
+Configuración aprobada: [JSON empresarial version 2](../backend/config/mertel-collection-rules.json), para settings.collection_rules de la empresa real autorizada. Es una configuración oficial lista para instalar, no un seed ni fallback de settings NULL. Sin empresa real no se crea ni inserta ninguna configuración de negocio. El API continúa devolviendo no_rules_configured donde no haya setting empresarial.
+
+Se contemplan exclusiones confirmadas y promo_18, beneficio condicionado 10% en días 60–70 inclusivos, jerarquía/cliente único y agrupación operativa Facturas no vencidas. Los datos de productos siguen ausentes; la evaluación no concede beneficio por ausencia de exclusiones. Ventanas 0–10 y 60–70 no se solapan: la coexistencia comercial/financiera permanece pendiente y se representa sin sumar porcentajes ni alterar balance. Gestiones/promesas de 4.9 se preservan. Ver [informe de Fase 5](architecture/MERTEL_PHASE_5.md).
+
+Los apartados de autorización/cierre 4.8 y 4.9 anteriores son históricos. No habilitan automatización, cumplimiento de promesas, aplicación financiera de descuentos, WhatsApp ni Fase 6.

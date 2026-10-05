@@ -6,18 +6,23 @@ export function resolveCollectionPolicy(configuration) {
   const legacy = Array.isArray(configuration);
   if (!legacy && (!configuration || configuration.version !== 2 || !Array.isArray(configuration.rules))) throw new TypeError("Configuración de cobranza incompatible");
   const rules = legacy ? configuration : configuration.rules;
+  const commercial = !legacy && configuration.commercial_policy === "mertel_phase_5";
   const stageOrder = legacy ? [...MERTEL_STAGE_ORDER] : configuration.stage_order;
   if (!Array.isArray(stageOrder) || stageOrder.length !== MERTEL_STAGE_ORDER.length || new Set(stageOrder).size !== stageOrder.length || stageOrder.some(key => !MERTEL_STAGE_ORDER.includes(key))) throw new TypeError("stage_order debe contener las cuatro categorías sin duplicados");
   const window = { day_type: "pending", include_issue_date: null, include_day_ten: null, ...(legacy ? {} : configuration.prompt_payment?.window) };
   if (!["pending", "calendar", "business"].includes(window.day_type)) throw new TypeError("Tipo de día de Pronto Pago inválido");
   for (const key of ["include_issue_date", "include_day_ten"]) if (window[key] !== null && typeof window[key] !== "boolean") throw new TypeError("Los límites de Pronto Pago deben ser explícitos o pendientes");
+  if (commercial && (window.day_type !== "calendar" || window.include_issue_date !== true || window.include_day_ten !== true || stageOrder.some((stage, index) => stage !== MERTEL_STAGE_ORDER[index]))) throw new TypeError("La política comercial MERTEL exige calendario, días 0–10 inclusivos y jerarquía oficial");
+  if (commercial && rules.some(rule => rule.active && (rule.condition?.type === "days_before_due" || rule.condition === "days_before_due" || rule.days_before_due !== undefined) && (rule.condition?.days ?? rule.days_before_due) !== 5)) throw new TypeError("Faltan 5 días debe usar exactamente cinco días calendario");
   if (!legacy && configuration.prompt_payment) {
     const prompt = configuration.prompt_payment;
     if ((prompt.percentage !== undefined && String(prompt.percentage) !== PROMPT_PAYMENT_POLICY.percentage) ||
         (prompt.days !== undefined && prompt.days !== PROMPT_PAYMENT_POLICY.days) ||
         (prompt.base_calculation !== undefined && prompt.base_calculation !== PROMPT_PAYMENT_POLICY.base_calculation)) throw new TypeError("Pronto Pago MERTEL exige 3% sobre base_value y diez días desde emisión");
   }
-  return { rules, stageOrder, promptPayment: { ...PROMPT_PAYMENT_POLICY, window } };
+  const conditionalDiscount = legacy ? null : configuration.conditional_discount;
+  if (conditionalDiscount && (typeof conditionalDiscount.active !== "boolean" || String(conditionalDiscount.percentage) !== "10" || conditionalDiscount.min_days !== 60 || conditionalDiscount.max_days !== 70 || conditionalDiscount.day_type !== "calendar" || conditionalDiscount.include_day_seventy !== true)) throw new TypeError("El beneficio condicionado exige 10% y ventana 60–70 calendario inclusiva");
+  return { rules, stageOrder, promptPayment: { ...PROMPT_PAYMENT_POLICY, window }, conditionalDiscount };
 }
 
 export function collectionRuleCategory(rule, condition) {

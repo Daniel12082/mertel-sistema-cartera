@@ -1,7 +1,7 @@
 .cobranza-page .cartera-filters input[type="search"] { box-sizing: border-box; width: 100%; min-height: 38px; padding: 0 9px; border: 1px solid #cbd5e1; border-radius: 7px; background: #fff; color: #334155; font-size: 12px; }
 .cobranza-page input:focus-visible, .cobranza-page select:focus-visible, .cobranza-page button:focus-visible { outline: 2px solid #b3262d; outline-offset: 2px; }
 .cobranza-table { white-space: normal; }
-.cobranza-table td { overflow-wrap: anywhere; }
+.cobranza-table td { overflow-wrap: anywhere; vertical-align: top; }
 .cobranza-detail-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; padding: 16px; border: 1px solid #e2e8f0; border-radius: 8px; background: #f8fafc; }
 .cobranza-detail-value { min-width: 0; display: flex; flex-direction: column; gap: 6px; overflow-wrap: anywhere; }
 .cobranza-detail-value > span, .cobranza-note { color: #64748b; font-size: 12px; }
@@ -10,6 +10,11 @@
 .cobranza-candidates { margin: 0; padding-left: 15px; }
 .cobranza-candidates li + li { margin-top: 8px; }
 .cobranza-candidates li > span { display: block; margin-top: 3px; }
+.cobranza-benefits { min-width: 0; overflow-wrap: anywhere; }
+.cobranza-benefits details + details { margin-top: 12px; }
+.cobranza-benefits p { margin: 8px 0; }
+.cobranza-benefits summary { cursor: pointer; color: #10233f; font-weight: 600; }
+.cobranza-page > .cartera-panel + .cartera-panel { margin-top: 20px; }
 .cobranza-operations { margin-top: 24px; padding-top: 14px; border-top: 1px solid #e2e8f0; }
 .cobranza-operation-buttons { display: flex; flex-wrap: wrap; gap: 8px; }
 .cobranza-operation-form { margin: 16px 0; padding: 16px; border: 1px solid #e2e8f0; border-radius: 8px; background: #f8fafc; }

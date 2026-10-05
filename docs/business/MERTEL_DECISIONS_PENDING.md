@@ -1,8 +1,8 @@
 # Decisiones pendientes de MERTEL
 
-Fecha: 05/10/2026. Las decisiones comerciales siguen abiertas salvo la precisión técnica de la orden 4.8 indicada debajo. No contiene respuestas propuestas como si fueran aprobadas. Responsable de aprobación comercial: Cartera MERTEL, con participación administrativa/contable cuando corresponda. La respuesta debe quedar registrada con fecha, alcance y evidencia antes de activar la parte dependiente.
+Fecha: 05/10/2026. Fase 5 resuelve calendario/límites de Pronto Pago, redondeo al peso entero, exclusiones descriptivas, aviso de cinco días calendario, ventana del 10% y visibilidad de facturas futuras. Las precisiones se registran por ID debajo. Fuente: orden expresa Fase 5 y respuesta posterior del usuario sobre redondeo. Coexistencia temporal, fuente de productos y aplicación financiera siguen pendientes. Responsable comercial: Cartera MERTEL.
 
-## Avance de 4.8 sin inventar respuestas
+## Histórico de 4.8 — leer las precisiones posteriores de Fase 5
 
 - D06 y D24: **abiertas**; implementados day_type=pending y límites null, sin elegir días calendario/hábiles ni inclusión. El motor se abstiene de asignar Pronto Pago hasta configuración explícita. Los calendarios parametrizados de tests no son respuestas aprobadas.
 - D01–D03: **abiertas**; solo se representan productos unknown/eligible/not_eligible/mixed y revisión manual. No hay catálogo, SKU ni concesión automática.
@@ -15,12 +15,12 @@ Fecha: 05/10/2026. Las decisiones comerciales siguen abiertas salvo la precisió
 
 | ID | Pregunta pendiente | Fases afectadas |
 |---|---|---|
-| D01 | ¿Cuál es la lista definitiva de productos excluidos de Pronto Pago y quién mantiene sus versiones? | 4.8, 5.1, 5.6 |
+| D01 | Lista descriptiva RESUELTA en Fase 5. Pendiente responsable de mantener versiones y asociación a la fuente real de productos | 5 |
 | D02 | ¿Cuál es la fuente de productos/SKU, líneas y bases antes de IVA por factura? | 4.8, 5.1 |
 | D03 | En factura mixta, confirmada la revisión manual, ¿quién decide, con qué evidencia y puede concederse descuento parcial o rechazarse totalmente? | 4.8, 4.9, 5.6 |
 | D04 | ¿Qué es exactamente día hábil/laboral: días de semana, sábados, cierres excepcionales? | 4.8, 5.2, 5.3 |
 | D05 | ¿Qué calendario de festivos y ámbito geográfico se usa, y quién lo actualiza? | 4.8, 5.2, 5.3 |
-| D06 | ¿Los diez días desde emisión de Pronto Pago son calendario o hábiles? | 4.8 |
+| D06 | RESUELTA en Fase 5: diez días calendario desde issue_date, día 10 incluido | 5 |
 | D07 | ¿Cuál es la fórmula, límite y duración del incremento de prioridad por promesa incumplida? | 5.0, 5.2 |
 | D08 | ¿Cuál es el catálogo oficial de gestiones, sus campos y resultados? | 4.9 |
 | D09 | ¿Qué cuenta como cliente gestionado y cómo se deduplica por período/cobrador? | 4.9, 5.5 |
@@ -38,12 +38,12 @@ Fecha: 05/10/2026. Las decisiones comerciales siguen abiertas salvo la precisió
 | D21 | ¿Cuáles son las reglas de reintento, límites y tratamiento de errores definitivos o respuesta incierta? | 5.3 |
 | D22 | ¿Qué significa dinero recuperado: pago recibido, confirmado, asignado, neto de reversión, y atribución por cobrador/fecha? | 5.4, 5.5 |
 | D23 | ¿Qué significa promesa cumplida: importe exacto, parcial, varias facturas y pago recibido o asignado? | 5.0, 5.5 |
-| D24 | ¿La fecha de emisión cuenta como primer día de Pronto Pago, cuál es el último instante incluido y qué fecha de pago acredita el beneficio? | 4.8, 5.4 |
-| D25 | ¿Cómo se redondea el 3% y cómo se registra el descuento contablemente sin romper balance y allocations? | 4.8, 5.4 |
-| D26 | ¿Cuáles son condiciones/base/ventana y compatibilidad del descuento condicionado del 10% con otras modalidades? | 4.8, 5.6 |
-| D27 | ¿Faltan 5 días es un aviso puntual o una etapa que persiste? ¿Cómo tratar fin de semana/festivo y el período entre esa etapa y vence hoy? | 4.8, 5.2 |
+| D24 | Ventana 0–10 incluida RESUELTA. Sigue pendiente qué hecho/fecha de acreditación de pago se utilizará para aplicar financieramente el beneficio | 5, pagos futuros |
+| D25 | Redondeo RESUELTO: al peso COP entero half-up. Pendiente registro contable y aplicación segura con pagos/allocations | 5, pagos futuros |
+| D26 | 10% y ventana 60–70 incluida RESUELTOS. Pendientes base, fórmula y coexistencia temporal con Pronto Pago/pago temprano sin ventanas solapadas | 5 |
+| D27 | Aviso exacto cinco días calendario RESUELTO. Persistencia no autorizada; período fuera de etapas visible como agrupación operativa | 5 |
 | D28 | Si no hay facturas vencidas, ¿cómo se determina la factura principal? ¿Y empates de vencimiento, facturas sin fecha o fechas corregidas? | 4.8 |
-| D29 | ¿Una factura pendiente fuera de cualquier ventana debe permanecer visible en cobranza? ¿Cómo se representa sin inventar una quinta etapa comercial? | 4.8, 5.2 |
+| D29 | RESUELTA para facturas futuras: agrupación operativa Facturas no vencidas, fuera de las cuatro etapas. Fuente de fechas faltantes continúa pendiente | 5 |
 | D30 | ¿Los límites de mensajes son por cliente, factura, episodio, canal o combinación? ¿Reingreso a etapa permite otro mensaje? ¿Incluyen manuales e intentos fallidos? | 5.2, 5.3 |
 | D31 | ¿A qué hora se evalúa el incumplimiento en la fecha prometida y cuándo puede retomarse el envío? | 5.0, 5.2, 5.3 |
 | D32 | ¿Cómo se gestionan múltiples promesas activas, cambios/cancelaciones y promesas por cliente o factura? | 5.0 |
@@ -52,6 +52,8 @@ Fecha: 05/10/2026. Las decisiones comerciales siguen abiertas salvo la precisió
 | D35 | ¿Quién puede revisar exclusiones, editar reglas, registrar promesas y aprobar diferencias de importación? ¿Qué límites por rol? | 4.9–5.7 |
 
 ## Pendientes técnicos, separados de las respuestas comerciales
+
+Fase 5, 05/10/2026: lista de exclusiones confirmada (D01 parcialmente resuelta); datos de productos, SKU y evidencia siguen D02. No se configura empresa ficticia ni se concede beneficio por fuente ausente. Se aclara redondeo al peso por respuesta posterior del usuario. La representación admite dos beneficios independientes elegibles previamente evaluados, con sus fechas; no prueba una misma operación elegible simultánea ni aplica 13%. D26 conserva esta ambigüedad expresa. Configuración oficial disponible en backend/config/mertel-collection-rules.json; instalar en la empresa real cuando exista contexto autorizado (T01).
 
 | ID | Verificación necesaria | Condición |
 |---|---|---|

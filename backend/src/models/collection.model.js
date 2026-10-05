@@ -18,7 +18,7 @@ export async function getCollectionOpenInvoices(scope, db = pool) {
     SELECT i.id AS invoice_id, i.company_id, i.customer_id, i.invoice_number,
       DATE_FORMAT(i.issue_date, '%Y-%m-%d') AS issue_date,
       DATE_FORMAT(i.due_date, '%Y-%m-%d') AS due_date,
-      i.document_value, i.base_value, i.balance, i.status AS invoice_status
+      i.document_value, i.base_value, i.promo_18, i.balance, i.status AS invoice_status
     FROM invoices i
     INNER JOIN customers c ON c.id = i.customer_id
     WHERE i.deleted_at IS NULL AND c.deleted_at IS NULL AND c.status = 'active'

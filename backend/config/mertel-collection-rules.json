@@ -1,0 +1,19 @@
+{
+  "version": 2,
+  "commercial_policy": "mertel_phase_5",
+  "stage_order": ["overdue", "due_today", "days_before_due", "prompt_payment"],
+  "rules": [
+    {"key": "overdue", "active": true},
+    {"key": "due_today", "active": true},
+    {"key": "five_days_before_due", "active": true, "days_before_due": 5},
+    {"key": "prompt_payment", "active": true, "condition": "days_since_issue"}
+  ],
+  "prompt_payment": {
+    "percentage": "3", "base_calculation": "base_value", "days": 10,
+    "window": {"day_type": "calendar", "include_issue_date": true, "include_day_ten": true},
+    "rounding": {"method": "half_up", "currency": "COP", "decimal_places": 0},
+    "exclusions": {"promo_18": true, "car": ["Alternadores", "Arranques", "Motoventiladores"], "motorcycle": ["Set piñón", "Kit piñón-cadenas"]}
+  },
+  "conditional_discount": {"active": true, "percentage": "10", "min_days": 60, "max_days": 70, "day_type": "calendar", "include_day_seventy": true, "base_calculation": null},
+  "non_overdue_pending": {"representation": "operational_group", "label": "Facturas no vencidas"}
+}

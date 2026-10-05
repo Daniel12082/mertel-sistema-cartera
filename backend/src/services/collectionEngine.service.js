@@ -1,5 +1,6 @@
 import { collectionRuleCategory, resolveCollectionPolicy } from "./collectionPolicy.js";
 import { evaluatePromptPayment } from "./promptPayment.service.js";
+import { evaluateConditionalDiscount, representCollectionBenefits } from "./collectionBenefits.service.js";
 const DAY_IN_MS = 86_400_000;
 
 function parseDateDay(value, fieldName) {
@@ -118,7 +119,7 @@ function noEligibleResult(invoice, reason) {
 
 function ruleMatches(rule, condition, daysUntilDue, promptPayment) {
   if (!rule.active) return false;
-  if (condition === "days_since_issue") return promptPayment.window.status === "within_window";
+  if (condition === "days_since_issue") return promptPayment.window.status === "within_window" && promptPayment.eligibility.status !== "not_eligible";
   if (condition === "overdue") return daysUntilDue < 0;
   if (condition === "due_today") return daysUntilDue === 0;
   const configuredDays = rule.condition && typeof rule.condition === "object"
@@ -168,14 +169,16 @@ export function evaluateCollectionInvoice({ referenceDate, invoice, rules }) {
   const normalizedRules = validateRules(rules);
   const policy = resolveCollectionPolicy(rules);
   const promptPayment = evaluatePromptPayment({ referenceDate, invoice, policy: policy.promptPayment });
+  const conditionalDiscount = evaluateConditionalDiscount({ referenceDate, invoice, policy: policy.conditionalDiscount });
+  const benefits = representCollectionBenefits(promptPayment, conditionalDiscount);
 
-  if (isDeleted(invoice)) return { ...noEligibleResult(invoice, "La factura no está activa."), promptPayment };
+  if (isDeleted(invoice)) return { ...noEligibleResult(invoice, "La factura no está activa."), promptPayment, conditionalDiscount, benefits };
   const balanceCents = parseBalanceCents(invoice.balance);
-  if (balanceCents === 0n) return { ...noEligibleResult(invoice, "La factura no tiene saldo pendiente."), promptPayment };
+  if (balanceCents === 0n) return { ...noEligibleResult(invoice, "La factura no tiene saldo pendiente."), promptPayment, conditionalDiscount, benefits };
 
   const dueDate = invoice.due_date ?? invoice.dueDate;
   if (dueDate === null || dueDate === undefined || dueDate === "") {
-    return { ...noEligibleResult(invoice, "La factura no tiene fecha de vencimiento."), promptPayment };
+    return { ...noEligibleResult(invoice, "La factura no tiene fecha de vencimiento."), promptPayment, conditionalDiscount, benefits };
   }
   const dueDay = parseDateDay(dueDate, "invoice.due_date");
   const daysUntilDue = dueDay - referenceDay;
@@ -189,7 +192,7 @@ export function evaluateCollectionInvoice({ referenceDate, invoice, rules }) {
     .sort((left, right) => right.priority - left.priority || left.stage.localeCompare(right.stage));
 
   if (matches.length === 0) {
-    return { ...noEligibleResult(invoice, "Ninguna regla activa aplica a esta factura."), promptPayment };
+    return { ...noEligibleResult(invoice, "Ninguna regla activa aplica a esta factura."), promptPayment, conditionalDiscount, benefits };
   }
 
   const selected = matches[0];
@@ -203,6 +206,8 @@ export function evaluateCollectionInvoice({ referenceDate, invoice, rules }) {
     eligible: true,
     stageCandidates: matches,
     promptPayment,
+    conditionalDiscount,
+    benefits,
   };
 }
 

@@ -4,12 +4,11 @@ import { loadCompanyCollectionRules, evaluateCompanyCollection } from "./company
 import { compareCollectionCustomers, evaluateCollectionInvoices } from "./collectionEngine.service.js";
 import { collectionStageCatalog, resolveCollectionPolicy } from "./collectionPolicy.js";
 import { validCompanyId } from "../utils/companyScope.js";
+import { moneyCents } from "./collectionMoney.js";
+import { dateDay } from "./promptPayment.service.js";
 
 function amountCents(value) {
-  const text = typeof value === "number" && Number.isFinite(value) ? value.toFixed(2) : value;
-  if (typeof text !== "string" || !/^\d{1,13}(?:\.\d{1,2})?$/.test(text)) throw new TypeError("Saldo de factura inválido");
-  const [whole, fraction = ""] = text.split(".");
-  return BigInt(whole) * 100n + BigInt((fraction + "00").slice(0, 2));
+  return moneyCents(value);
 }
 
 function money(cents) {
@@ -26,6 +25,8 @@ function invoiceView(classification, catalog) {
     stage_candidates: classification.stageCandidates,
     stage_label: catalog.find(stage => stage.key === classification.stage)?.label ?? (classification.stage === "no_eligible" ? "No elegible" : classification.stage),
     prompt_payment: classification.promptPayment,
+    conditional_discount: classification.conditionalDiscount,
+    benefits: classification.benefits,
   };
 }
 
@@ -49,15 +50,24 @@ export function buildCollectionResult({ company, referenceDate, customers, invoi
   let totalBalanceCents = 0n;
   for (const invoice of pendingInvoices) totalBalanceCents += amountCents(invoice.balance);
   const eligibleCustomers = [];
+  const pendingOnlyCustomers = [];
+  const nonOverdueInvoices = [];
   const stageSummary = Object.create(null);
   let eligibleBalanceCents = 0n;
 
   for (const result of cases) {
     const classified = result.classifiedInvoices;
     const eligible = classified.filter(item => item.eligible);
-    if (!eligible.length) continue;
     const customerInvoices = allInvoicesByCustomer.get(String(result.customerId)) || [];
     const totalCustomerBalance = customerInvoices.reduce((sum, invoice) => sum + amountCents(invoice.balance), 0n);
+    const nonOverdue = classified.filter(item => !item.eligible && item.invoice.due_date && dateDay(item.invoice.due_date) > dateDay(referenceDate) && item.invoice.deleted_at == null && item.invoice.active !== false);
+    nonOverdueInvoices.push(...nonOverdue.map(item => ({ ...invoiceView(item, catalog), customer: result.customer, operational_group: "non_overdue_pending" })));
+    if (!eligible.length) {
+      if (nonOverdue.length) pendingOnlyCustomers.push({ customer: result.customer, stage: "no_eligible", stage_label: "Facturas no vencidas", priority: null,
+        reason: "Saldo pendiente sin una etapa activa de cobranza.", total_balance: money(totalCustomerBalance), eligible_balance: "0.00", main_invoice: null,
+        invoices: classified.map(item => invoiceView(item, catalog)) });
+      continue;
+    }
     const customerEligibleBalance = eligible.reduce((sum, item) => sum + amountCents(item.invoice.balance), 0n);
     const primaryClassification = result.primaryInvoice
       ? eligible.find(item => String(item.invoiceId) === String(result.primaryInvoice.invoice_id ?? result.primaryInvoice.id))
@@ -99,7 +109,10 @@ export function buildCollectionResult({ company, referenceDate, customers, invoi
     message: policy.rules.length ? null : "No hay reglas de cobranza configuradas para esta empresa.",
     stage_catalog: catalog,
     priority_basis: "stage_order_ordinal",
-    configuration_warnings: promptPending ? ["Pronto Pago pendiente: definir tipo de día, calendario si corresponde y límites de diez días desde emisión. No se asigna esa etapa mientras falte configuración."] : [],
+    configuration_warnings: [
+      ...(promptPending ? ["Pronto Pago pendiente: definir tipo de día, calendario si corresponde y límites de diez días desde emisión. No se asigna esa etapa mientras falte configuración."] : []),
+      ...(policy.conditionalDiscount?.active ? ["Beneficios independientes: combinación financiera y coexistencia de ventanas 0–10 / 60–70 días pendientes de precisión. No se aplica descuento al saldo."] : []),
+    ],
     summary: {
       total_customers: eligibleCustomers.length,
       total_balance: money(totalBalanceCents),
@@ -107,6 +120,14 @@ export function buildCollectionResult({ company, referenceDate, customers, invoi
       stages: stageSummary,
     },
     customers: customersResult,
+    non_overdue_pending: {
+      label: "Facturas no vencidas",
+      total_invoices: nonOverdueInvoices.length,
+      total_customers: new Set(nonOverdueInvoices.map(item => String(item.customer.id))).size,
+      total_balance: money(nonOverdueInvoices.reduce((sum, item) => sum + amountCents(item.invoice.balance), 0n)),
+      invoices: nonOverdueInvoices.filter(item => filters.stage === undefined && (filters.customerId === undefined || String(item.customer.id) === String(filters.customerId))),
+      customers: pendingOnlyCustomers.filter(item => filters.stage === undefined && (filters.customerId === undefined || String(item.customer.id) === String(filters.customerId))),
+    },
   };
 }
 

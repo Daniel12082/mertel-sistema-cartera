@@ -2,9 +2,9 @@
 
 Actualización técnica 4.9: implementados registro manual de gestiones de tipo libre, promesas pendientes e historial, según orden expresa del usuario. Sin aprobar catálogo ni evaluar cumplimiento/pausa/prioridad. Preparar mensaje es un borrador temporal sin envío. [Contrato y límites de 4.9](../architecture/MERTEL_PHASE_4_9.md). Las reglas comerciales confirmadas y pendientes de este documento permanecen intactas.
 
-Fecha: 05/10/2026. Fuente: orden maestra del usuario basada en respuestas de Cartera MERTEL y autorización posterior de 4.8. Esta documentación distingue implementación y activación comercial. Base histórica 4.7: commit `53a9a1093073076f5a0d4ba00ae7924c3b1c2af5`; estado técnico actual 4.8: CERRADA con pendientes de configuración explícitos.
+Fecha: 05/10/2026. Fuente vigente: orden Fase 5 del usuario con reglas confirmadas por MERTEL y respuesta posterior que confirma redondeo al peso COP entero. Esta documentación distingue implementación, configuración empresarial, elegibilidad y aplicación financiera. Base publicada 4.9: `2db4e231835319b1348542fc2e60d4951c5c4cd9`. Los pendientes históricos siguientes se sustituyen solo donde la orden Fase 5 lo define expresamente.
 
-## Actualización autorizada 4.8
+## Histórico 4.8 — decisiones pendientes sustituidas parcialmente por Fase 5
 
 4.8 CERRADA (alcance técnico autorizado), validación técnica aprobada. Ya están implementados: selección de vencida más antigua, orden de clientes en backend, jerarquía mediante stage_order y rangos ordinales, catálogo/labels de servidor, evaluador de ventana desde emisión y función matemática exacta del 3% de base_value. Consultar [informe 4.8](../architecture/MERTEL_PHASE_4_8.md).
 
@@ -36,13 +36,21 @@ Cada cliente tiene una única tarjeta en el pipeline principal. La factura más 
 | Finalidad | Motivar pago temprano antes del ciclo normal de cobro | No sustituye la gestión de cartera |
 | Porcentaje Pronto Pago | 3% | No usar otro porcentaje por inferencia |
 | Base | Valor antes de IVA | No calcular sobre document_value con IVA |
-| Ventana | 10 días desde emisión | Calendario/hábiles, límites inclusivos y fecha de acreditación pendientes |
-| Descuento condicionado | 10%, modalidad comercial distinta | No convertirlo en Pronto Pago; condiciones exactas pendientes |
-| promo_18 | Campo histórico independiente | No enlazarlo automáticamente a Pronto Pago |
+| Ventana | 10 días calendario desde fecha de factura | Días 0–10 incluidos: 2026-10-05 → 2026-10-15 |
+| Descuento condicionado | Beneficio independiente 10%, días 60–70 calendario desde factura, inclusive | Base y aplicación matemática/financiera pendientes; nunca asumir 13% |
+| promo_18 | Identificación explícita de exclusión de Pronto Pago | Campo real positivo leído por consulta; ausencia/0 no prueba elegibilidad |
 
-La ventana desde emisión no es diez días antes del vencimiento. El cálculo conceptual confirmado es 3% de la base elegible antes de IVA; no autoriza aún el cálculo automático de una base elegible por producto ni el registro financiero del descuento. El redondeo y su tratamiento financiero requieren definición.
+La ventana utiliza issue_date. El cálculo confirmado es 3% de base_value antes de IVA, mediante enteros exactos. Redondeo comercial confirmado por el usuario: al peso COP entero, half-up (1,4 → 1; 1,5 → 2), incluso si la base contiene centavos. No usar toFixed como regla comercial. El resultado calculado es preview_amount; discount.amount conserva null/not_applied. El tratamiento contable continúa pendiente.
 
-Existen productos excluidos. Una factura mixta exige **revisión manual**. Están pendientes la lista oficial, fuente de SKU/productos, responsable de revisión y resultado permitido de esa revisión. No inventar exclusiones ni conceder descuentos automáticamente por falta de datos.
+Exclusiones oficiales: PROMO 18; alternadores, arranques y motoventiladores para carros; set piñón y kit piñón-cadenas para motos. Una factura mixta exige **revisión manual** sin cálculo parcial. La fuente de líneas/SKU/productos y la responsabilidad de revisión siguen pendientes. No crear catálogo ni conceder elegibilidad por no encontrar coincidencias.
+
+La consulta real solo dispone de promo_18 y valores agregados. Productos faltantes/desconocidos permanecen manual_review/pending_product_data; las descripciones/vehicle_type/evaluaciones completas se admiten como evidencia interna de un futuro adaptador y en fixtures aislados, nunca como campos públicos para conceder el beneficio.
+
+Faltan 5 días usa exactamente cinco días calendario antes de due_date. La configuración oficial version 2 conserva la jerarquía En mora > Vence hoy > Faltan 5 días > Pronto Pago. Una vencida más antigua determina la factura principal, con ID técnico en empate, según 4.8. La etapa temporal Pronto Pago puede requerir revisión de productos: elegible para cobranza no concede el beneficio; una exclusión confirmada impide esa etapa.
+
+El 10% tiene elegibilidad temporal separada de su aplicación matemática. La combinación con el 3% exige pago dentro de diez días según negocio, pero las ventanas 0–10 y 60–70 no coinciden para una misma fecha. Se preservan beneficios independientes y fechas de evaluación; no se inventa una elegibilidad simultánea automática, porcentaje combinado ni fórmula. Pendiente precisar el hecho comercial que permite coexistencia.
+
+Facturas no vencidas es una agrupación operativa aditiva de facturas con saldo positivo, due_date futura y sin etapa activa. No agrega una etapa al catálogo. Incluye las facturas de clientes ya presentes en pipeline y permite detalle de los clientes que solo tienen esas facturas; una tarjeta de pipeline por cliente. Las facturas sin vencimiento permanecen no_eligible en detalle, sin inventar fecha ni llamarlas no vencidas.
 
 La elegibilidad de una factura para una etapa de cobranza (`invoices[].eligible` en la respuesta actual) **no equivale a elegibilidad de todos sus productos para el descuento**.
 

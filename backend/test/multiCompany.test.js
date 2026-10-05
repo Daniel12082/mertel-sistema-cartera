@@ -356,7 +356,7 @@ describe("multi-company HTTP / MySQL isolation", { skip: !(process.env.DB_HOST &
     assert.equal(result.customers[0].priority, 4); assert.equal(result.priority_basis, "stage_order_ordinal");
     assert.equal(result.stage_catalog[0].label, "En mora"); assert.equal(result.stage_catalog[2].label, "Faltan 5 días");
     assert.equal(result.customers[0].main_invoice.prompt_payment.window.reference_basis, "issue_date");
-    assert.equal(result.customers[0].main_invoice.prompt_payment.eligibility.status, "manual_review");
+    assert.equal(result.customers[0].main_invoice.prompt_payment.eligibility.status, "pending_configuration");
     assert.equal(result.customers[0].main_invoice.prompt_payment.discount.amount, null);
     assert.match(result.configuration_warnings[0], /pendiente/);
     assert.deepEqual(await financialState(), beforeState);
@@ -369,6 +369,28 @@ describe("multi-company HTTP / MySQL isolation", { skip: !(process.env.DB_HOST &
     assert.equal(result.rules_configured, false);
     assert.match(result.message, /No hay reglas/);
     assert.deepEqual(result.customers, []);
+  });
+  test("phase 5 HTTP uses official company configuration, exposes independent benefits and pending invoices without financial writes", async () => {
+    const policy = JSON.parse(await readFile(new URL("../config/mertel-collection-rules.json", import.meta.url), "utf8"));
+    await db.query("INSERT INTO settings (company_id,setting_key,setting_value,value_type) VALUES (?,'collection_rules',?,'json')", [a.companyId, JSON.stringify(policy)]);
+    await db.query("UPDATE invoices SET issue_date='2026-10-05',due_date='2026-11-05',base_value=100 WHERE id=?", [a.invoice]);
+    const [older] = await db.query("INSERT INTO invoices (company_id,customer_id,invoice_number,issue_date,due_date,document_value,base_value,iva_value,balance) VALUES (?,?,'conditional','2026-08-16','2026-11-05',119,100,19,119)", [a.companyId, a.customer]);
+    const beforeState = await financialState();
+    const result = await expect("GET", "/collection?reference_date=2026-10-15", a, 200);
+    assert.equal(result.customers.length, 1); assert.equal(result.customers[0].stage, "prompt_payment");
+    assert.equal(result.customers[0].main_invoice.prompt_payment.window.end_date, "2026-10-15");
+    assert.equal(result.customers[0].main_invoice.prompt_payment.eligibility.status, "manual_review");
+    assert.equal(result.customers[0].main_invoice.prompt_payment.discount.preview_amount, null);
+    const conditioned = result.non_overdue_pending.invoices.find(item => item.invoice.invoice_id === older.insertId);
+    assert.equal(conditioned.conditional_discount.eligibility.status, "eligible");
+    assert.equal(conditioned.benefits.combination.combined_amount, null);
+    const afterWindow = await expect("GET", "/collection?reference_date=2026-10-16", a, 200);
+    assert.equal(afterWindow.customers.length, 0); assert.equal(afterWindow.non_overdue_pending.customers.length, 1);
+    assert.equal(afterWindow.non_overdue_pending.invoices.length, 2);
+    assert.deepEqual(await expect("GET", `/collection?reference_date=2026-10-15&company_id=${b.companyId}`, a, 200), result);
+    const foreign = await expect("GET", "/collection?reference_date=2026-10-15", b, 200);
+    assert.equal(foreign.status, "no_rules_configured");
+    assert.deepEqual(await financialState(), beforeState);
   });
   test("authentication audits retain real company context and global events retain NULL", async () => {
     const [rows]=await db.query("SELECT company_id,user_id FROM audit_logs WHERE action='login_success' AND user_id IN (?,?,?)",[a.id,b.id,global.id]);

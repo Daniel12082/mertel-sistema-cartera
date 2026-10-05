@@ -73,7 +73,8 @@ test("legacy prompt_payment days_before_due does not restore the wrong commercia
 test("configured window uses issue_date independently of due_date, promo_18 and conditioned discount", () => {
   const config = calendarConfig();
   const recent = evaluateCollectionInvoice({ referenceDate, invoice: invoice(1, "2027-01-01", { promo_18: "5000", discount: "10" }), rules: config });
-  assert.equal(recent.stage, "prompt_payment");
+  assert.equal(recent.stage, "no_eligible");
+  assert.equal(recent.promptPayment.eligibility.status, "not_eligible");
   const expired = evaluateCollectionInvoice({ referenceDate, invoice: invoice(1, "2026-10-15", { issue_date: "2026-08-01", promo_18: "5000" }), rules: config });
   assert.equal(expired.eligible, false); assert.equal(expired.promptPayment.window.status, "outside_window");
   assert.equal(recent.promptPayment.percentage, "3"); assert.equal(recent.promptPayment.discount.amount, null);
@@ -104,10 +105,11 @@ test("missing products remain manual review; mixed and supplied eligibility are 
 });
 test("discount preview is exactly 3% of the provided base before VAT, with no balance application", () => {
   const item = invoice(1, "2026-12-01"); const before = structuredClone(item);
-  assert.deepEqual(calculatePromptPaymentDiscount(item.base_value), { percentage: "3", base_calculation: "base_value", exact_amount: "30.0000", amount: "30.00", status: "exact_preview" });
+  const preview = calculatePromptPaymentDiscount(item.base_value);
+  assert.equal(preview.exact_amount, "30.0000"); assert.equal(preview.amount, "30"); assert.equal(preview.decimal_places, 0);
   assert.deepEqual(item, before);
-  assert.equal(calculatePromptPaymentDiscount("1.01").status, "pending_rounding");
-  assert.equal(calculatePromptPaymentDiscount("1.01").amount, null);
+  assert.equal(calculatePromptPaymentDiscount("1.01").status, "rounded_preview");
+  assert.equal(calculatePromptPaymentDiscount("1.01").amount, "0");
 });
 test("10 percent, another base or another duration cannot masquerade as Pronto Pago", () => {
   for (const override of [{ percentage: "10" }, { base_calculation: "document_value" }, { days: 5 }]) {

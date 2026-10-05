@@ -1,5 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { collectionFixture } from "../collection.fixture";
+import { readFile } from "node:fs/promises";
+import { buildCollectionResult } from "../../../backend/src/services/collection.service.js";
 
 async function mockApi(page, fixture = collectionFixture(), permissions = ["collection.view"]) {
   const user = { id: 1, name: "Personal MERTEL", roles: ["collector"], permissions };
@@ -91,3 +93,31 @@ test("4.8 renders backend hierarchy, warnings, invoice eligibility and prompt re
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.screenshot({ path: "../tmp/collection48-mobile.png", fullPage: true });
 });
+
+for (const [name, width, height] of [["desktop", 1440, 900], ["mobile", 390, 844]]) {
+  test(`phase 5 real backend rules render benefits and pending-only invoices ${name}`, async ({ page }) => {
+    const rules = JSON.parse(await readFile(new URL("../../../backend/config/mertel-collection-rules.json", import.meta.url), "utf8"));
+    const customer = { id: 1, company_id: "7", name: "Cliente Águila", nit: "FIXTURE-A" };
+    const pending = { id: 2, company_id: "7", name: "Cliente pendiente", nit: "FIXTURE-B" };
+    const invoice = { id: 11, company_id: "7", customer_id: 1, invoice_number: "PP-FIXTURE", issue_date: "2026-10-05", due_date: "2026-11-05", base_value: "100.00", balance: "119.00" };
+    const fixture = buildCollectionResult({ company: { id: "7" }, referenceDate: "2026-10-15", customers: [customer, pending], rules,
+      invoices: [invoice, { ...invoice, id: 21, customer_id: 2, invoice_number: "NV-FIXTURE", issue_date: "2026-08-16" }] });
+    await page.setViewportSize({ width, height }); await mockApi(page, fixture); await page.goto("/cobranza");
+    await expect(page.getByRole("button", { name: "Ver detalle de Cliente Águila" })).toBeVisible();
+    await page.getByLabel("Fecha de referencia").fill("2026-10-15");
+    const region = page.getByRole("region", { name: "Facturas no vencidas" }); await expect(region.getByText("NV-FIXTURE")).toBeVisible();
+    await region.getByRole("button", { name: "Ver factura no vencida NV-FIXTURE" }).click();
+    let dialog = page.getByRole("dialog"); await dialog.getByText("Ver beneficio condicionado", { exact: true }).click();
+    await expect(dialog.getByText("Estado: Elegible", { exact: true })).toBeVisible();
+    await expect(dialog.getByText(/Ventana: 60–70 días calendario/)).toBeVisible();
+    await expect(dialog.getByText(/Base y aplicación financiera del 10% pendientes/)).toBeVisible();
+    await page.keyboard.press("Escape");
+    await page.getByRole("button", { name: "Ver detalle de Cliente Águila" }).click();
+    dialog = page.getByRole("dialog"); await dialog.getByText("Ver evaluación", { exact: true }).click();
+    await expect(dialog.getByText("Estado: Revisión manual", { exact: true })).toBeVisible();
+    await expect(dialog.getByText(/Último día:/)).toBeVisible();
+    await expect(dialog.getByText(/Descuento estimado/)).toHaveCount(0);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await page.screenshot({ path: `../tmp/collection5-${name}.png`, fullPage: true });
+  });
+}
