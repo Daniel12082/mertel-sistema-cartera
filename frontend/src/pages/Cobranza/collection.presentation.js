@@ -1,12 +1,11 @@
-export const collectionStages = [
-  { key: "prompt_payment", label: "Pronto pago", tone: "current" },
-  { key: "days_before_due", label: "Faltan X días", tone: "nodue" },
-  { key: "due_today", label: "Vence hoy", tone: "nodue" },
-  { key: "overdue", label: "En mora", tone: "overdue" },
-];
+export function getStageCatalog(data) {
+  if (Array.isArray(data?.stage_catalog)) return data.stage_catalog;
+  // Compatible with 4.7 responses: preserve server keys/order without guessing rules.
+  return Object.keys(data?.summary?.stages || {}).map(key => ({ key, label: key }));
+}
 
-export function stageLabel(stage) {
-  return collectionStages.find(item => item.key === stage)?.label ||
+export function stageLabel(stage, catalog = [], suppliedLabel) {
+  return suppliedLabel || catalog.find(item => item.key === stage)?.label ||
     (stage === "no_eligible" ? "No elegible" : stage) || "—";
 }
 

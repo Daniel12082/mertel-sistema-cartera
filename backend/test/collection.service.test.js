@@ -6,8 +6,8 @@ const referenceDate = "2026-10-02";
 const company = { id: "7" };
 const customers = [{ id: 1, company_id: "7", name: "Cliente A", nit: "NIT-A", status: "active" }];
 const rules = [
-  { key: "two_days_before", active: true, priority: 5, days_before_due: 2 },
-  { key: "overdue", active: true, priority: 10, condition: "overdue" },
+  { key: "two_days_before", active: true, days_before_due: 2 },
+  { key: "overdue", active: true, condition: "overdue" },
 ];
 function invoice(invoice_id, due_date, balance, extra = {}) {
   return { invoice_id, company_id: "7", customer_id: 1, invoice_number: `F-${invoice_id}`, due_date, balance, ...extra };

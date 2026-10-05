@@ -1,6 +1,15 @@
 # Decisiones pendientes de MERTEL
 
-Fecha: 05/10/2026. Estado de **todas** las decisiones de esta lista: abierto. No contiene respuestas propuestas como si fueran aprobadas. Responsable de aprobación comercial: Cartera MERTEL, con participación administrativa/contable cuando corresponda. La respuesta debe quedar registrada con fecha, alcance y evidencia antes de implementar la parte dependiente.
+Fecha: 05/10/2026. Las decisiones comerciales siguen abiertas salvo la precisión técnica de la orden 4.8 indicada debajo. No contiene respuestas propuestas como si fueran aprobadas. Responsable de aprobación comercial: Cartera MERTEL, con participación administrativa/contable cuando corresponda. La respuesta debe quedar registrada con fecha, alcance y evidencia antes de activar la parte dependiente.
+
+## Avance de 4.8 sin inventar respuestas
+
+- D06 y D24: **abiertas**; implementados day_type=pending y límites null, sin elegir días calendario/hábiles ni inclusión. El motor se abstiene de asignar Pronto Pago hasta configuración explícita. Los calendarios parametrizados de tests no son respuestas aprobadas.
+- D01–D03: **abiertas**; solo se representan productos unknown/eligible/not_eligible/mixed y revisión manual. No hay catálogo, SKU ni concesión automática.
+- D25: **abierta**; preview matemático exacto del 3%, sin regla de redondeo. Un resultado con subcentavos tiene amount=null/pending_rounding; no se aplica al saldo.
+- D28: la orden 4.8 confirma vencida más antigua y autoriza ID como desempate técnico. Esa precisión quedó implementada; no define reglas nuevas para fechas faltantes/corregidas ni permanencia.
+- T03: **RESUELTA TÉCNICAMENTE** en 4.8: configuración version 2 dentro de collection_rules, stage_order y metadatos API stage_catalog/stage_label. Sin activar configuración real ni editor administrativo.
+- T01 continúa pendiente: la inspección local sigue sin compañía MERTEL ni collection_rules. El resto de decisiones permanece abierto para su fase.
 
 ## Registro de negocio
 
@@ -48,7 +57,7 @@ Fecha: 05/10/2026. Estado de **todas** las decisiones de esta lista: abierto. No
 |---|---|---|
 | T01 | Disponer del contexto autorizado real de MERTEL, empresa y usuario con permisos | Última inspección local: cero compañías; no inventar datos ni tokens |
 | T02 | Relevar esquema desplegado y origen de datos de productos y archivo | El esquema versionado no prueba que las tablas estén completas en producción |
-| T03 | Definir propuesta de contrato/configuración versionada de reglas y labels | No existe todavía un contrato oficial de 4.8; no usar seeds legacy como fallback |
+| T03 | Contrato/configuración versionada de reglas y labels implementado | Resuelto técnico en 4.8; ver informe de contrato. Seeds legacy no son fallback |
 | T04 | Diseñar preview, idempotencia, validación y conciliación de importaciones | Depende de D10–D15/D33; sin actualizar balance unilateralmente |
 | T05 | Diseñar auditoría y relación entre hechos financieros y eventos operativos | Mantener transacción y consistencia sin envío de red dentro de locks |
 | T06 | Verificar despliegue, secretos externos, restauración, monitoreo y calendario aprobado | Antes de 6.0; sin instalar o activar proveedores en esta orden |

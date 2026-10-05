@@ -1,10 +1,12 @@
 # Roadmap MERTEL posterior a 4.7
 
-Fecha: 05/10/2026. Cerradas: 4.6D, 4.7A, 4.7B y 4.7. Siguiente fase: **4.8, NO INICIADA**. Esta orden solo prepara documentación. Las dependencias son requisitos de diseño/datos, no autorización para implementar fases en paralelo o adelantar operaciones.
+Fecha: 05/10/2026. Cerradas: 4.6D, 4.7A, 4.7B y 4.7. **4.8 CERRADA (alcance técnico autorizado)** por autorización posterior del usuario. No se inician fases posteriores. Las dependencias son requisitos de diseño/datos, no autorización para implementar fases en paralelo o adelantar operaciones.
 
 Fuente: [reglas oficiales](../business/MERTEL_COBRANZA_RULES.md). Decisiones D/T: [registro pendiente](../business/MERTEL_DECISIONS_PENDING.md). Todas las fases exigen diff acotado, aislamiento, pruebas pertinentes y preservación de invariantes financieros; un cierre no implica validación de producción si no se ejecutó.
 
 ## 4.8 — Reglas reales de cobranza
+
+Implementación técnica de selección/orden/jerarquía y catálogo ya realizada. Evaluador desde emisión y 3% exacto separados de elegibilidad/aplicación financiera; calendario/límites pendientes se representan sin otorgar Pronto Pago. Productos unknown/mixed requieren revisión manual. Informe y evidencias: [fase 4.8](../architecture/MERTEL_PHASE_4_8.md). Los tests, lint/build y E2E aprobaron; los pendientes comerciales no se declaran resueltos.
 
 - **Objetivo:** corregir jerarquía y selección de factura más atrasada; diseñar/configurar Faltan 5 días y ventana Pronto Pago desde emisión según decisiones confirmadas. Presentación de catálogo coherente con backend. Mantener cliente único y `/api/collection` de consulta.
 - **Dependencias:** 4.7; reglas oficiales; configuración de compañía autorizada; datos de emisión y propuesta compatible de configuración. D01–D06, D24–D29/T02–T03 según la parte.

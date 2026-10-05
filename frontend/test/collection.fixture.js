@@ -4,14 +4,15 @@ export function collectionFixture() {
   const second = { ...invoice, id: 12, invoice_number: "FV-002", due_date: "2026-10-03" };
   const third = { ...invoice, id: 13, invoice_number: "FV-003", due_date: "2026-10-10" };
   const cases = [
-    { customerId: 1, customer: { id: 1, name: "Cliente Águila", nit: "900111", phone: "3000000000" }, eligible: true, stage: "overdue", priority: 100, reason: "Factura vencida con saldo pendiente.", primaryInvoice: invoice, total_balance: "150000", eligible_balance: "100000", classifiedInvoices: [
-      { invoiceId: 11, invoice, stage: "overdue", priority: 100, reason: "Factura vencida", eligible: true, stage_candidates: [{ stage: "overdue", priority: 100, reason: "Factura vencida" }] },
-      { invoiceId: 12, invoice: second, stage: "due_today", priority: 80, eligible: true, stage_candidates: [{ stage: "due_today", priority: 80, reason: "Vence hoy" }] },
+    { customerId: 1, customer: { id: 1, name: "Cliente Águila", nit: "900111", phone: "3000000000" }, eligible: true, stage: "overdue", priority: 4, reason: "Factura vencida con saldo pendiente.", primaryInvoice: invoice, total_balance: "150000", eligible_balance: "100000", classifiedInvoices: [
+      { invoiceId: 11, invoice, stage: "overdue", priority: 4, reason: "Factura vencida", eligible: true, stage_candidates: [{ stage: "overdue", priority: 4, reason: "Factura vencida" }] },
+      { invoiceId: 12, invoice: second, stage: "due_today", priority: 3, eligible: true, stage_candidates: [{ stage: "due_today", priority: 3, reason: "Vence hoy" }] },
       { invoiceId: 13, invoice: third, stage: "no_eligible", priority: null, eligible: false, reason: "Ninguna regla activa aplica.", stage_candidates: [] },
     ] },
-    { customerId: 2, customer: { id: 2, name: "Cliente Beta", nit: "900222" }, eligible: true, stage: "due_today", priority: 80, primaryInvoice: { ...second, invoice_number: "B-001" }, classifiedInvoices: [{ invoiceId: 21, invoice: { ...second, invoice_number: "B-001" }, stage: "due_today", eligible: true }] },
+    { customerId: 2, customer: { id: 2, name: "Cliente Beta", nit: "900222" }, eligible: true, stage: "due_today", priority: 3, primaryInvoice: { ...second, invoice_number: "B-001" }, classifiedInvoices: [{ invoiceId: 21, invoice: { ...second, invoice_number: "B-001" }, stage: "due_today", eligible: true }] },
   ];
   return { reference_date: "2026-10-03", status: "ready", rules_configured: true,
+    stage_catalog: [{key:"overdue",label:"En mora",category:"overdue",priority:4},{key:"due_today",label:"Vence hoy",category:"due_today",priority:3},{key:"days_before_due",label:"Faltan 5 días",category:"days_before_due",priority:2},{key:"prompt_payment",label:"Pronto pago",category:"prompt_payment",priority:1}],
     summary: { total_customers: 2, total_balance: "200000", eligible_balance: "150000", stages: { overdue: { customers: 1 }, due_today: { customers: 1 } } },
     customers: cases.map(item => ({ customer: item.customer, stage: item.stage, priority: item.priority, reason: item.reason,
       total_balance: item.total_balance, eligible_balance: item.eligible_balance,

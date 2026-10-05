@@ -2,6 +2,8 @@
 
 Fecha: 05/10/2026. Este documento es una propuesta de separación y de contratos a revisar, no una implementación ni aprobación de nuevos endpoints/tablas. Fuente de negocio: [reglas oficiales](../business/MERTEL_COBRANZA_RULES.md). Estado y evidencias: [auditoría](MERTEL_AUDIT_POST_4_7.md).
 
+Actualización 4.8: las fronteras del motor/configuración/Pronto Pago ya se implementan en collectionPolicy.js, collectionEngine.service.js y promptPayment.service.js. El contrato de [4.8](MERTEL_PHASE_4_8.md) es aditivo y comprobado; las propuestas de gestiones, promesas, importación y envío de este documento siguen siendo futuras. No hay cambios de esquema, financieros ni de auth.
+
 ## Recorrido existente
 
 ```mermaid

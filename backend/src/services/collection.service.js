@@ -1,7 +1,8 @@
 import pool from "../config/database.js";
 import { getActiveCollectionCustomers, getCollectionOpenInvoices } from "../models/collection.model.js";
 import { loadCompanyCollectionRules, evaluateCompanyCollection } from "./companyCollection.service.js";
-import { evaluateCollectionInvoices } from "./collectionEngine.service.js";
+import { compareCollectionCustomers, evaluateCollectionInvoices } from "./collectionEngine.service.js";
+import { collectionStageCatalog, resolveCollectionPolicy } from "./collectionPolicy.js";
 import { validCompanyId } from "../utils/companyScope.js";
 
 function amountCents(value) {
@@ -15,7 +16,7 @@ function money(cents) {
   return `${cents / 100n}.${String(cents % 100n).padStart(2, "0")}`;
 }
 
-function invoiceView(classification) {
+function invoiceView(classification, catalog) {
   return {
     invoice: classification.invoice,
     stage: classification.stage,
@@ -23,12 +24,19 @@ function invoiceView(classification) {
     reason: classification.reason,
     eligible: classification.eligible,
     stage_candidates: classification.stageCandidates,
+    stage_label: catalog.find(stage => stage.key === classification.stage)?.label ?? (classification.stage === "no_eligible" ? "No elegible" : classification.stage),
+    prompt_payment: classification.promptPayment,
   };
 }
 
 /** Pure response builder; selection and tie-breaking come from the existing collection engine/adapter. */
 export function buildCollectionResult({ company, referenceDate, customers, invoices, rules, filters = {} }) {
   evaluateCollectionInvoices({ referenceDate, invoices: [], rules });
+  const policy = resolveCollectionPolicy(rules);
+  const catalog = collectionStageCatalog(rules);
+  const promptPending = catalog.some(stage => stage.category === "prompt_payment") &&
+    (policy.promptPayment.window.day_type === "pending" || policy.promptPayment.window.include_issue_date === null || policy.promptPayment.window.include_day_ten === null ||
+      (policy.promptPayment.window.day_type === "business" && (!policy.promptPayment.window.calendar?.working_weekdays?.length || !Array.isArray(policy.promptPayment.window.calendar?.holidays))));
   const pendingInvoices = invoices.filter(invoice => amountCents(invoice.balance) > 0n);
   const cases = evaluateCompanyCollection({ company, referenceDate, customers, invoices: pendingInvoices, rules });
   const allInvoicesByCustomer = new Map();
@@ -64,12 +72,13 @@ export function buildCollectionResult({ company, referenceDate, customers, invoi
     eligibleCustomers.push({
       customer: result.customer,
       stage: result.stage,
+      stage_label: catalog.find(stage => stage.key === result.stage)?.label ?? result.stage,
       priority: result.priority,
       reason: result.reason,
       total_balance: money(totalCustomerBalance),
       eligible_balance: money(customerEligibleBalance),
-      main_invoice: primaryClassification ? invoiceView(primaryClassification) : null,
-      invoices: classified.map(invoiceView),
+      main_invoice: primaryClassification ? invoiceView(primaryClassification, catalog) : null,
+      invoices: classified.map(item => invoiceView(item, catalog)),
     });
   }
 
@@ -78,15 +87,19 @@ export function buildCollectionResult({ company, referenceDate, customers, invoi
     delete value._cents;
   }
 
+  eligibleCustomers.sort((left, right) => compareCollectionCustomers(left, right, referenceDate));
   const customersResult = eligibleCustomers.filter(result =>
     (filters.customerId === undefined || String(result.customer.id) === String(filters.customerId)) &&
     (filters.stage === undefined || result.stage === filters.stage));
 
   return {
     reference_date: referenceDate,
-    status: rules.length ? "ready" : "no_rules_configured",
-    rules_configured: rules.length > 0,
-    message: rules.length ? null : "No hay reglas de cobranza configuradas para esta empresa.",
+    status: policy.rules.length ? "ready" : "no_rules_configured",
+    rules_configured: policy.rules.length > 0,
+    message: policy.rules.length ? null : "No hay reglas de cobranza configuradas para esta empresa.",
+    stage_catalog: catalog,
+    priority_basis: "stage_order_ordinal",
+    configuration_warnings: promptPending ? ["Pronto Pago pendiente: definir tipo de día, calendario si corresponde y límites de diez días desde emisión. No se asigna esa etapa mientras falte configuración."] : [],
     summary: {
       total_customers: eligibleCustomers.length,
       total_balance: money(totalBalanceCents),

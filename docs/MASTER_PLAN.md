@@ -1,13 +1,13 @@
 # Plan maestro MERTEL
 
-Actualizado: 05/10/2026. Producto exclusivo: MERTEL Importaciones — Sistema de Cobranza. Este archivo orienta trabajo futuro; **no inicia 4.8 ni autoriza implementar todo el roadmap automáticamente**.
+Actualizado: 05/10/2026. Producto exclusivo: MERTEL Importaciones — Sistema de Cobranza. **La orden posterior del usuario autoriza 4.8; ninguna fase siguiente queda autorizada automáticamente**.
 
 ## Dónde estamos
 
-- Cerradas: 4.6D autenticación/sesión, 4.7A backend, 4.7B frontend y 4.7 cobranza de consulta.
+- Cerradas: 4.6D autenticación/sesión, 4.7A backend, 4.7B frontend, 4.7 cobranza de consulta y 4.8 en su alcance técnico autorizado.
 - Base de implementación: `main`, commit `53a9a1093073076f5a0d4ba00ae7924c3b1c2af5`, mensaje `feat: implementar cobranza MERTEL`.
-- La orden actual es auditoría, formalización comercial y arquitectura/roadmap; solo crea documentos.
-- Siguiente fase: **4.8 — Reglas reales de cobranza; NO INICIADA**. Requiere una instrucción posterior que la autorice.
+- La orden actual implementa exclusivamente 4.8; base documental 8fca506e3feef8c309a9a945bfd083b3e26d0345.
+- Estado actual: **4.8 CERRADA (alcance técnico autorizado)**, ver [informe de implementación](architecture/MERTEL_PHASE_4_8.md). Siguiente después de su cierre: 4.9, con autorización posterior y catálogo de gestiones aprobado.
 - Salvedad de 4.7: consulta autenticada con datos reales de MERTEL no disponible. Inspección local 05/10/2026: cero compañías, settings comerciales legacy NULL y sin collection_rules; no crear datos para aparentar validación real.
 - Archivo protegido: `database/migrations/001_initial_schema.sql` con cambio local previo; nunca editar, revertir ni incluir en commit de estas órdenes. Hash de contenido auditado: `e2f0b2c49c979991914a187dc9531d9c5d2117ce`.
 
@@ -23,7 +23,7 @@ Documentos de fases anteriores y VALIDACION-4.7.md son evidencia histórica, no 
 
 | Fase | Trabajo previsto | Estado |
 |---|---|---|
-| 4.8 | Reglas reales de cobranza | NO INICIADA; siguiente |
+| 4.8 | Reglas reales de cobranza | CERRADA; activación de Pronto Pago pendiente |
 | 4.9 | Gestiones e historial | FUTURA |
 | 5.0 | Promesas de pago | FUTURA |
 | 5.1 | Importación/actualización de cartera | FUTURA |
@@ -35,7 +35,7 @@ Documentos de fases anteriores y VALIDACION-4.7.md son evidencia histórica, no 
 | 5.7 | Auditoría/endurecimiento | FUTURA |
 | 6.0 | Producción MERTEL | FUTURA |
 
-## Qué hará exactamente 4.8 cuando se autorice
+## Alcance autorizado de 4.8
 
 1. Contrastar los pendientes necesarios con respuestas de Cartera antes de activar su parte: tipo/límites de días, selección sin vencidos/desempates, productos/revisión y permanencia entre ventanas.
 2. Preservar una sola tarjeta por cliente y corregir selección para la factura más atrasada, abandonando proximidad absoluta a referencia como criterio comercial. Revisar orden de clientes, no solo el main_invoice.
@@ -70,7 +70,7 @@ Prohibido SaaS/Hostify, suscripciones, billing, marketplace y provisioning comer
 
 ## Cuándo hacer commit y push
 
-Solo cuando la instrucción vigente lo autorice y se hayan cumplido sus criterios. No suponer que leer este plan autoriza publicar cualquier cambio. La orden actual sí autoriza un commit/push exclusivamente documental/arquitectónico, con la migración preexistente excluida.
+Solo cuando la instrucción vigente lo autorice y se hayan cumplido sus criterios. No suponer que leer este plan autoriza publicar cualquier cambio. La orden 4.8 autoriza commit/push selectivo de esa implementación si pasan todas las validaciones; no commit parcial ante un fallo. La migración preexistente permanece excluida. La representación pending de calendario/límites está autorizada expresamente, sin transformar esos parámetros en decisiones aprobadas ni activar descuentos.
 
 Usar staging por archivos exactos; jamás git add . ni git add ... No incluir .env, node_modules, temporales, capturas, código ajeno o migración 001. Revisar diff --check y diff --cached --check, inspeccionar inventario y diff staged, verificar exclusiones y evitar commits mezclados. Ante modificaciones ajenas adicionales, no mezclarlas y reportar el conflicto antes de publicar.
 
@@ -80,16 +80,24 @@ Tras commit/push autorizado a origin/main, verificar status, log, HEAD, origin/m
 
 Prioridad de trabajo técnico, no prioridad comercial de clientes:
 
-- 4.8: selección de factura incorrecta para la nueva regla, ventana desde emisión ausente, orden/labels y datos de descuento insuficientes.
+- 4.8: selección/jerarquía/orden/labels corregidos; evaluador desde emisión y cálculo puro implementados. Quedan decisiones de calendario/límites, datos de productos y redondeo/registro financiero antes de activar beneficio real.
 - 4.9–5.2: no existe aún historial operativo, pausa por promesa, contrato seguro de importación ni estado operativo continuo.
 - 5.3–5.6: falta proveedor, cuotas aprobadas, fuentes de métricas y edición/configuración auditada; evitar políticas dispersas.
 - 5.7: revisar precisión monetaria del helper de descuento, conversiones BIGINT, auditoría integral, escala de lectura y efectos de referencias huérfanas.
 - 6.0: falta contexto real autorizado y evidencia de configuración/datos de producción; no confundir push con deploy.
 
-No se requiere corregir código ahora por una deuda crítica. El entregable de esta orden es la base documental para decidir e implementar la fase siguiente con límites explícitos.
+El entregable de la orden actual es la implementación acotada de 4.8 y su validación. No se amplían gestiones, pagos, importación ni mensajes para resolver pendientes de fases siguientes.
 
-## Verificación documental del 05/10/2026
+## Histórico: verificación documental previa del 05/10/2026
 
 Backend npm test: **148/148**, sin omisiones. Frontend npm test: **51/51**. Lint y build: **OK**. E2E existente se revisó como cobertura, sin nueva ejecución por tratarse de cambios exclusivamente documentales; el resultado histórico de 4.7 fue 12/12 y no se presenta como nueva ejecución.
 
 El inventario de esta orden consta de seis documentos nuevos: este plan, reglas, decisiones, auditoría, arquitectura y roadmap. Los resultados de commit/push y hashes se comprueban después de publicar y se entregan en el reporte final; este archivo no afirma una publicación que no se haya verificado. No se implementó 4.8 ni ninguna otra fase futura.
+
+## Cierre técnico de 4.8 — 05/10/2026
+
+4.8 CERRADA según el alcance autorizado: factura más atrasada y orden backend, jerarquía/configuración ordinal, Pronto Pago desde emisión con diez días y tipo/límites pending, 3% matemático antes de IVA, productos/revisión separados y catálogo API/UI. El estado pendiente del calendario está implementado deliberadamente y no significa concesión del beneficio. No se declaran resueltos D01–D06/D24–D27, ni aplicación financiera del descuento.
+
+Backend 165/165, frontend 53/53, lint/build OK y E2E 13/13. API HTTP/MySQL y read-only verificados en base aislada; health 200/401 local sin autenticación. Validación contra datos reales MERTEL no disponible (cero compañías y reglas en la base autorizada). Sin migraciones ni cambios de pagos/allocations/auth/roles.
+
+La siguiente fase de implementación es 4.9 — Gestiones e historial, únicamente bajo autorización posterior y con catálogo/roles definidos (D08/D35). Antes de activar Pronto Pago real obtener aprobación del calendario/límites y fuente/exclusiones de productos, revisión manual y política financiera/redondeo. No habilitar mensajes, promesas, importación ni flujos financieros para resolver esos pendientes.

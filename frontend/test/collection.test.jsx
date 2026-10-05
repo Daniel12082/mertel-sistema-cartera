@@ -13,6 +13,27 @@ async function loaded() { view(); await screen.findByRole("button", { name: "Ver
 beforeEach(() => { vi.clearAllMocks(); getCollection.mockResolvedValue(readCollectionResponse({ data: collectionFixture() })); });
 
 describe("Cobranza de MERTEL", () => {
+  it("uses the backend stage catalog, labels and order without static stage cards", async () => {
+    const data = collectionFixture();
+    data.stage_catalog = [{ key: "server_stage", label: "Etiqueta recibida", category: "overdue", priority: 4 }, { key: "due_today", label: "Vence hoy", category: "due_today", priority: 3 }];
+    data.customers[0].stage = "server_stage"; data.customers[0].stage_label = "Etiqueta recibida";
+    data.summary.stages = { server_stage: { customers: 1 }, due_today: { customers: 1 } };
+    data.configuration_warnings = ["Pronto Pago pendiente de calendario."];
+    getCollection.mockResolvedValue(data); await loaded();
+    expect(screen.getByRole("region", { name: "Resumen de cobranza" }).querySelector("article")).toHaveTextContent("Etiqueta recibida");
+    expect(screen.getByLabelText("Etapa").options).toHaveLength(3);
+    expect(screen.getByText("Pronto Pago pendiente de calendario.")).toBeVisible();
+    expect(screen.queryByText("Faltan X días")).not.toBeInTheDocument();
+  });
+  it("presents backend prompt window and manual-review reasons without granting a discount", async () => {
+    const data = collectionFixture();
+    data.customers[0].invoices[0].prompt_payment = { percentage: "3", window: { reason: "Calendario pendiente desde emisión." }, eligibility: { reason: "Productos desconocidos: revisión manual." }, discount: { amount: null, reason: "No se aplicó descuento." } };
+    getCollection.mockResolvedValue(data); await loaded(); fireEvent.click(screen.getByRole("button", { name: "Ver detalle de Cliente Águila" }));
+    fireEvent.click(screen.getByText("Ver evaluación"));
+    expect(screen.getByText("Calendario pendiente desde emisión.")).toBeVisible();
+    expect(screen.getByText("Productos desconocidos: revisión manual.")).toBeVisible();
+    expect(screen.getByText("No se aplicó descuento.")).toBeVisible();
+  });
   it("renders title, explicit date and loading before the response", () => {
     getCollection.mockReturnValue(new Promise(() => {})); view();
     expect(screen.getByRole("heading", { name: "Cobranza" })).toBeVisible();
@@ -45,7 +66,7 @@ describe("Cobranza de MERTEL", () => {
     const dialog = screen.getByRole("dialog");
     expect(within(dialog).getByText("Saldo total pendiente")).toBeVisible();
     expect(within(dialog).getByText("Saldo de facturas elegibles para cobranza")).toBeVisible();
-    expect(within(dialog).getAllByText("100")).toHaveLength(2);
+    expect(within(dialog).getAllByText("4")).toHaveLength(2);
     expect(within(dialog).getByText("FV-003")).toBeVisible();
     expect(within(dialog).getByText("No elegible")).toBeVisible();
     expect(within(dialog).getByText("3000000000")).toBeVisible();
@@ -74,13 +95,13 @@ describe("Cobranza de MERTEL", () => {
   });
   it("refreshes date, summary, rows and open detail with unchanged calendar query", async () => {
     await loaded(); fireEvent.click(screen.getByRole("button", { name: "Ver detalle de Cliente Águila" }));
-    const changed = collectionFixture(); changed.customers[0].stage = "due_today"; changed.customers[0].priority = 70;
+    const changed = collectionFixture(); changed.customers[0].stage = "due_today"; changed.customers[0].priority = 3;
     changed.reference_date = "2026-10-04";
     changed.summary.stages = { due_today: { customers: 2 } };
     getCollection.mockResolvedValue(readCollectionResponse({ data: changed }));
     fireEvent.change(screen.getByLabelText("Fecha de referencia"), { target: { value: "2026-10-04" } });
     await waitFor(() => expect(getCollection).toHaveBeenLastCalledWith("2026-10-04", expect.objectContaining({ signal: expect.any(AbortSignal) })));
-    expect(await screen.findByRole("dialog")).toHaveTextContent("70");
+    expect(await screen.findByRole("dialog")).toHaveTextContent("3");
     expect(screen.getByRole("dialog")).toHaveTextContent("Referencia 4/10/2026");
     expect(screen.getByRole("region", { name: "Resumen de cobranza" })).toHaveTextContent("2 clientes");
   });

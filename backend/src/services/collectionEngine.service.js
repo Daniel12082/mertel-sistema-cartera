@@ -1,3 +1,5 @@
+import { collectionRuleCategory, resolveCollectionPolicy } from "./collectionPolicy.js";
+import { evaluatePromptPayment } from "./promptPayment.service.js";
 const DAY_IN_MS = 86_400_000;
 
 function parseDateDay(value, fieldName) {
@@ -43,6 +45,7 @@ function parseBalanceCents(value) {
 }
 
 function ruleCondition(rule) {
+  if (rule.key === "prompt_payment") return "days_since_issue";
   if (rule.condition && typeof rule.condition === "object") {
     return rule.condition.type;
   }
@@ -54,22 +57,25 @@ function ruleCondition(rule) {
 }
 
 function validateRules(rules) {
-  if (!Array.isArray(rules)) throw new TypeError("rules debe ser un arreglo");
-
-  return rules.map((rule) => {
+  const policy = resolveCollectionPolicy(rules);
+  const keys = new Set();
+  return policy.rules.map((source) => {
+    const rule = { ...source };
     if (!rule || typeof rule !== "object" || typeof rule.key !== "string" || !rule.key.trim()) {
       throw new TypeError("Cada regla debe tener una key no vacía");
     }
     if (typeof rule.active !== "boolean") {
       throw new TypeError(`La regla ${rule.key} debe indicar active como booleano`);
     }
+    if (keys.has(rule.key)) throw new TypeError("No se permiten claves de etapa duplicadas");
+    keys.add(rule.key);
     if (!rule.active) return { rule, condition: null };
-    if (typeof rule.priority !== "number" || !Number.isFinite(rule.priority)) {
+    if (rule.priority !== undefined && (typeof rule.priority !== "number" || !Number.isFinite(rule.priority))) {
       throw new TypeError(`La regla ${rule.key} debe tener una prioridad numérica finita`);
     }
 
     const condition = ruleCondition(rule);
-    if (!["due_today", "overdue", "days_before_due"].includes(condition)) {
+    if (!["due_today", "overdue", "days_before_due", "days_since_issue"].includes(condition)) {
       throw new TypeError(`La condición de la regla ${rule.key} no está soportada`);
     }
     if (condition === "days_before_due") {
@@ -80,6 +86,7 @@ function validateRules(rules) {
         throw new TypeError(`La regla ${rule.key} debe tener days_before_due entero no negativo`);
       }
     }
+    rule.priority = policy.stageOrder.length - policy.stageOrder.indexOf(collectionRuleCategory(rule, condition));
     return { rule, condition };
   });
 }
@@ -109,8 +116,9 @@ function noEligibleResult(invoice, reason) {
   };
 }
 
-function ruleMatches(rule, condition, daysUntilDue) {
+function ruleMatches(rule, condition, daysUntilDue, promptPayment) {
   if (!rule.active) return false;
+  if (condition === "days_since_issue") return promptPayment.window.status === "within_window";
   if (condition === "overdue") return daysUntilDue < 0;
   if (condition === "due_today") return daysUntilDue === 0;
   const configuredDays = rule.condition && typeof rule.condition === "object"
@@ -123,31 +131,31 @@ function reasonForRule(rule, condition) {
   if (typeof rule.reason === "string" && rule.reason.trim()) return rule.reason;
   if (condition === "overdue") return "Factura vencida con saldo pendiente.";
   if (condition === "due_today") return "La factura vence hoy.";
+  if (condition === "days_since_issue") return "La factura está dentro de la ventana configurada de diez días desde emisión; el descuento requiere evaluación separada.";
   const days = rule.condition && typeof rule.condition === "object"
     ? rule.condition.days
     : rule.days_before_due;
-  if (rule.key === "prompt_payment") {
-    return "La factura se encuentra dentro de la ventana configurada de pronto pago.";
-  }
   return `Faltan ${days} días para el vencimiento.`;
 }
 
 function compareIdentifier(left, right) {
-  const leftNumber = Number(left);
-  const rightNumber = Number(right);
-  if (Number.isFinite(leftNumber) && Number.isFinite(rightNumber)) return leftNumber - rightNumber;
+  if (/^\d+$/.test(String(left)) && /^\d+$/.test(String(right))) return BigInt(left) < BigInt(right) ? -1 : BigInt(left) > BigInt(right) ? 1 : 0;
   return String(left).localeCompare(String(right));
 }
 
-function compareInvoiceCandidates(left, right, referenceDay) {
-  if (left.priority !== right.priority) return right.priority - left.priority;
+export function compareInvoiceCandidates(left, right, referenceDay) {
   const leftDue = parseDateDay(left.invoice.due_date ?? left.invoice.dueDate, "invoice.due_date");
   const rightDue = parseDateDay(right.invoice.due_date ?? right.invoice.dueDate, "invoice.due_date");
-  const distanceDifference = Math.abs(leftDue - referenceDay) - Math.abs(rightDue - referenceDay);
-  if (distanceDifference !== 0) return distanceDifference;
-  const balanceDifference = parseBalanceCents(right.invoice.balance) - parseBalanceCents(left.invoice.balance);
-  if (balanceDifference !== 0n) return balanceDifference > 0n ? 1 : -1;
-  return compareIdentifier(left.invoiceId ?? "", right.invoiceId ?? "");
+  const leftOverdue = leftDue < referenceDay;
+  const rightOverdue = rightDue < referenceDay;
+  if (leftOverdue !== rightOverdue) return leftOverdue ? -1 : 1;
+  if (leftOverdue && leftDue !== rightDue) return leftDue - rightDue;
+  if (left.priority !== right.priority) return right.priority - left.priority;
+  return compareIdentifier(left.invoiceId ?? invoiceIdentifier(left.invoice) ?? "", right.invoiceId ?? invoiceIdentifier(right.invoice) ?? "");
+}
+
+export function compareCollectionCustomers(left, right, referenceDate) {
+  return compareInvoiceCandidates(left.main_invoice, right.main_invoice, parseDateDay(referenceDate, "referenceDate")) || compareIdentifier(left.customer.id, right.customer.id);
 }
 
 /**
@@ -158,19 +166,21 @@ export function evaluateCollectionInvoice({ referenceDate, invoice, rules }) {
   const referenceDay = parseDateDay(referenceDate, "referenceDate");
   if (!invoice || typeof invoice !== "object") throw new TypeError("invoice debe ser un objeto");
   const normalizedRules = validateRules(rules);
+  const policy = resolveCollectionPolicy(rules);
+  const promptPayment = evaluatePromptPayment({ referenceDate, invoice, policy: policy.promptPayment });
 
-  if (isDeleted(invoice)) return noEligibleResult(invoice, "La factura no está activa.");
+  if (isDeleted(invoice)) return { ...noEligibleResult(invoice, "La factura no está activa."), promptPayment };
   const balanceCents = parseBalanceCents(invoice.balance);
-  if (balanceCents === 0n) return noEligibleResult(invoice, "La factura no tiene saldo pendiente.");
+  if (balanceCents === 0n) return { ...noEligibleResult(invoice, "La factura no tiene saldo pendiente."), promptPayment };
 
   const dueDate = invoice.due_date ?? invoice.dueDate;
   if (dueDate === null || dueDate === undefined || dueDate === "") {
-    return noEligibleResult(invoice, "La factura no tiene fecha de vencimiento.");
+    return { ...noEligibleResult(invoice, "La factura no tiene fecha de vencimiento."), promptPayment };
   }
   const dueDay = parseDateDay(dueDate, "invoice.due_date");
   const daysUntilDue = dueDay - referenceDay;
   const matches = normalizedRules
-    .filter(({ rule, condition }) => ruleMatches(rule, condition, daysUntilDue))
+    .filter(({ rule, condition }) => ruleMatches(rule, condition, daysUntilDue, promptPayment))
     .map(({ rule, condition }) => ({
       stage: rule.key,
       priority: rule.priority,
@@ -179,7 +189,7 @@ export function evaluateCollectionInvoice({ referenceDate, invoice, rules }) {
     .sort((left, right) => right.priority - left.priority || left.stage.localeCompare(right.stage));
 
   if (matches.length === 0) {
-    return noEligibleResult(invoice, "Ninguna regla activa aplica a esta factura.");
+    return { ...noEligibleResult(invoice, "Ninguna regla activa aplica a esta factura."), promptPayment };
   }
 
   const selected = matches[0];
@@ -192,6 +202,7 @@ export function evaluateCollectionInvoice({ referenceDate, invoice, rules }) {
     reason: selected.reason,
     eligible: true,
     stageCandidates: matches,
+    promptPayment,
   };
 }
 
@@ -199,11 +210,11 @@ export function evaluateCollectionInvoice({ referenceDate, invoice, rules }) {
 export function evaluateCollectionInvoices({ referenceDate, invoices, rules }) {
   parseDateDay(referenceDate, "referenceDate");
   if (!Array.isArray(invoices)) throw new TypeError("invoices debe ser un arreglo");
-  const normalizedRules = validateRules(rules);
+  validateRules(rules);
   return invoices.map((invoice) => evaluateCollectionInvoice({
     referenceDate,
     invoice,
-    rules: normalizedRules.map(({ rule }) => rule),
+    rules,
   }));
 }
 

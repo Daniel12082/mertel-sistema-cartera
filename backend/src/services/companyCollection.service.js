@@ -1,6 +1,7 @@
 import { getCompanySettings } from "../models/companyConfiguration.model.js";
 import { sameCompany, validCompanyId } from "../utils/companyScope.js";
 import { evaluateCollectionCase } from "./collectionEngine.service.js";
+import { resolveCollectionPolicy } from "./collectionPolicy.js";
 
 export async function loadCompanyCollectionRules(companyId, db) {
   const settings = await getCompanySettings(companyId, db);
@@ -9,10 +10,10 @@ export async function loadCompanyCollectionRules(companyId, db) {
   if (stored.length !== 1 || stored[0].value_type !== "json") throw new TypeError("Configuración de cobranza incompatible");
   let rules;
   try { rules = JSON.parse(stored[0].setting_value); } catch { throw new TypeError("Reglas de cobranza inválidas"); }
-  if (!Array.isArray(rules)) throw new TypeError("Reglas de cobranza deben ser un arreglo");
+  resolveCollectionPolicy(rules);
   return rules;
 }
-// Company adapter around the unchanged pure engine. No HTTP route, scheduling or message sending.
+// Company adapter around the pure engine. No scheduling or message sending.
 export function evaluateCompanyCollection({ company, referenceDate, customers, invoices, rules }) {
   if (!validCompanyId(company?.id) || !Array.isArray(customers) || !Array.isArray(invoices)) throw new TypeError("Contexto empresarial de cobranza inválido");
   if ([...customers, ...invoices].some(record => !sameCompany(record?.company_id, company.id))) {

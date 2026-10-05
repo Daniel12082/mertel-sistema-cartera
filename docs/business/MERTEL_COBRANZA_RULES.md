@@ -1,6 +1,12 @@
 # Reglas oficiales de cobranza MERTEL
 
-Fecha: 05/10/2026. Fuente: orden maestra del usuario basada en respuestas de Cartera MERTEL. Esta documentación incorpora las reglas; **no significa que ya estén implementadas o activadas**. Última fase técnica cerrada: 4.7, commit `53a9a1093073076f5a0d4ba00ae7924c3b1c2af5`.
+Fecha: 05/10/2026. Fuente: orden maestra del usuario basada en respuestas de Cartera MERTEL y autorización posterior de 4.8. Esta documentación distingue implementación y activación comercial. Base histórica 4.7: commit `53a9a1093073076f5a0d4ba00ae7924c3b1c2af5`; estado técnico actual 4.8: CERRADA con pendientes de configuración explícitos.
+
+## Actualización autorizada 4.8
+
+4.8 CERRADA (alcance técnico autorizado), validación técnica aprobada. Ya están implementados: selección de vencida más antigua, orden de clientes en backend, jerarquía mediante stage_order y rangos ordinales, catálogo/labels de servidor, evaluador de ventana desde emisión y función matemática exacta del 3% de base_value. Consultar [informe 4.8](../architecture/MERTEL_PHASE_4_8.md).
+
+Se implementó el estado de configuración pendiente autorizado por esta orden: el tipo de día y límites **no se eligieron por MERTEL**. Sin ellos no se asigna Pronto Pago. Productos desconocidos/mixtos representan manual_review; no se inventaron SKU ni revisión operativa. La clasificación no aplica descuentos; el cálculo puro solo produce preview exacto o pending_rounding. El 10% y promo_18 siguen separados. No se implementan fases posteriores ni se acredita validación de datos reales.
 
 ## Autoridad y alcance
 
@@ -19,7 +25,7 @@ Orden comercial confirmado, de mayor a menor prioridad:
 
 Las etapas y sus prioridades deben ser configurables y centralizadas. No hay valores numéricos absolutos de prioridad aprobados. El día 5 sí está confirmado como regla de MERTEL, aunque no debe convertirse en una constante dispersa en componentes.
 
-Cada cliente tiene una única tarjeta en el pipeline principal. La factura más atrasada determina su posición/prioridad principal; el detalle muestra sus facturas. El motor actual no cumple plenamente la selección de la factura más atrasada: **requiere corrección en 4.8**. Desempates, clientes sin vencidos y permanencia entre ventanas requieren precisión adicional; véase el registro de decisiones.
+Cada cliente tiene una única tarjeta en el pipeline principal. La factura más atrasada determina su posición/prioridad principal; el detalle muestra sus facturas. En 4.8 el motor selecciona la vencida más antigua, sin criterio de mayor saldo. La orden 4.8 autoriza ID como desempate técnico y entre futuras de igual rango; no se transforma ese criterio en regla comercial. La permanencia entre ventanas continúa pendiente.
 
 ## Pronto Pago y modalidades de descuento
 

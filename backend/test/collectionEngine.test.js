@@ -11,10 +11,10 @@ import {
 const referenceDate = "2026-10-02";
 const customer = { id: 7, name: "Cliente de prueba" };
 const baseRules = [
-  { key: "prompt_payment", active: true, priority: 10, days_before_due: 10 },
-  { key: "five_days_before_due", active: true, priority: 20, days_before_due: 5 },
-  { key: "due_today", active: true, priority: 30 },
-  { key: "overdue", active: true, priority: 40 },
+  { key: "prompt_payment", active: true, condition: "days_since_issue" },
+  { key: "five_days_before_due", active: true, days_before_due: 5 },
+  { key: "due_today", active: true },
+  { key: "overdue", active: true },
 ];
 
 function invoice(overrides = {}) {
@@ -42,7 +42,7 @@ test("due today is classified using the configured due_today rule", () => {
     rules: baseRules,
   });
   assert.equal(result.stage, "due_today");
-  assert.equal(result.priority, 30);
+  assert.equal(result.priority, 3); // Ordinal rank, not a commercial score.
   assert.equal(result.reason, "La factura vence hoy.");
 });
 
@@ -57,7 +57,7 @@ test("past due invoice is classified as overdue", () => {
 });
 
 test("days before due is configurable and does not hardcode the stage key", () => {
-  const rules = [{ key: "five_days_before_due", active: true, priority: 20, days_before_due: 5 }];
+  const rules = [{ key: "five_days_before_due", active: true, days_before_due: 5 }];
   const result = evaluateCollectionInvoice({
     referenceDate,
     invoice: invoice({ due_date: "2026-10-07" }),
@@ -89,19 +89,19 @@ test("invoice without due date receives no collection stage", () => {
   assert.match(result.reason, /no tiene fecha de vencimiento/);
 });
 
-test("highest supplied priority wins when multiple rules match one invoice", () => {
+test("configured stage order wins when multiple conditions match one invoice", () => {
   const rules = [
-    { key: "due_today", active: true, priority: 10 },
-    { key: "zero_days_before_due", active: true, priority: 20, days_before_due: 0 },
+    { key: "due_today", active: true },
+    { key: "zero_days_before_due", active: true, days_before_due: 0 },
   ];
   const result = evaluateCollectionInvoice({
     referenceDate,
     invoice: invoice({ due_date: referenceDate }),
     rules,
   });
-  assert.equal(result.stage, "zero_days_before_due");
-  assert.equal(result.priority, 20);
-  assert.deepEqual(result.stageCandidates.map(({ stage }) => stage), ["zero_days_before_due", "due_today"]);
+  assert.equal(result.stage, "due_today");
+  assert.equal(result.priority, 3);
+  assert.deepEqual(result.stageCandidates.map(({ stage }) => stage), ["due_today", "zero_days_before_due"]);
 });
 
 test("customer stage follows configured priorities and keeps every eligible invoice", () => {
@@ -111,18 +111,18 @@ test("customer stage follows configured priorities and keeps every eligible invo
     invoice({ invoice_id: 3, due_date: "2026-10-07" }),
   ];
   const result = evaluateCollectionCase({ referenceDate, customer, invoices, rules: [
-    { key: "overdue", active: true, priority: 10 },
-    { key: "due_today", active: true, priority: 20 },
-    { key: "five_days_before_due", active: true, priority: 30, days_before_due: 5 },
+    { key: "overdue", active: true },
+    { key: "due_today", active: true },
+    { key: "five_days_before_due", active: true, days_before_due: 5 },
   ] });
-  assert.equal(result.stage, "five_days_before_due");
-  assert.equal(result.primaryInvoice.invoice_id, 3);
+  assert.equal(result.stage, "overdue");
+  assert.equal(result.primaryInvoice.invoice_id, 1);
   assert.equal(result.invoices.length, 3);
   assert.deepEqual(result.invoices.map(({ stage }) => stage), ["overdue", "due_today", "five_days_before_due"]);
 });
 
-test("primary invoice tie-break uses nearest due date, then larger balance, then invoice id", () => {
-  const rules = [{ key: "overdue", active: true, priority: 5 }];
+test("oldest overdue invoice wins; equal dates use invoice id independently of balances", () => {
+  const rules = [{ key: "overdue", active: true }];
   const nearestDueDate = evaluateCollectionInvoices({
     referenceDate,
     rules,
@@ -132,18 +132,18 @@ test("primary invoice tie-break uses nearest due date, then larger balance, then
     ],
   });
   const nearestGroup = groupCollectionCandidatesByCustomer(nearestDueDate, [customer])[0];
-  assert.equal(selectCustomerStage(nearestGroup, referenceDate).primaryInvoice.invoice_id, 5);
+  assert.equal(selectCustomerStage(nearestGroup, referenceDate).primaryInvoice.invoice_id, 4);
 
   const largerBalance = evaluateCollectionInvoices({
     referenceDate,
     rules,
     invoices: [
-      invoice({ invoice_id: 9, due_date: "2026-10-01", balance: "100.00" }),
+      invoice({ invoice_id: 3, due_date: "2026-10-01", balance: "100.00" }),
       invoice({ invoice_id: 8, due_date: "2026-10-01", balance: "200.00" }),
     ],
   });
   const balanceGroup = groupCollectionCandidatesByCustomer(largerBalance, [customer])[0];
-  assert.equal(selectCustomerStage(balanceGroup, referenceDate).primaryInvoice.invoice_id, 8);
+  assert.equal(selectCustomerStage(balanceGroup, referenceDate).primaryInvoice.invoice_id, 3);
 
   const stableId = evaluateCollectionInvoices({
     referenceDate,

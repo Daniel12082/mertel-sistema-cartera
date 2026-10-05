@@ -2,6 +2,23 @@
 
 Fecha: 05/10/2026. Base auditada: `main`, commit `53a9a1093073076f5a0d4ba00ae7924c3b1c2af5`. Auditoría documental; no se modifican código, esquema, reglas, roles, datos ni autenticación.
 
+## Estado actualizado durante 4.8
+
+La auditoría original de las secciones siguientes es la **foto histórica posterior a 4.7**. La implementación autorizada 4.8 se registra en esta tabla y en [MERTEL_PHASE_4_8.md](MERTEL_PHASE_4_8.md), sin convertir pendientes comerciales en decisiones aprobadas.
+
+| Hallazgo | Estado técnico 4.8 |
+|---|---|
+| C01 | CORREGIDO: factura vencida más antigua; ID técnico para empate; saldo no decide |
+| C02 | CORREGIDO: ventana desde issue_date, diez días; tipo/calendario/límites pendientes bloquean asignación, no se usan due_date ni promo_18 |
+| C03 | CORREGIDO: orden configurable y rangos ordinales, clientes ordenados en backend |
+| C04 | PARCIAL/PENDIENTE: no se implementan flujos de pagos/eventos ni permanencia D29 |
+| C05 | Cálculo matemático exacto 3% base_value implementado; subcentavos sin redondear; aplicación financiera y exclusiones siguen pendientes |
+| C06 | CORREGIDO: UI consume catálogo/orden/etiquetas de backend, sin catálogo comercial estático |
+| C07 | CORREGIDO en código/tests: sin pesos arbitrarios ni interpretación Pronto Pago por vencimiento; settings NULL no se heredan ni editan |
+| C08 | PENDIENTE fases 5.1/5.4; finanzas existentes intactas |
+
+Gestiones, promesas, mensajes, importaciones, reportes y administración completa siguen sin implementar. No hay migraciones nuevas. 4.8 CERRADA (alcance técnico autorizado) con validaciones automáticas aprobadas; los resultados específicos constan en su informe.
+
 ## Estado por módulo y evidencia
 
 | Módulo | Estado actual | Evidencia y alcance |

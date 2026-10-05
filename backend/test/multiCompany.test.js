@@ -280,8 +280,8 @@ describe("multi-company HTTP / MySQL isolation", { skip: !(process.env.DB_HOST &
     assert.deepEqual(await financialState(),before);
   });
   test("company settings/templates/rules never inherit legacy global commercial configuration", async () => {
-    const rulesA=[{key:"configured_reminder",active:true,priority:10,days_before_due:2}];
-    const rulesB=[{key:"configured_reminder",active:true,priority:10,days_before_due:4}];
+    const rulesA=[{key:"configured_reminder",active:true,days_before_due:2}];
+    const rulesB=[{key:"configured_reminder",active:true,days_before_due:4}];
     await db.query("INSERT INTO settings (company_id,setting_key,setting_value,value_type) VALUES (NULL,'collection_rules',?,'json'),(?,'collection_rules',?,'json'),(?,'collection_rules',?,'json')",[JSON.stringify(rulesB),a.companyId,JSON.stringify(rulesA),b.companyId,JSON.stringify(rulesB)]);
     for (const companyId of [null,a.companyId,b.companyId]) await db.query("INSERT INTO message_templates (company_id,name,channel,stage,content) VALUES (?,'Fixture','email','configured_reminder','Fixture content')",[companyId]);
     assert.deepEqual(await loadCompanyCollectionRules(a.companyId,db),rulesA); assert.deepEqual(await loadCompanyCollectionRules(b.companyId,db),rulesB);
@@ -300,8 +300,8 @@ describe("multi-company HTTP / MySQL isolation", { skip: !(process.env.DB_HOST &
   });
   test("collection endpoint groups authorized pending invoices, honors configured rules and stays read-only", async () => {
     const rules = [
-      { key: "two_days_before", active: true, priority: 10, days_before_due: 2 },
-      { key: "overdue", active: true, priority: 20, condition: "overdue" },
+      { key: "two_days_before", active: true, days_before_due: 2 },
+      { key: "overdue", active: true, condition: "overdue" },
     ];
     await db.query("INSERT INTO settings (company_id,setting_key,setting_value,value_type) VALUES (?, 'collection_rules', ?, 'json')", [a.companyId, JSON.stringify(rules)]);
     const [noDue] = await db.query("INSERT INTO invoices (company_id,customer_id,invoice_number,document_value,base_value,iva_value,balance,due_date) VALUES (?,?,'no-due',25,25,0,25,NULL)", [a.companyId, a.customer]);
@@ -341,6 +341,26 @@ describe("multi-company HTTP / MySQL isolation", { skip: !(process.env.DB_HOST &
     assert.equal((await request("GET", "/collection?reference_date=2026-10-02", { token: global.token })).status, 400);
     const collector = await user(a.companyId, "collector");
     assert.equal((await request("GET", "/collection?reference_date=2026-10-02", { token: collector.token })).status, 200);
+  });
+  test("4.8 HTTP contract reads versioned policy, oldest invoice and pending prompt assessment without writes", async () => {
+    const policy = { version: 2, stage_order: ["overdue", "due_today", "days_before_due", "prompt_payment"], rules: [
+      { key: "overdue", active: true }, { key: "due_today", active: true },
+      { key: "five_days_before_due", active: true, days_before_due: 5 },
+      { key: "prompt_payment", active: true, condition: "days_since_issue" },
+    ], prompt_payment: { window: { day_type: "pending", include_issue_date: null, include_day_ten: null } } };
+    await db.query("INSERT INTO settings (company_id,setting_key,setting_value,value_type) VALUES (?,'collection_rules',?,'json')", [a.companyId, JSON.stringify(policy)]);
+    const [oldest] = await db.query("INSERT INTO invoices (company_id,customer_id,invoice_number,issue_date,due_date,document_value,base_value,iva_value,balance) VALUES (?,?,'oldest','2026-08-01','2026-09-01',119,100,19,119)", [a.companyId, a.customer]);
+    const beforeState = await financialState();
+    const result = await expect("GET", "/collection?reference_date=2026-10-05", a, 200);
+    assert.equal(result.customers.length, 1); assert.equal(result.customers[0].main_invoice.invoice.invoice_id, oldest.insertId);
+    assert.equal(result.customers[0].priority, 4); assert.equal(result.priority_basis, "stage_order_ordinal");
+    assert.equal(result.stage_catalog[0].label, "En mora"); assert.equal(result.stage_catalog[2].label, "Faltan 5 días");
+    assert.equal(result.customers[0].main_invoice.prompt_payment.window.reference_basis, "issue_date");
+    assert.equal(result.customers[0].main_invoice.prompt_payment.eligibility.status, "manual_review");
+    assert.equal(result.customers[0].main_invoice.prompt_payment.discount.amount, null);
+    assert.match(result.configuration_warnings[0], /pendiente/);
+    assert.deepEqual(await financialState(), beforeState);
+    assert.deepEqual(await expect("GET", `/collection?reference_date=2026-10-05&company_id=${b.companyId}`, a, 200), result);
   });
   test("collection does not inherit legacy NULL rules and reports missing company configuration", async () => {
     await db.query("INSERT INTO settings (company_id,setting_key,setting_value,value_type) VALUES (NULL,'collection_rules',?,'json')", [JSON.stringify([{ key: "legacy", active: true, priority: 999, condition: "overdue" }])]);

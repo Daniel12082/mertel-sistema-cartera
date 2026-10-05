@@ -1,13 +1,13 @@
 import { expect, test } from "@playwright/test";
 import { collectionFixture } from "../collection.fixture";
 
-async function mockApi(page) {
+async function mockApi(page, fixture = collectionFixture()) {
   const user = { id: 1, name: "Personal MERTEL", roles: ["collector"], permissions: ["collection.view"] };
   await page.route("**/api/**", route => {
     const url = new URL(route.request().url());
     if (url.pathname === "/api/auth/refresh") return route.fulfill({ json: { data: { access_token: "test-memory-only", user } } });
     if (url.pathname === "/api/auth/me") return route.fulfill({ json: { data: user } });
-    if (url.pathname === "/api/collection") return route.fulfill({ json: { success: true, data: collectionFixture() } });
+    if (url.pathname === "/api/collection") return route.fulfill({ json: { success: true, data: { ...fixture, reference_date: url.searchParams.get("reference_date") } } });
     return route.fulfill({ json: { success: true, data: [] } });
   });
 }
@@ -36,4 +36,21 @@ test("collection sends exact calendar date and filters without extra requests", 
   await page.getByLabel("Buscar cliente / NIT / factura").fill("FV-003");
   await expect(page.getByText("Cliente Beta", { exact: true })).not.toBeVisible();
   await expect(page.getByText("Cliente Águila", { exact: true })).toBeVisible();
+});
+
+test("4.8 renders backend hierarchy, warnings, invoice eligibility and prompt review on mobile", async ({ page }) => {
+  const fixture = collectionFixture();
+  fixture.configuration_warnings = ["Pronto Pago pendiente de calendario y límites." ];
+  fixture.customers[0].invoices[0].prompt_payment = { percentage: "3", window: { reason: "Diez días desde emisión: calendario pendiente." }, eligibility: { reason: "Productos desconocidos: revisión manual." }, discount: { amount: null, reason: "No se aplicó descuento ni se modificó el saldo." } };
+  await page.setViewportSize({ width: 390, height: 844 }); await mockApi(page, fixture); await page.goto("/cobranza");
+  await expect(page.getByText("Pronto Pago pendiente de calendario y límites.")).toBeVisible();
+  const cards = page.getByRole("region", { name: "Resumen de cobranza" }).locator("article");
+  await expect(cards.nth(0)).toContainText("En mora"); await expect(cards.nth(2)).toContainText("Faltan 5 días");
+  await page.getByRole("button", { name: "Ver detalle de Cliente Águila" }).click();
+  const dialog = page.getByRole("dialog"); const summary = dialog.locator("summary", { hasText: "Ver evaluación" });
+  await summary.scrollIntoViewIfNeeded(); await summary.click();
+  await expect(dialog.getByText("Productos desconocidos: revisión manual.")).toBeVisible();
+  await expect(dialog.getByText("No se aplicó descuento ni se modificó el saldo.")).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.screenshot({ path: "../tmp/collection48-mobile.png", fullPage: true });
 });

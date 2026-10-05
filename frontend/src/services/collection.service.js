@@ -7,6 +7,8 @@ export function readCollectionResponse(response) {
   const customers = body?.customers;
   if (!Array.isArray(customers) || typeof body.rules_configured !== "boolean" ||
       !body.summary?.stages || response?.success === false) throw new Error("collection_contract");
+  if (body.stage_catalog !== undefined && (!Array.isArray(body.stage_catalog) || body.stage_catalog.some(stage => typeof stage?.key !== "string" || typeof stage.label !== "string") || new Set(body.stage_catalog.map(stage => stage.key)).size !== body.stage_catalog.length)) throw new Error("collection_contract");
+  if (body.configuration_warnings !== undefined && (!Array.isArray(body.configuration_warnings) || body.configuration_warnings.some(warning => typeof warning !== "string"))) throw new Error("collection_contract");
   const ids = new Set();
   for (const item of customers) {
     if (item?.customer?.id == null || typeof item.stage !== "string" ||
