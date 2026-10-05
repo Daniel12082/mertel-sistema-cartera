@@ -10,6 +10,17 @@
 .cobranza-candidates { margin: 0; padding-left: 15px; }
 .cobranza-candidates li + li { margin-top: 8px; }
 .cobranza-candidates li > span { display: block; margin-top: 3px; }
+.cobranza-operations { margin-top: 24px; padding-top: 14px; border-top: 1px solid #e2e8f0; }
+.cobranza-operation-buttons { display: flex; flex-wrap: wrap; gap: 8px; }
+.cobranza-operation-form { margin: 16px 0; padding: 16px; border: 1px solid #e2e8f0; border-radius: 8px; background: #f8fafc; }
+.cobranza-operation-form label, .cobranza-history-filter { display: flex; flex-direction: column; gap: 6px; margin: 12px 0; color: #475569; font-size: 12px; }
+.cobranza-operation-form input, .cobranza-operation-form select, .cobranza-operation-form textarea, .cobranza-history-filter select { box-sizing: border-box; width: 100%; min-width: 0; padding: 10px; border: 1px solid #cbd5e1; border-radius: 7px; background: #fff; color: #334155; }
+.cobranza-operation-form textarea { min-height: 90px; resize: vertical; }
+.cobranza-history { list-style: none; padding: 0; }
+.cobranza-history li { padding: 13px; margin-bottom: 8px; border: 1px solid #e2e8f0; border-radius: 8px; display: flex; flex-direction: column; gap: 6px; overflow-wrap: anywhere; }
+.cobranza-history span { color: #64748b; font-size: 12px; }
+.cobranza-history p, .cobranza-draft-preview { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; }
+.cobranza-draft-preview { margin-top: 12px; padding: 12px; border: 1px solid #cbd5e1; border-radius: 7px; background: #fff; }
 @media (max-width: 760px) {
   .cobranza-table, .cobranza-table tbody, .cobranza-table tr, .cobranza-table td { display: block; width: 100%; box-sizing: border-box; }
   .cobranza-table thead { display: none; }

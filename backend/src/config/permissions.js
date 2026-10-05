@@ -6,7 +6,7 @@ const entries = [
   ["payments", "Pagos", [["view", "Ver pagos", true], ["create", "Crear pagos", true], ["update", "Editar pagos", true], ["delete", "Eliminar pagos", true]]],
   ["payment_allocations", "Asignaciones", [["view", "Ver asignaciones", true], ["create", "Crear asignaciones", true], ["reverse", "Reversar asignaciones", true]]],
   ["portfolio", "Cartera", [["view", "Ver cartera, resumen y conciliación", true], ["export", "Exportar cartera", false]]],
-  ["collection", "Cobranza", [["view", "Ver cobranza", true], ["manage", "Gestionar cobranza", false]]],
+  ["collection", "Cobranza", [["view", "Ver cobranza", true], ["manage", "Registrar gestiones y promesas manuales de cobranza", true]]],
   ["reports", "Reportes", [["view", "Ver reportes", false], ["export", "Exportar reportes", false]]],
   ["history", "Historial", [["view", "Ver historial; collector limitado a su propia actividad", false]]],
   ["messages", "Mensajes", [["view", "Ver mensajes", false], ["manage", "Gestionar mensajes", false]]],

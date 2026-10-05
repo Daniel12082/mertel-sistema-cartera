@@ -1,5 +1,7 @@
 # Reglas oficiales de cobranza MERTEL
 
+Actualización técnica 4.9: implementados registro manual de gestiones de tipo libre, promesas pendientes e historial, según orden expresa del usuario. Sin aprobar catálogo ni evaluar cumplimiento/pausa/prioridad. Preparar mensaje es un borrador temporal sin envío. [Contrato y límites de 4.9](../architecture/MERTEL_PHASE_4_9.md). Las reglas comerciales confirmadas y pendientes de este documento permanecen intactas.
+
 Fecha: 05/10/2026. Fuente: orden maestra del usuario basada en respuestas de Cartera MERTEL y autorización posterior de 4.8. Esta documentación distingue implementación y activación comercial. Base histórica 4.7: commit `53a9a1093073076f5a0d4ba00ae7924c3b1c2af5`; estado técnico actual 4.8: CERRADA con pendientes de configuración explícitos.
 
 ## Actualización autorizada 4.8

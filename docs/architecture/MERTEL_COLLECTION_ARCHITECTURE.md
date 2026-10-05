@@ -2,7 +2,7 @@
 
 Fecha: 05/10/2026. Este documento es una propuesta de separación y de contratos a revisar, no una implementación ni aprobación de nuevos endpoints/tablas. Fuente de negocio: [reglas oficiales](../business/MERTEL_COBRANZA_RULES.md). Estado y evidencias: [auditoría](MERTEL_AUDIT_POST_4_7.md).
 
-Actualización 4.8: las fronteras del motor/configuración/Pronto Pago ya se implementan en collectionPolicy.js, collectionEngine.service.js y promptPayment.service.js. El contrato de [4.8](MERTEL_PHASE_4_8.md) es aditivo y comprobado; las propuestas de gestiones, promesas, importación y envío de este documento siguen siendo futuras. No hay cambios de esquema, financieros ni de auth.
+Actualización 4.8: las fronteras del motor/configuración/Pronto Pago ya se implementan en collectionPolicy.js, collectionEngine.service.js y promptPayment.service.js. El contrato de [4.8](MERTEL_PHASE_4_8.md) es aditivo y comprobado. Actualización [4.9](MERTEL_PHASE_4_9.md): gestiones y promesas manuales con historial, auditoría transaccional y borrador temporal ya implementados. Cumplimiento, pausa, importación y envío siguen futuros. No hay cambios de esquema, financieros ni de auth.
 
 ## Recorrido existente
 
@@ -21,7 +21,7 @@ flowchart LR
 
 La consulta autorizada obtiene reglas y datos mediante modelos con companyScope en una transacción de lectura. collection.service calcula agregados de balances backend y adapta decisiones del motor al contrato HTTP. El motor puro recibe fechas/facturas/reglas, devuelve clasificaciones sin mutar entradas y selecciona una factura principal. React conserva esas decisiones; no escribe balances ni calcula prioridades.
 
-El mapa solicitado cliente → facturas → pagos → allocations → cartera → motor → gestiones → promesas → mensajes → historial → reportes representa el recorrido de trabajo, **no** un acoplamiento donde cada módulo escribe al siguiente. Hasta motor/consulta existe implementación; los módulos operativos posteriores aún requieren sus fases.
+El mapa solicitado cliente → facturas → pagos → allocations → cartera → motor → gestiones → promesas → mensajes → historial → reportes representa el recorrido de trabajo, **no** un acoplamiento donde cada módulo escribe al siguiente. Hasta motor/consulta y registro manual/historial de gestiones y promesas existe implementación. Cada POST operativo escribe su tabla y audit_logs en una transacción; nunca modifica motor, balances, pagos ni allocations. Los módulos posteriores aún requieren sus fases.
 
 ## Fronteras para fases futuras
 
@@ -31,7 +31,7 @@ El mapa solicitado cliente → facturas → pagos → allocations → cartera �
 | Adaptador de datos/configuración | Contexto autorizado, reglas aprobadas y datos necesarios | No fallback comercial NULL ni acceso cruzado |
 | Motor de reglas 4.8 | Jerarquía oficial, factura más atrasada y ventanas confirmadas | Puro, determinista y sin efectos financieros/envíos |
 | Gestiones 4.9 | Hechos manuales, actor, fecha y resultado | No detener automatización por mera gestión |
-| Promesas 5.0 | Estado y evidencia de promesa | Pausa operativa independiente de saldo y gestión |
+| Promesas manuales 4.9 / ciclo futuro 5.0 | Registro pendiente e historial implementados; cumplimiento y pausa futuros | Ningún efecto financiero ni automático al registrar |
 | Importación 5.1 | Lectura, preview, validación y conciliación de archivo | Ausencia no equivale automáticamente a cancelación financiera |
 | Motor operativo 5.2 | Reevaluación, pausas y decisiones operativas | Separar elegibilidad de etapa, descuento y envío |
 | Mensajería 5.3 | Adaptador de proveedor y resultados | Aplicar límites aprobados e idempotencia, sin enviar desde GET |

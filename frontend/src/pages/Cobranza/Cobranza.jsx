@@ -6,6 +6,7 @@ import { formatCurrency, formatDate } from "../../utils/format";
 import { getStageCatalog, localDateValue, matchesSearch, stageLabel } from "./collection.presentation";
 import "../Cartera/Cartera.css";
 import "./Cobranza.css";
+import CollectionOperations from "./CollectionOperations";
 
 function StageBadge({ stage, catalog = [], label }) {
   const category = catalog.find(item => item.key === stage)?.category;
@@ -38,7 +39,7 @@ function CustomerDetail({ item, catalog, referenceDate, onClose }) {
     function keydown(event) {
       if (event.key === "Escape") onClose();
       if (event.key !== "Tab") return;
-      const controls = node.querySelectorAll("button, a[href], input, select, summary, [tabindex='0']");
+      const controls = node.querySelectorAll("button, a[href], input, select, textarea, summary, [tabindex='0']");
       const first = controls[0];
       const last = controls[controls.length - 1];
       if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
@@ -66,6 +67,7 @@ function CustomerDetail({ item, catalog, referenceDate, onClose }) {
         <div className="cartera-table-wrap"><table className="cartera-table cobranza-table"><thead><tr><th>Número</th><th>Emisión</th><th>Vencimiento</th><th>Valor</th><th>Saldo</th><th>Etapa</th><th>Motivo</th><th>Prioridad</th><th>Elegible para cobranza</th><th>Candidatos de etapa</th><th>Pronto Pago</th></tr></thead>
           <tbody>{item.invoices.map((row, index) => <tr key={row.invoice?.invoice_id ?? row.invoice?.id ?? index}><td data-label="Número"><strong>{row.invoice?.invoice_number || "—"}</strong></td><td data-label="Emisión">{formatDate(row.invoice?.issue_date)}</td><td data-label="Vencimiento">{formatDate(row.invoice?.due_date)}</td><td data-label="Valor">{formatCurrency(row.invoice?.document_value)}</td><td data-label="Saldo">{formatCurrency(row.invoice?.balance)}</td><td data-label="Etapa"><StageBadge stage={row.stage} catalog={catalog} label={row.stage_label} /></td><td data-label="Motivo">{row.reason || "—"}</td><td data-label="Prioridad">{row.priority ?? "—"}</td><td data-label="Elegible para cobranza">{row.eligible === true ? "Sí" : row.eligible === false ? "No" : "—"}</td><td data-label="Candidatos de etapa"><StageCandidates candidates={row.stage_candidates} /></td><td data-label="Pronto Pago">{row.prompt_payment ? <details><summary>Ver evaluación</summary><p>{row.prompt_payment.window.reason}</p><p>{row.prompt_payment.eligibility.reason}</p><p>{row.prompt_payment.percentage}% sobre base antes de IVA.</p><p>{row.prompt_payment.discount.reason}</p></details> : "—"}</td></tr>)}</tbody>
         </table></div>
+        <CollectionOperations key={item.customer.id} customerId={item.customer.id} invoices={item.invoices} />
       </div><footer className="cartera-modal-footer"><button className="cartera-button-secondary" onClick={onClose}>Cerrar</button></footer>
     </section>
   </div>;

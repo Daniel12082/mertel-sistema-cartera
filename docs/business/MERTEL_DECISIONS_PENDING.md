@@ -64,4 +64,6 @@ Fecha: 05/10/2026. Las decisiones comerciales siguen abiertas salvo la precisió
 
 ## Cómo resolver una decisión
 
+Actualización 4.9: la orden autoriza gestión con tipo libre extensible y registro/consulta de promesas en estado `pending` existente. D08 continúa abierto (sin catálogo oficial). D07/D23/D31/D32/D35 y decisiones de mensajería siguen abiertas: no se evalúa cumplimiento, no se cambia prioridad, no hay pausa/reanudación ni edición de estados. Se habilita únicamente el permiso existente `collection.manage` para los roles que ya lo tenían previsto; no se define una nueva política comercial de roles. El borrador se mantiene en memoria de la interfaz, sin envío ni persistencia en messages.
+
 Registrar ID, respuesta literal o evidencia acordada, fecha, aprobador y fases afectadas. Mover únicamente esa decisión al registro confirmado y actualizar reglas, matriz y criterios de cierre. Si la respuesta afecta un contrato financiero, revisar su impacto antes de ejecutar migraciones u operaciones. La mera presencia de un valor en MySQL, un test o un documento antiguo no cierra una decisión.

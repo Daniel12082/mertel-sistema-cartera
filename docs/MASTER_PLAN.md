@@ -1,13 +1,13 @@
 # Plan maestro MERTEL
 
-Actualizado: 05/10/2026. Producto exclusivo: MERTEL Importaciones — Sistema de Cobranza. **La orden posterior del usuario autoriza 4.8; ninguna fase siguiente queda autorizada automáticamente**.
+Actualizado: 05/10/2026. Producto exclusivo: MERTEL Importaciones — Sistema de Cobranza. **La orden vigente autoriza exclusivamente 4.9; ninguna fase siguiente queda autorizada automáticamente**.
 
 ## Dónde estamos
 
 - Cerradas: 4.6D autenticación/sesión, 4.7A backend, 4.7B frontend, 4.7 cobranza de consulta y 4.8 en su alcance técnico autorizado.
 - Base de implementación: `main`, commit `53a9a1093073076f5a0d4ba00ae7924c3b1c2af5`, mensaje `feat: implementar cobranza MERTEL`.
-- La orden actual implementa exclusivamente 4.8; base documental 8fca506e3feef8c309a9a945bfd083b3e26d0345.
-- Estado actual: **4.8 CERRADA (alcance técnico autorizado)**, ver [informe de implementación](architecture/MERTEL_PHASE_4_8.md). Siguiente después de su cierre: 4.9, con autorización posterior y catálogo de gestiones aprobado.
+- La orden actual implementa exclusivamente 4.9 sobre el cierre de 4.8, commit `41f1d96ff6de1e756ff327ae84871b19bd93c400`.
+- Estado actual: **4.9 IMPLEMENTADA Y VALIDADA en su alcance manual**, ver [informe de implementación](architecture/MERTEL_PHASE_4_9.md). Incluye registro/consulta de promesas por autorización expresa; su ciclo de cumplimiento y automatización continúa futuro. No se aprueba un catálogo comercial por usar texto libre.
 - Salvedad de 4.7: consulta autenticada con datos reales de MERTEL no disponible. Inspección local 05/10/2026: cero compañías, settings comerciales legacy NULL y sin collection_rules; no crear datos para aparentar validación real.
 - Archivo protegido: `database/migrations/001_initial_schema.sql` con cambio local previo; nunca editar, revertir ni incluir en commit de estas órdenes. Hash de contenido auditado: `e2f0b2c49c979991914a187dc9531d9c5d2117ce`.
 
@@ -24,8 +24,8 @@ Documentos de fases anteriores y VALIDACION-4.7.md son evidencia histórica, no 
 | Fase | Trabajo previsto | Estado |
 |---|---|---|
 | 4.8 | Reglas reales de cobranza | CERRADA; activación de Pronto Pago pendiente |
-| 4.9 | Gestiones e historial | FUTURA |
-| 5.0 | Promesas de pago | FUTURA |
+| 4.9 | Gestiones, promesas manuales, historial y borrador temporal | IMPLEMENTADA Y VALIDADA; contexto real pendiente |
+| 5.0 | Ciclo de cumplimiento, cambios y efectos operativos de promesas | FUTURA |
 | 5.1 | Importación/actualización de cartera | FUTURA |
 | 5.2 | Motor operativo de cobranza | FUTURA |
 | 5.3 | Mensajería/WhatsApp | FUTURA |
@@ -81,12 +81,12 @@ Tras commit/push autorizado a origin/main, verificar status, log, HEAD, origin/m
 Prioridad de trabajo técnico, no prioridad comercial de clientes:
 
 - 4.8: selección/jerarquía/orden/labels corregidos; evaluador desde emisión y cálculo puro implementados. Quedan decisiones de calendario/límites, datos de productos y redondeo/registro financiero antes de activar beneficio real.
-- 4.9–5.2: no existe aún historial operativo, pausa por promesa, contrato seguro de importación ni estado operativo continuo.
+- 4.9–5.2: historial y registro manual implementados; pausa por promesa, contrato seguro de importación y estado operativo continuo siguen pendientes.
 - 5.3–5.6: falta proveedor, cuotas aprobadas, fuentes de métricas y edición/configuración auditada; evitar políticas dispersas.
 - 5.7: revisar precisión monetaria del helper de descuento, conversiones BIGINT, auditoría integral, escala de lectura y efectos de referencias huérfanas.
 - 6.0: falta contexto real autorizado y evidencia de configuración/datos de producción; no confundir push con deploy.
 
-El entregable de la orden actual es la implementación acotada de 4.8 y su validación. No se amplían gestiones, pagos, importación ni mensajes para resolver pendientes de fases siguientes.
+El entregable de la orden actual es la implementación manual acotada de 4.9 y su validación. La autorización incluye commit/push selectivo si todas las pruebas pasan, preservando la migración protegida. No incluye evaluación de promesas, automatización, pagos, importación ni envío.
 
 ## Histórico: verificación documental previa del 05/10/2026
 
@@ -101,3 +101,7 @@ El inventario de esta orden consta de seis documentos nuevos: este plan, reglas,
 Backend 165/165, frontend 53/53, lint/build OK y E2E 13/13. API HTTP/MySQL y read-only verificados en base aislada; health 200/401 local sin autenticación. Validación contra datos reales MERTEL no disponible (cero compañías y reglas en la base autorizada). Sin migraciones ni cambios de pagos/allocations/auth/roles.
 
 La siguiente fase de implementación es 4.9 — Gestiones e historial, únicamente bajo autorización posterior y con catálogo/roles definidos (D08/D35). Antes de activar Pronto Pago real obtener aprobación del calendario/límites y fuente/exclusiones de productos, revisión manual y política financiera/redondeo. No habilitar mensajes, promesas, importación ni flujos financieros para resolver esos pendientes.
+
+## Actualización autorizada de 4.9 — 05/10/2026
+
+La orden posterior permite texto libre extensible para el tipo de gestión y registro manual de promesas pendientes con permisos existentes. Esta precisión sustituye la dependencia anterior de catálogo aprobado para el registro básico y adelanta exclusivamente registro/consulta desde 5.0. D08/D35 y todas las reglas de cumplimiento, prioridad y mensajería siguen abiertas. Backend 176/176, frontend 68/68, lint/build OK y E2E 15/15. El informe 4.9 detalla contrato, inventario y limitación de datos reales. Ninguna fase posterior se inicia.

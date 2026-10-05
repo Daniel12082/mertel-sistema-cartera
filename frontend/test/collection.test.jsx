@@ -6,6 +6,7 @@ import { getCollection, readCollectionResponse } from "../src/services/collectio
 import { collectionFixture } from "./collection.fixture";
 
 vi.mock("../src/services/collection.service", async importOriginal => ({ ...await importOriginal(), getCollection: vi.fn() }));
+vi.mock("../src/services/collectionOperations.service", () => ({ getCollectionActions: vi.fn().mockResolvedValue([]), getPaymentPromises: vi.fn().mockResolvedValue([]) }));
 function view(permissions = ["collection.view"]) {
   return render(<AuthContext.Provider value={{ user: { id: 1 }, permissions }}><Cobranza /></AuthContext.Provider>);
 }
@@ -67,7 +68,7 @@ describe("Cobranza de MERTEL", () => {
     expect(within(dialog).getByText("Saldo total pendiente")).toBeVisible();
     expect(within(dialog).getByText("Saldo de facturas elegibles para cobranza")).toBeVisible();
     expect(within(dialog).getAllByText("4")).toHaveLength(2);
-    expect(within(dialog).getByText("FV-003")).toBeVisible();
+    expect(within(dialog).getByRole("cell", { name: "FV-003", exact: true })).toBeVisible();
     expect(within(dialog).getByText("No elegible")).toBeVisible();
     expect(within(dialog).getByText("3000000000")).toBeVisible();
     fireEvent.keyDown(screen.getByRole("button", { name: "Cerrar detalle" }), { key: "Escape" });
@@ -88,7 +89,7 @@ describe("Cobranza de MERTEL", () => {
     const candidates = within(row).getAllByRole("listitem");
     expect(candidates[0]).toHaveTextContent("server_candidate_bPrioridad: 17Motivo recibido B");
     expect(candidates[1]).toHaveTextContent("server_candidate_aPrioridad: 23Motivo recibido A");
-    const ineligible = within(dialog).getByText("FV-003").closest("tr");
+    const ineligible = within(dialog).getByRole("cell", { name: "FV-003", exact: true }).closest("tr");
     expect(within(ineligible).getByText("No")).toBeVisible();
     expect(within(ineligible).getByText("Sin candidatos")).toBeVisible();
     expect(within(ineligible).getByText("—", { selector: 'td[data-label="Prioridad"]' })).toBeVisible();

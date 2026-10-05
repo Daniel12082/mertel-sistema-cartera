@@ -1,6 +1,6 @@
 # Roadmap MERTEL posterior a 4.7
 
-Fecha: 05/10/2026. Cerradas: 4.6D, 4.7A, 4.7B y 4.7. **4.8 CERRADA (alcance técnico autorizado)** por autorización posterior del usuario. No se inician fases posteriores. Las dependencias son requisitos de diseño/datos, no autorización para implementar fases en paralelo o adelantar operaciones.
+Fecha: 05/10/2026. Cerradas: 4.6D, 4.7A, 4.7B y 4.7. **4.8 CERRADA (alcance técnico autorizado)** y **4.9 IMPLEMENTADA Y VALIDADA en alcance manual**, por órdenes posteriores del usuario. No se inician fases posteriores a 4.9. Las dependencias son requisitos de diseño/datos, no autorización para implementar fases en paralelo o adelantar operaciones.
 
 Fuente: [reglas oficiales](../business/MERTEL_COBRANZA_RULES.md). Decisiones D/T: [registro pendiente](../business/MERTEL_DECISIONS_PENDING.md). Todas las fases exigen diff acotado, aislamiento, pruebas pertinentes y preservación de invariantes financieros; un cierre no implica validación de producción si no se ejecutó.
 
@@ -16,6 +16,8 @@ Implementación técnica de selección/orden/jerarquía y catálogo ya realizada
 
 ## 4.9 — Gestiones e historial
 
+Implementada y validada por orden posterior: gestiones de tipo libre, promesas pendientes, historial por cliente/factura y borrador temporal sin envío. [Informe 4.9](../architecture/MERTEL_PHASE_4_9.md). El registro manual de promesas se incluye expresamente aquí; evaluación/pausa/cambios siguen en fases futuras. D08/D35 no se consideran resueltos por reutilizar permisos y aceptar texto libre.
+
 - **Objetivo:** registrar y consultar gestiones del cliente en contexto de cobranza y ofrecer historial trazable.
 - **Dependencias:** 4.8, identidad y permisos actuales, catálogo D08 y visibilidad D35; definición D09 si se presenta una métrica.
 - **Riesgos:** hechos duplicados, filtración entre compañías, confundir gestión con pausa de envío o con pago.
@@ -24,7 +26,7 @@ Implementación técnica de selección/orden/jerarquía y catálogo ya realizada
 
 ## 5.0 — Promesas de pago
 
-- **Objetivo:** registro, consulta y estados de promesas; representar pausa de mensajes y cumplimiento/incumplimiento.
+- **Objetivo futuro:** ciclo de estados, modificación/cancelación de promesas; representar pausa de mensajes y cumplimiento/incumplimiento. Registro y consulta básicos ya existen desde la orden 4.9; no duplicarlos.
 - **Dependencias:** 4.9, D07/D23/D31/D32/D35; contrato de integración operativa propuesto para 5.2.
 - **Riesgos:** incumplimiento prematuro, importe parcial ambiguo, varias promesas activas y fórmula no aprobada.
 - **Decisiones necesarias:** fórmula de prioridad, hora de corte, alcance, modificación/cancelación y acreditación del cumplimiento.

@@ -17,7 +17,7 @@ La auditoría original de las secciones siguientes es la **foto histórica poste
 | C07 | CORREGIDO en código/tests: sin pesos arbitrarios ni interpretación Pronto Pago por vencimiento; settings NULL no se heredan ni editan |
 | C08 | PENDIENTE fases 5.1/5.4; finanzas existentes intactas |
 
-Gestiones, promesas, mensajes, importaciones, reportes y administración completa siguen sin implementar. No hay migraciones nuevas. 4.8 CERRADA (alcance técnico autorizado) con validaciones automáticas aprobadas; los resultados específicos constan en su informe.
+Estado histórico de esta auditoría: gestiones, promesas, mensajes, importaciones, reportes y administración completa estaban sin implementar. Actualización 4.9: registro manual/historial de gestiones y promesas y borrador temporal implementados y validados, ver [informe](MERTEL_PHASE_4_9.md). Cumplimiento, pausa, envío y módulos posteriores siguen futuros; las filas de fases futuras de esta matriz no representan evaluación de promesas implementada. No hay migraciones nuevas. 4.8 CERRADA (alcance técnico autorizado) con validaciones automáticas aprobadas; los resultados específicos constan en su informe.
 
 ## Estado por módulo y evidencia
 
