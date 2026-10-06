@@ -26,3 +26,10 @@ export async function getPortfolioImports({ signal } = {}) {
     return unwrap(await api.get("/admin/portfolio/imports", { signal }));
   } catch (error) { return safeError(error); }
 }
+export async function reconcilePortfolioFile(file, { signal } = {}) {
+  try {
+    const response = await api.post("/admin/portfolio/imports/reconcile", file, { signal,
+      headers: { "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }, timeout: 120000 });
+    return unwrap(response);
+  } catch (error) { return safeError(error); }
+}

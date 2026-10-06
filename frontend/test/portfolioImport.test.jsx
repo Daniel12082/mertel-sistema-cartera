@@ -3,16 +3,22 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { AuthContext } from "../src/auth/auth.context";
 import PortfolioImport from "../src/pages/Administracion/PortfolioImport";
-import { analyzePortfolioFile, getPortfolioImports } from "../src/services/portfolioImport.service";
+import { analyzePortfolioFile, getPortfolioImports, reconcilePortfolioFile } from "../src/services/portfolioImport.service";
 
-vi.mock("../src/services/portfolioImport.service", () => ({ analyzePortfolioFile: vi.fn(), getPortfolioImports: vi.fn() }));
+vi.mock("../src/services/portfolioImport.service", () => ({ analyzePortfolioFile: vi.fn(), getPortfolioImports: vi.fn(), reconcilePortfolioFile: vi.fn() }));
 const result = { batch_id: "9", status: "analyzed_unconfigured", duplicate: false, format_configured: false,
   file: { name: "fixture.csv", size_bytes: 18, sha256: "f".repeat(64) }, headers: ["Campo A", "Campo B"], total_rows: 1, empty_rows: 0,
   successful_rows: 1, failed_rows: 0, preview: [["valor 1", "valor 2"]], issues: [] };
 function view({ permissions = ["portfolio.import"], user = { id: "1", is_global_admin: false } } = {}) {
   return render(<AuthContext.Provider value={{ user, permissions }}><PortfolioImport /></AuthContext.Provider>);
 }
-beforeEach(() => { vi.clearAllMocks(); getPortfolioImports.mockResolvedValue([]); analyzePortfolioFile.mockResolvedValue(result); });
+const reconciliationFixture = { summary: { total: 4, new: 1, updated: 1, unchanged: 0, disappeared: 1, returns: 0, debitNotes: 0, duplicates: 0, errors: 1 }, results: [
+  { category: "UPDATED", categoryLabel: "Actualizado", customer: { nit: "8000012690", name: "ABC" }, document: { number: "ME-1", movement: "012 Factura de venta credito" }, sourceRow: 8, differences: [{ field: "dueDate", label: "Fecha de vencimiento", databaseValue: "2026-10-01", fileValue: "2026-10-02" }] },
+  { category: "NEW", categoryLabel: "Nuevo", customer: { nit: "8000012690", name: "ABC" }, document: { number: "ME-2", movement: "012 Factura de venta credito", issueDate: "2026-09-01", value: 100, iva: 19, seller: "Vendedor", collector: "Cobrador", zone: "Norte" }, sourceRow: 9, differences: [] },
+  { category: "DISAPPEARED", categoryLabel: "No aparece en archivo", customer: { nit: "8000012690", name: "ABC" }, document: { number: "ME-3", issueDate: "2026-09-01", dueDate: "2026-10-01", balance: 70, status: "pending" }, database: { document: { balance: 70, status: "pending" } }, differences: [], reason: "No aparece en el archivo actual" },
+  { category: "ERROR", categoryLabel: "Error", customer: { nit: "" }, document: { number: "ME-4" }, sourceRow: 10, differences: [], reason: "NIT vacío" },
+], metadata: { readOnly: true } };
+beforeEach(() => { vi.clearAllMocks(); getPortfolioImports.mockResolvedValue([]); analyzePortfolioFile.mockResolvedValue(result); reconcilePortfolioFile.mockResolvedValue(reconciliationFixture); });
 
 describe("Fase 5.3 portfolio import screen", () => {
   it("selects a CSV, previews detected headers and clearly states that the business format is unconfigured", async () => {
@@ -76,5 +82,28 @@ describe("Fase 5.3 portfolio import screen", () => {
     const file = new File([new Uint8Array(2 * 1024 * 1024 + 1)], "large.csv", { type: "text/csv" });
     await user.upload(screen.getByLabelText("Archivo CSV o Excel"), file); await user.click(screen.getByRole("button", { name: "Analizar archivo" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("supera el límite de 2 MiB"); expect(analyzePortfolioFile).not.toHaveBeenCalled();
+  });
+  it("reconciles an XLSX and shows summary, category filters, UPDATED/NEW/DISAPPEARED details and errors", async () => {
+    const user = userEvent.setup();
+    analyzePortfolioFile.mockResolvedValue({ ...result, format: "mertel_xlsx", format_configured: true, file: { ...result.file, name: "cartera.xlsx" }, report: {}, summary: { clients_detected: 1, unique_documents: 1, invoices: 1, returns: 0, debit_notes: 0, unknown_movements: 0 }, classifications: { customer_summary_rows: 0, report_summary_rows: 0 }, preview: [{ row_number: 8, type: "DOCUMENT", customer_nit_original: "8000012690", document_number: "ME-1", movement: "012 Factura de venta credito" }] });
+    view(); await user.upload(screen.getByLabelText("Archivo CSV o Excel"), new File([new Uint8Array([80, 75, 3, 4])], "cartera.xlsx", { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
+    await user.click(screen.getByRole("button", { name: "Analizar archivo" }));
+    await user.click(await screen.findByRole("button", { name: "Conciliar contra la base de datos" }));
+    expect(await screen.findByRole("heading", { name: "Conciliación de cartera" })).toBeVisible();
+    expect(document.querySelector(".portfolio-reconcile-summary span")).toHaveTextContent("Total4");
+    expect([...document.querySelectorAll(".portfolio-reconcile-summary span")].find(card => card.textContent.includes("Actualizados"))).toHaveTextContent("1");
+    await user.click(screen.getByRole("button", { name: /Actualizado/ }));
+    expect(screen.getByRole("region", { name: "Detalle de conciliación" })).toHaveTextContent("2026-10-02");
+    await user.selectOptions(screen.getByLabelText("Filtrar por categoría"), "NEW");
+    await user.click(screen.getByRole("button", { name: /Nuevo/ }));
+    expect(screen.getByRole("region", { name: "Detalle de conciliación" })).toHaveTextContent("Cobrador");
+    await user.selectOptions(screen.getByLabelText("Filtrar por categoría"), "DISAPPEARED");
+    await user.click(screen.getByRole("button", { name: /No aparece en archivo/ }));
+    expect(screen.getByRole("region", { name: "Detalle de conciliación" })).toHaveTextContent("No aparece en el archivo actual");
+    await user.selectOptions(screen.getByLabelText("Filtrar por categoría"), "ERROR");
+    await user.click(screen.getByRole("button", { name: /Error/ }));
+    expect(screen.getByRole("region", { name: "Detalle de conciliación" })).toHaveTextContent("Motivo: NIT vacío");
+    expect(reconcilePortfolioFile).toHaveBeenCalledWith(expect.any(File));
+    expect(screen.queryByRole("button", { name: /aplicar cambios/i })).not.toBeInTheDocument();
   });
 });

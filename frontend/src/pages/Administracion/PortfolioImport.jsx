@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "../../auth/useAuth";
-import { analyzePortfolioFile, getPortfolioImports } from "../../services/portfolioImport.service";
+import { analyzePortfolioFile, getPortfolioImports, reconcilePortfolioFile } from "../../services/portfolioImport.service";
 import "./PortfolioImport.css";
 
 const MAX_BYTES = 2 * 1024 * 1024;
@@ -12,6 +12,8 @@ export default function PortfolioImport() {
   const [file, setFile] = useState(null); const [analysis, setAnalysis] = useState(null);
   const [history, setHistory] = useState([]); const [loading, setLoading] = useState(false);
   const [error, setError] = useState(""); const [historyError, setHistoryError] = useState("");
+  const [reconciliation, setReconciliation] = useState(null); const [reconciling, setReconciling] = useState(false);
+  const [categoryFilter, setCategoryFilter] = useState("ALL"); const [search, setSearch] = useState(""); const [selected, setSelected] = useState(null);
   const ready = authorized;
 
   const loadHistory = useCallback(async signal => {
@@ -29,7 +31,7 @@ export default function PortfolioImport() {
   }, [ready]);
 
   async function analyze() {
-    setError(""); setAnalysis(null);
+    setError(""); setAnalysis(null); setReconciliation(null); setSelected(null);
     if (!file) { setError("Selecciona un archivo CSV o XLSX."); return; }
     if (file.size > MAX_BYTES) { setError("El archivo supera el límite de 2 MiB."); return; }
     const extension = file.name.split(".").at(-1).toLowerCase();
@@ -40,6 +42,14 @@ export default function PortfolioImport() {
     try { const result = await analyzePortfolioFile(file); setAnalysis(result); await loadHistory(); }
     catch (reason) { setError(reason.message); }
     finally { setLoading(false); }
+  }
+
+  async function reconcile() {
+    if (!file || analysis?.format !== "mertel_xlsx") return;
+    setError(""); setReconciling(true); setReconciliation(null); setSelected(null);
+    try { setReconciliation(await reconcilePortfolioFile(file)); }
+    catch (reason) { setError(reason.message); }
+    finally { setReconciling(false); }
   }
 
   if (!authorized) return <section className="portfolio-import-page"><div className="portfolio-import-notice error" role="alert">No tienes permiso para analizar archivos de cartera.</div></section>;
@@ -66,8 +76,17 @@ export default function PortfolioImport() {
       {analysis.duplicate && <div className="portfolio-import-notice">Este archivo ya fue analizado. Se muestra la referencia al lote existente; no se creó otro lote.</div>}
       {analysis.persistence?.saved === false && <div className="portfolio-import-notice error" role="alert">{analysis.persistence.message} Puedes revisar la previsualización; no se creó lote ni se guardó el archivo.</div>}
       <div className="portfolio-import-notice">Análisis y previsualización solamente. No se crearon ni modificaron clientes, facturas, pagos, asignaciones o saldos.</div>
+      {mertelXlsx && <button type="button" disabled={reconciling || loading} onClick={reconcile}>{reconciling ? "Conciliando…" : "Conciliar contra la base de datos"}</button>}
       {analysis.preview.length > 0 && <div className="portfolio-import-table-wrap"><table><thead>{mertelXlsx ? <tr>{["Fila", "Tipo", "NIT cliente", "Documento", "Movimiento", "Emitida", "Vence", "Valor doc.", "IVA", "Cupo", "Condición cupo"].map(label => <th key={label}>{label}</th>)}</tr> : <tr>{analysis.headers.map((header, index) => <th key={`${header}-${index}`}>{header || `(columna ${index + 1})`}</th>)}</tr>}</thead><tbody>{analysis.preview.map((row, index) => <tr key={mertelXlsx ? row.row_number : index}>{mertelXlsx ? <>{[row.row_number, row.type, row.customer_nit_original, row.document_number || "—", row.movement || "—", row.issue_date || "—", row.due_date || "—", row.document_value ?? "—", row.iva ?? "—", row.cupo_amount ?? "—", row.cupo_condition || "—"].map((value, cell) => <td key={cell}>{value}</td>)}</> : analysis.headers.map((_, cell) => <td key={cell}>{row[cell] ?? ""}</td>)}</tr>)}</tbody></table></div>}
       {analysis.issues.length > 0 && <div className="portfolio-import-issues"><h4>Errores y advertencias ({analysis.issues.length})</h4><ul>{analysis.issues.map((issue, index) => <li key={`${issue.error_code}-${index}`}><strong>{issue.severity === "warning" ? "Advertencia" : "Error"} · {issue.error_code}</strong>{issue.row_number ? ` · fila ${issue.row_number}` : ""}{issue.field_name ? ` · ${issue.field_name}` : ""}: {issue.message}</li>)}</ul></div>}
+    </section>}
+    {reconciliation && <section className="portfolio-import-card" aria-live="polite">
+      <h3>Conciliación de cartera</h3>
+      <p>Previsualización temporal de solo lectura. Ningún cambio financiero fue aplicado.</p>
+      <div className="portfolio-import-summary portfolio-reconcile-summary">{[["Total", reconciliation.summary.total], ["Nuevos", reconciliation.summary.new], ["Actualizados", reconciliation.summary.updated], ["Sin cambios", reconciliation.summary.unchanged], ["Desaparecidos", reconciliation.summary.disappeared], ["Devoluciones", reconciliation.summary.returns], ["Notas débito", reconciliation.summary.debitNotes], ["Duplicados", reconciliation.summary.duplicates], ["Errores", reconciliation.summary.errors]].map(([label, count]) => <span key={label}><strong>{label}</strong>{count}</span>)}</div>
+      <div className="portfolio-reconcile-filters"><label>Categoría<select aria-label="Filtrar por categoría" value={categoryFilter} onChange={event => setCategoryFilter(event.target.value)}>{[["ALL", "Todas"], ["NEW", "Nuevos"], ["UPDATED", "Actualizados"], ["UNCHANGED", "Sin cambios"], ["DISAPPEARED", "Desaparecidos"], ["RETURN", "Devoluciones"], ["DEBIT_NOTE", "Notas débito"], ["DUPLICATE", "Duplicados"], ["ERROR", "Errores"]].map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><label>Buscar NIT, cliente, documento o movimiento<input aria-label="Buscar conciliación" value={search} onChange={event => setSearch(event.target.value)} /></label></div>
+      <div className="portfolio-reconcile-results">{reconciliation.results.filter(item => (categoryFilter === "ALL" || item.category === categoryFilter) && `${item.customer?.nit || ""} ${item.customer?.name || ""} ${item.document?.number || ""} ${item.document?.movement || ""}`.toLowerCase().includes(search.toLowerCase())).map((item, index) => <button className="portfolio-reconcile-row" type="button" key={`${item.category}-${item.sourceRow ?? "db"}-${index}`} onClick={() => setSelected(item)}><span><strong>{item.categoryLabel}</strong><small>{item.customer?.name || "Cliente sin identificar"} · NIT {item.customer?.nit || "—"}</small></span><span>{item.document?.number || "—"}<small>{item.document?.movement || "Factura existente"}</small></span><span>{item.sourceRow ? `Fila ${item.sourceRow}` : "Solo en BD"}</span></button>)}</div>
+      {selected && <div className="portfolio-reconcile-detail" role="region" aria-label="Detalle de conciliación"><h4>{selected.categoryLabel} · {selected.document?.number || "Documento"}</h4>{selected.reason && <p>{selected.category === "ERROR" ? `Motivo: ${selected.reason}` : selected.reason}</p>}{selected.category === "UPDATED" && <div className="portfolio-import-table-wrap"><table><thead><tr><th>Campo</th><th>Valor actual BD</th><th>Valor archivo</th></tr></thead><tbody>{selected.differences.map(change => <tr key={change.field}><th>{change.label}</th><td>{change.databaseValue ?? "—"}</td><td className="portfolio-difference">{change.fileValue ?? "—"}</td></tr>)}</tbody></table></div>}{selected.category === "UNCHANGED" && <p>✓ Sin cambios</p>}{selected.category === "DISAPPEARED" && <p>Saldo actual BD: {selected.database?.document?.balance ?? "—"} · Emisión: {selected.document?.issueDate || "—"} · Vencimiento: {selected.document?.dueDate || "—"} · Estado conocido: {selected.document?.status || "—"}. No aparece en el archivo actual.</p>}{["NEW", "RETURN", "DEBIT_NOTE", "DUPLICATE"].includes(selected.category) && <dl>{Object.entries({ NIT: selected.customer?.nit, Cliente: selected.customer?.name, Documento: selected.document?.number, Movimiento: selected.document?.movement, Emisión: selected.document?.issueDate, Vencimiento: selected.document?.dueDate, Valor: selected.document?.value, IVA: selected.document?.iva, Observaciones: selected.document?.observations, Vendedor: selected.document?.seller, Cobrador: selected.document?.collector, Zona: selected.document?.zone, Fila: selected.sourceRow, ...(selected.category === "DUPLICATE" ? { "Filas involucradas": selected.duplicateSourceRows?.join(", ") } : {}) }).map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value ?? "—"}</dd></div>)}</dl>}</div>}
     </section>}
     {ready && <section className="portfolio-import-card"><h3>Historial de análisis</h3>
       {historyError && <div className="portfolio-import-notice error" role="alert">{historyError}</div>}

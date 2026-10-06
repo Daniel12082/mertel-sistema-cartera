@@ -19,4 +19,20 @@
 .portfolio-import-issues ul { display: grid; gap: .5rem; padding-left: 1.25rem; }
 .portfolio-import-issues li { overflow-wrap: anywhere; }
 .portfolio-import-issues li strong { margin-right: .3rem; }
+.portfolio-reconcile-filters { display: grid; grid-template-columns: minmax(12rem, .7fr) minmax(16rem, 1.3fr); gap: .75rem; }
+.portfolio-reconcile-filters label { display: grid; gap: .35rem; font-weight: 600; }
+.portfolio-reconcile-filters input, .portfolio-reconcile-filters select { min-height: 2.5rem; padding: .45rem .6rem; border: 1px solid #cbd5e1; border-radius: .45rem; background: #fff; }
+.portfolio-reconcile-results { display: grid; max-height: 36rem; overflow: auto; border: 1px solid #e2e8f0; border-radius: .5rem; }
+.portfolio-reconcile-row { display: grid; grid-template-columns: minmax(9rem, 1.2fr) minmax(8rem, 1fr) auto; gap: .75rem; padding: .7rem; border: 0; border-bottom: 1px solid #e2e8f0; background: white; text-align: left; cursor: pointer; }
+.portfolio-reconcile-row span, .portfolio-reconcile-row small { display: block; overflow-wrap: anywhere; }
+.portfolio-reconcile-row small { margin-top: .2rem; color: #64748b; }
+.portfolio-reconcile-row:hover { background: #f8fafc; }
+.portfolio-reconcile-detail { display: grid; gap: .6rem; padding: 1rem; border: 1px solid #cbd5e1; border-radius: .6rem; }
+.portfolio-reconcile-detail h4 { margin: 0; }
+.portfolio-reconcile-detail dl { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: .5rem; margin: 0; }
+.portfolio-reconcile-detail dl div { padding: .55rem; border-radius: .4rem; background: #f8fafc; overflow-wrap: anywhere; }
+.portfolio-reconcile-detail dt { font-weight: 700; }
+.portfolio-reconcile-detail dd { margin: .2rem 0 0; }
+.portfolio-difference { background: #fff7ed; font-weight: 700; }
 @media (max-width: 520px) { .portfolio-import-card { padding: 1rem; } .portfolio-import-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 520px) { .portfolio-reconcile-filters, .portfolio-reconcile-row { grid-template-columns: minmax(0, 1fr); } }

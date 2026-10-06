@@ -6,6 +6,7 @@ import { findCompany, listCompanies } from "../models/company.model.js";
 import { validCompanyId } from "../utils/companyScope.js";
 import { getCollectionSettings, updateCollectionStageSettings } from "../services/collectionSettingsAdmin.service.js";
 import { analyzePortfolioFile, listPortfolioImports, MAX_IMPORT_BYTES } from "../services/portfolioImport.service.js";
+import { reconcilePortfolio } from "../services/portfolioReconciliation.service.js";
 import { getCollectionDashboardController } from "../controllers/collectionDashboard.controller.js";
 import { administrativeCollectionHistory, administrativeHistoryActors } from "../controllers/collectionHistory.controller.js";
 const router = express.Router();
@@ -22,6 +23,17 @@ router.post("/portfolio/imports/analyze", requirePermission("portfolio.import"),
       return res.json({ success: true, data });
     } catch (error) {
       if ([400, 403, 404, 409, 413].includes(error.status)) return res.status(error.status).json({ success: false, message: error.message, code: error.code });
+      return next(error);
+    }
+  });
+router.post("/portfolio/imports/reconcile", requirePermission("portfolio.import"), requireCompanyScope,
+  express.raw({ type: ["application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"], limit: MAX_IMPORT_BYTES }), async (req, res, next) => {
+    try {
+      if (!Buffer.isBuffer(req.body)) return res.status(400).json({ success: false, message: "Envía el contenido de la cartera MERTEL como XLSX" });
+      res.set("Cache-Control", "no-store");
+      return res.json({ success: true, data: await reconcilePortfolio({ bytes: req.body, scope: req.companyScope }) });
+    } catch (error) {
+      if ([400, 403, 404, 409].includes(error.status)) return res.status(error.status).json({ success: false, message: error.message, code: error.code });
       return next(error);
     }
   });

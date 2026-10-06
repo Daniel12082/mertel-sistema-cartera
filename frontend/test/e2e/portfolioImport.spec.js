@@ -28,6 +28,13 @@ async function setup(page, { admin = true, globalAdmin = false } = {}) {
         successful_rows: 1, failed_rows: 0, preview: [["A", "B"]], issues: [],
       } } });
     }
+    if (url.pathname === "/api/admin/portfolio/imports/reconcile" && request.method() === "POST") return route.fulfill({ json: { success: true, data: {
+      summary: { total: 2, new: 1, updated: 1, unchanged: 0, disappeared: 0, returns: 0, debitNotes: 0, duplicates: 0, errors: 0 },
+      results: [
+        { category: "UPDATED", categoryLabel: "Actualizado", customer: { nit: "8000012690", name: "Cliente MERTEL" }, document: { number: "ME-74743", movement: "012 Factura de venta credito" }, sourceRow: 8, differences: [{ field: "dueDate", label: "Fecha de vencimiento", databaseValue: "2026-11-08", fileValue: "2026-11-10" }] },
+        { category: "NEW", categoryLabel: "Nuevo", customer: { nit: "8000012690", name: "Cliente MERTEL" }, document: { number: "ME-NUEVA", movement: "012 Factura de venta credito", issueDate: "2026-10-01", value: 100, iva: 19 }, sourceRow: 9, differences: [] },
+      ], metadata: { readOnly: true },
+    } } });
     return route.fulfill({ status: 404, json: { success: false } });
   });
   return calls;
@@ -71,5 +78,21 @@ test("admin previews the real MERTEL XLSX structure without applying data", asyn
   await expect(page.getByText(/Formato de análisis MERTEL reconocido/)).toBeVisible();
   expect(calls.some(call => call.method === "POST" && call.path.endsWith("/analyze") && call.contentType.includes("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))).toBe(true);
   await expect(page.getByRole("button", { name: /aplicar|importar/i })).toHaveCount(0);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});
+
+test("E2E XLSX analyze to read-only reconciliation, summary, filtering and detail", async ({ page }) => {
+  const calls = await setup(page); await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/administracion/importar-cartera");
+  await page.getByLabel("Archivo CSV o Excel").setInputFiles({ name: "cartera al 06-10.xlsx", mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", buffer: Buffer.from([0x50, 0x4b, 3, 4]) });
+  await page.getByRole("button", { name: "Analizar archivo" }).click();
+  await page.getByRole("button", { name: "Conciliar contra la base de datos" }).click();
+  await expect(page.getByRole("heading", { name: "Conciliación de cartera" })).toBeVisible();
+  await expect(page.locator(".portfolio-reconcile-summary span").filter({ hasText: "Actualizados" })).toContainText("1");
+  await page.getByLabel("Filtrar por categoría").selectOption("UPDATED");
+  await page.getByRole("button", { name: /Actualizado/ }).click();
+  await expect(page.getByRole("region", { name: "Detalle de conciliación" })).toContainText("2026-11-10");
+  expect(calls.some(call => call.method === "POST" && call.path.endsWith("/reconcile") && call.contentType.includes("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))).toBe(true);
+  await expect(page.getByRole("button", { name: /aplicar cambios/i })).toHaveCount(0);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });

@@ -72,7 +72,7 @@ describe("portfolio import structure analysis", () => {
     assert.ok(missingColumn.issues.some(issue => issue.error_code === "MISSING_COLUMN" && issue.field_name === "Zona"));
     await assert.rejects(parseMertelPortfolioXlsx(Buffer.from("not an xlsx")), error => error.code === "INVALID_XLSX" && error.status === 400);
     await assert.rejects(parseMertelPortfolioXlsx(await makeMertelWorkbook({ sheetName: "Hoja1", rows: [mertelRow()] })), error => error.code === "MISSING_SHEET");
-    assert.deepEqual(normalizeMertelNit("  800.001.269-0  "), { original: "800.001.269-0", normalized: "800.001.269-0" });
+    assert.deepEqual(normalizeMertelNit("  800.001.269-0  "), { original: "800.001.269-0", normalized: "8000012690" });
     assert.equal(parseMertelAmount("10,000,000.00 compartido"), 10000000);
     assert.equal(parseMertelAmount("-165.065,25"), -165065.25);
   });

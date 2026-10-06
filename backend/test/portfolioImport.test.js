@@ -46,8 +46,8 @@ describe("Fase 5.3 portfolio import HTTP / isolated MySQL", { skip: !(process.en
     if (db) { assert.match(schema, /^mertel_portfolio_import_test_[a-f0-9]{32}$/); assert.notEqual(schema, originalDatabase); await db.query(`DROP DATABASE IF EXISTS \`${schema}\``); await db.end(); }
     if (originalDatabase === undefined) delete process.env.DB_NAME; else process.env.DB_NAME = originalDatabase;
   });
-  async function request(method, user = adminA, { companyId, body = "", fileName = "fixture.csv", mime = "text/csv" } = {}) {
-    const url = new URL(`${root}${method === "POST" ? "/analyze" : ""}`);
+  async function request(method, user = adminA, { companyId, body = "", fileName = "fixture.csv", mime = "text/csv", endpoint = "analyze" } = {}) {
+    const url = new URL(`${root}${method === "POST" ? `/${endpoint}` : ""}`);
     if (companyId) url.searchParams.set("company_id", companyId); if (method === "POST") url.searchParams.set("file_name", fileName);
     const response = await fetch(url, { method, headers: { ...(user ? { Authorization: `Bearer ${user.token}` } : {}), ...(method === "POST" ? { "Content-Type": mime } : {}) }, ...(method === "POST" ? { body } : {}) });
     return { status: response.status, cache: response.headers.get("cache-control"), body: await response.json() };
@@ -123,5 +123,22 @@ describe("Fase 5.3 portfolio import HTTP / isolated MySQL", { skip: !(process.en
     } finally {
       await db.query("RENAME TABLE import_errors_deferred TO import_errors");
     }
+  });
+  test("reconciliation endpoint classifies XLSX read-only and preserves invoice balances and all financial tables", async () => {
+    const [customer] = await db.query("INSERT INTO customers(company_id,nit,name,address,city) VALUES (?,'800.001.269-0','CLIENTE DEMOSTRACIÓN','DIRECCIÓN','BOGOTÁ')", [companyA]);
+    await db.query("INSERT INTO invoices(company_id,customer_id,invoice_number,issue_date,due_date,document_value,base_value,iva_value,balance,status,notes) VALUES (?,?,'ME-12345','2026-10-06','2026-11-21',3482310,2914378,567932,2500000,'pending','FACTURA CLIENTE POR MAYOR')", [companyA, customer.insertId]);
+    const snapshot = async () => {
+      const [invoices] = await db.query("SELECT id,document_value,base_value,iva_value,balance,status FROM invoices ORDER BY id");
+      const [payments] = await db.query("SELECT * FROM payments ORDER BY id"); const [allocations] = await db.query("SELECT * FROM payment_allocations ORDER BY id");
+      const [customers] = await db.query("SELECT id,nit,name,address,city FROM customers ORDER BY id");
+      return JSON.stringify({ invoices, payments, allocations, customers });
+    };
+    const before = await snapshot();
+    const bytes = await makeMertelWorkbook({ rows: [mertelRow()] });
+    const response = await request("POST", adminA, { body: bytes, fileName: "cartera al 06-10.xlsx", mime: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", endpoint: "reconcile" });
+    assert.equal(response.status, 200); assert.equal(response.cache, "no-store");
+    assert.equal(response.body.data.summary.updated, 0); assert.equal(response.body.data.summary.unchanged, 1);
+    assert.equal(response.body.data.results[0].category, "UNCHANGED"); assert.equal(response.body.data.metadata.readOnly, true);
+    assert.equal(await snapshot(), before);
   });
 });

@@ -36,7 +36,8 @@ const textValue = value => {
 
 export function normalizeMertelNit(value) {
   const original = textValue(value);
-  return { original, normalized: original.trim().replace(/\s+/g, " ") };
+  const normalized = original.normalize("NFKC").replace(/\D/g, "");
+  return { original, normalized };
 }
 
 export function parseMertelAmount(value) {
@@ -120,7 +121,7 @@ export async function parseMertelPortfolioXlsx(bytes) {
   const counts = { document_rows: 0, customer_summary_rows: 0, report_summary_rows: 0, empty_rows: 0, invalid_rows: 0,
     clients_detected: 0, unique_documents: 0, invoices: 0, returns: 0, debit_notes: 0, unknown_movements: 0, duplicate_documents: 0 };
   const nits = new Set(); const documentKeys = new Set(); const seenDocuments = new Set();
-  const preview = []; const maxPreview = 25;
+  const preview = []; const documents = []; const maxPreview = 25;
   const rowTotal = Math.max(0, sheet.rowCount - headerRow);
   if (rowTotal > MAX_ROWS) throw error("El archivo supera el máximo de filas permitido", "TOO_MANY_ROWS");
   if (!rowTotal) addIssue(headerRow, null, "NO_DATA_ROWS", "No se detectaron filas después del encabezado");
@@ -178,6 +179,9 @@ export async function parseMertelPortfolioXlsx(bytes) {
       }
     }
 
+    if (rowType === "DOCUMENT" || (rowType === "INVALID" && looksLikeDocument)) documents.push({ row_number: rowIndex, type: rowType, movement_type: movementType,
+      customer_nit_original: nit.original, customer_nit_normalized: nit.normalized, document_number: number || null,
+      movement, issue_date: emitted, due_date: due, document_value: parseMertelAmount(source["Valor doc."]), iva: parseMertelAmount(source.IVA), values: source });
     const originalCupo = source.Cupo;
     const cupoAmount = parseMertelAmount(originalCupo);
     const cupoCondition = cupoAmount == null ? originalCupo.trim() : originalCupo.replace(/[-+]?\d[\d.,]*/, "").trim();
@@ -196,8 +200,8 @@ export async function parseMertelPortfolioXlsx(bytes) {
   if (companyName.trim().toUpperCase() !== "MERTEL IMPORTACIONES S.A.S.") {
     addIssue(1, "Empresa", "SOURCE_COMPANY_MISMATCH", "El reporte no identifica a MERTEL IMPORTACIONES S.A.S.");
   }
-  const sourceNit = normalizeMertelNit(companyNit).normalized.replace(/[.\s]/g, "");
-  if (sourceNit !== "900499744-8") addIssue(2, "NIT empresa", "SOURCE_NIT_MISMATCH", "El NIT del reporte no coincide con MERTEL IMPORTACIONES S.A.S. (900.499.744-8)");
+  const sourceNit = normalizeMertelNit(companyNit).normalized;
+  if (sourceNit !== "9004997448") addIssue(2, "NIT empresa", "SOURCE_NIT_MISMATCH", "El NIT del reporte no coincide con MERTEL IMPORTACIONES S.A.S. (900.499.744-8)");
   const failedRows = [...rowsWithErrors].filter(rowNumber => rowNumber > headerRow && rowNumber <= sheet.rowCount).length;
   const classificationSuccess = Math.max(0, rowTotal - counts.empty_rows - failedRows);
   return {
@@ -208,6 +212,6 @@ export async function parseMertelPortfolioXlsx(bytes) {
     classifications: { document_rows: counts.document_rows, customer_summary_rows: counts.customer_summary_rows,
       report_summary_rows: counts.report_summary_rows, summary_rows: counts.customer_summary_rows + counts.report_summary_rows,
       empty_rows: counts.empty_rows, invalid_rows: counts.invalid_rows },
-    summary: { ...counts }, preview, issues,
+    summary: { ...counts }, preview, documents, issues,
   };
 }
