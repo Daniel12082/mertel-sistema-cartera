@@ -34,5 +34,9 @@
 .portfolio-reconcile-detail dt { font-weight: 700; }
 .portfolio-reconcile-detail dd { margin: .2rem 0 0; }
 .portfolio-difference { background: #fff7ed; font-weight: 700; }
+.portfolio-pipeline-action { display: grid; grid-template-columns: minmax(14rem, 20rem) auto; align-items: end; gap: .65rem; padding: .9rem; border: 1px solid #99f6e4; border-radius: .55rem; background: #f0fdfa; }
+.portfolio-pipeline-action label { display: grid; gap: .35rem; font-weight: 600; }
+.portfolio-pipeline-action input { min-height: 2.5rem; padding: .45rem .6rem; border: 1px solid #cbd5e1; border-radius: .45rem; background: #fff; }
+.portfolio-pipeline-action p { grid-column: 1 / -1; margin: 0; color: #475569; }
 @media (max-width: 520px) { .portfolio-import-card { padding: 1rem; } .portfolio-import-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 520px) { .portfolio-reconcile-filters, .portfolio-reconcile-row { grid-template-columns: minmax(0, 1fr); } }

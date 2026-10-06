@@ -35,6 +35,13 @@ async function setup(page, { admin = true, globalAdmin = false } = {}) {
         { category: "NEW", categoryLabel: "Nuevo", customer: { nit: "8000012690", name: "Cliente MERTEL" }, document: { number: "ME-NUEVA", movement: "012 Factura de venta credito", issueDate: "2026-10-01", value: 100, iva: 19 }, sourceRow: 9, differences: [] },
       ], metadata: { readOnly: true },
     } } });
+    if (url.pathname === "/api/admin/portfolio/imports/pipeline" && request.method() === "POST") return route.fulfill({ json: { success: true, data: {
+      source: { file_name: "cartera al 06-10.xlsx", reference_date: url.searchParams.get("reference_date"), processed_at: "2026-10-06T12:00:00Z" },
+      summary: { customers: 1, documents: 1, overdue: 1, due_today: 0, due_in_five_days: 0, prompt_payment: 0, unclassified: 0, errors: 0 },
+      stage_catalog: [{ key: "overdue", label: "En mora", category: "overdue" }], configuration_warnings: [], errors: [],
+      pipeline: [{ customer: { id: "xlsx:8000012690", nit: "800.001.269-0", name: "CLIENTE MERTEL", phone: "6011234567" }, source_details: { nit: "800.001.269-0", name: "CLIENTE MERTEL", collector: "COBRADOR", seller: "VENDEDOR", city: "BOGOTÁ", zone: "NORTE", mobile: "3000000000" }, stage: "overdue", stage_label: "En mora", priority: 4, reason: "Factura vencida con saldo pendiente.", total_balance: "250.00", main_invoice: { invoice: { invoice_number: "ME-74743", issue_date: "2026-09-01", due_date: "2026-10-01", source_row: 8 }, days_until_due: -5 }, invoices: [], documents: [{ source_row: 8, document_number: "ME-74743", movement: "012 Factura de venta credito", movement_type: "invoice", issue_date: "2026-09-01", due_date: "2026-10-01", document_value: 300, iva: 50, balance: "250.00", stage_label: "En mora", eligible: true, observations: "Nota de prueba" }] }],
+      metadata: { read_only: true, persisted: false, balance_source: "Suma de buckets de antigüedad por factura" },
+    } } });
     return route.fulfill({ status: 404, json: { success: false } });
   });
   return calls;
@@ -94,5 +101,23 @@ test("E2E XLSX analyze to read-only reconciliation, summary, filtering and detai
   await expect(page.getByRole("region", { name: "Detalle de conciliación" })).toContainText("2026-11-10");
   expect(calls.some(call => call.method === "POST" && call.path.endsWith("/reconcile") && call.contentType.includes("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))).toBe(true);
   await expect(page.getByRole("button", { name: /aplicar cambios/i })).toHaveCount(0);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});
+
+test("E2E XLSX to temporary collection pipeline, filters and customer documents", async ({ page }) => {
+  const calls = await setup(page); await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/administracion/importar-cartera");
+  await page.getByLabel("Archivo CSV o Excel").setInputFiles({ name: "cartera al 06-10.xlsx", mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", buffer: Buffer.from([0x50, 0x4b, 3, 4]) });
+  await page.getByRole("button", { name: "Analizar archivo" }).click();
+  await page.getByLabel("Fecha de referencia del pipeline").fill("2026-10-06");
+  await page.getByRole("button", { name: "Generar Pipeline" }).click();
+  await expect(page.getByRole("heading", { name: "Pipeline de cartera importada" })).toBeVisible();
+  await expect(page.getByText("Fuente: archivo de cartera MERTEL", { exact: false })).toBeVisible();
+  await expect(page.getByLabel("Resumen del pipeline importado")).toContainText("En mora");
+  await page.getByLabel("Filtrar etapa").selectOption("overdue");
+  await page.getByRole("button", { name: /Ver cliente y documentos/ }).click();
+  await expect(page.getByRole("dialog")).toContainText("ME-74743");
+  await expect(page.getByRole("dialog")).toContainText("CLIENTE MERTEL");
+  expect(calls.some(call => call.method === "POST" && call.path.endsWith("/pipeline") && call.params.reference_date === "2026-10-06")).toBe(true);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });

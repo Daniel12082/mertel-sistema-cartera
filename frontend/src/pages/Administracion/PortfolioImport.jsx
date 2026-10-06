@@ -1,18 +1,22 @@
 import { useCallback, useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../auth/useAuth";
-import { analyzePortfolioFile, getPortfolioImports, reconcilePortfolioFile } from "../../services/portfolioImport.service";
+import { analyzePortfolioFile, generatePortfolioPipeline, getPortfolioImports, reconcilePortfolioFile } from "../../services/portfolioImport.service";
+import { localDateValue } from "../Cobranza/collection.presentation";
 import "./PortfolioImport.css";
 
 const MAX_BYTES = 2 * 1024 * 1024;
 function formatDate(value) { return value ? new Date(value).toLocaleString() : "—"; }
 
 export default function PortfolioImport() {
+  const navigate = useNavigate();
   const { permissions = [] } = useAuth();
   const authorized = permissions.includes("portfolio.import");
   const [file, setFile] = useState(null); const [analysis, setAnalysis] = useState(null);
   const [history, setHistory] = useState([]); const [loading, setLoading] = useState(false);
   const [error, setError] = useState(""); const [historyError, setHistoryError] = useState("");
   const [reconciliation, setReconciliation] = useState(null); const [reconciling, setReconciling] = useState(false);
+  const [referenceDate, setReferenceDate] = useState(localDateValue); const [generatingPipeline, setGeneratingPipeline] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState("ALL"); const [search, setSearch] = useState(""); const [selected, setSelected] = useState(null);
   const ready = authorized;
 
@@ -52,6 +56,16 @@ export default function PortfolioImport() {
     finally { setReconciling(false); }
   }
 
+  async function generatePipeline() {
+    if (!file || analysis?.format !== "mertel_xlsx" || !referenceDate) return;
+    setError(""); setGeneratingPipeline(true);
+    try {
+      const result = await generatePortfolioPipeline(file, referenceDate);
+      navigate("/cobranza", { state: { portfolioPipeline: result } });
+    } catch (reason) { setError(reason.message); }
+    finally { setGeneratingPipeline(false); }
+  }
+
   if (!authorized) return <section className="portfolio-import-page"><div className="portfolio-import-notice error" role="alert">No tienes permiso para analizar archivos de cartera.</div></section>;
   const mertelXlsx = analysis?.format === "mertel_xlsx";
   return <section className="portfolio-import-page">
@@ -77,6 +91,7 @@ export default function PortfolioImport() {
       {analysis.persistence?.saved === false && <div className="portfolio-import-notice error" role="alert">{analysis.persistence.message} Puedes revisar la previsualización; no se creó lote ni se guardó el archivo.</div>}
       <div className="portfolio-import-notice">Análisis y previsualización solamente. No se crearon ni modificaron clientes, facturas, pagos, asignaciones o saldos.</div>
       {mertelXlsx && <button type="button" disabled={reconciling || loading} onClick={reconcile}>{reconciling ? "Conciliando…" : "Conciliar contra la base de datos"}</button>}
+      {mertelXlsx && <div className="portfolio-pipeline-action"><label>Fecha de referencia<input aria-label="Fecha de referencia del pipeline" type="date" required value={referenceDate} onChange={event => setReferenceDate(event.target.value)} /></label><button type="button" disabled={generatingPipeline || reconciling || loading || !referenceDate} onClick={generatePipeline}>{generatingPipeline ? "Generando pipeline…" : "Generar Pipeline"}</button><p>La fecha se enviará explícitamente al motor MERTEL. El resultado es temporal y de solo lectura.</p></div>}
       {analysis.preview.length > 0 && <div className="portfolio-import-table-wrap"><table><thead>{mertelXlsx ? <tr>{["Fila", "Tipo", "NIT cliente", "Documento", "Movimiento", "Emitida", "Vence", "Valor doc.", "IVA", "Cupo", "Condición cupo"].map(label => <th key={label}>{label}</th>)}</tr> : <tr>{analysis.headers.map((header, index) => <th key={`${header}-${index}`}>{header || `(columna ${index + 1})`}</th>)}</tr>}</thead><tbody>{analysis.preview.map((row, index) => <tr key={mertelXlsx ? row.row_number : index}>{mertelXlsx ? <>{[row.row_number, row.type, row.customer_nit_original, row.document_number || "—", row.movement || "—", row.issue_date || "—", row.due_date || "—", row.document_value ?? "—", row.iva ?? "—", row.cupo_amount ?? "—", row.cupo_condition || "—"].map((value, cell) => <td key={cell}>{value}</td>)}</> : analysis.headers.map((_, cell) => <td key={cell}>{row[cell] ?? ""}</td>)}</tr>)}</tbody></table></div>}
       {analysis.issues.length > 0 && <div className="portfolio-import-issues"><h4>Errores y advertencias ({analysis.issues.length})</h4><ul>{analysis.issues.map((issue, index) => <li key={`${issue.error_code}-${index}`}><strong>{issue.severity === "warning" ? "Advertencia" : "Error"} · {issue.error_code}</strong>{issue.row_number ? ` · fila ${issue.row_number}` : ""}{issue.field_name ? ` · ${issue.field_name}` : ""}: {issue.message}</li>)}</ul></div>}
     </section>}

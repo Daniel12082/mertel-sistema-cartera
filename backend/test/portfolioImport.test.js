@@ -19,7 +19,7 @@ describe("Fase 5.3 portfolio import HTTP / isolated MySQL", { skip: !(process.en
     db = await mysql.createConnection({ host: process.env.DB_HOST, port: Number(process.env.DB_PORT), user: process.env.DB_USER, password: process.env.DB_PASSWORD, multipleStatements: true });
     await db.query(`CREATE DATABASE \`${schema}\``); await db.query(`USE \`${schema}\``);
     const sql = await readFile(new URL("../../database/migrations/001_initial_schema.sql", import.meta.url), "utf8");
-    const required = new Set(["companies", "roles", "users", "user_roles", "customers", "invoices", "payments", "payment_allocations", "import_batches", "import_errors", "audit_logs"]);
+    const required = new Set(["companies", "roles", "users", "user_roles", "customers", "invoices", "payments", "payment_allocations", "import_batches", "import_errors", "audit_logs", "settings"]);
     for (const match of sql.matchAll(/CREATE TABLE (\w+) \([\s\S]*?;/g)) if (required.has(match[1])) {
       const statement = match[1] === "import_errors" ? match[0].replace("row_number INT", "`row_number` INT").replace("KEY idx_import_errors_row (row_number)", "KEY idx_import_errors_row (`row_number`)") : match[0];
       await db.query(statement);
@@ -140,5 +140,49 @@ describe("Fase 5.3 portfolio import HTTP / isolated MySQL", { skip: !(process.en
     assert.equal(response.body.data.summary.updated, 0); assert.equal(response.body.data.summary.unchanged, 1);
     assert.equal(response.body.data.results[0].category, "UNCHANGED"); assert.equal(response.body.data.metadata.readOnly, true);
     assert.equal(await snapshot(), before);
+  });
+  test("XLSX pipeline reuses MERTEL rules in read-only mode, groups customers, and preserves financial snapshots", async () => {
+    const rules = { version: 2, commercial_policy: "mertel_phase_5", stage_order: ["overdue", "due_today", "days_before_due", "prompt_payment"],
+      rules: [{ key: "overdue", active: true }, { key: "due_today", active: true }, { key: "five_days_before_due", active: true, condition: { type: "days_before_due", days: 5 } }, { key: "prompt_payment", active: true, condition: "days_since_issue" }],
+      prompt_payment: { window: { day_type: "calendar", include_issue_date: true, include_day_ten: true } } };
+    await db.query("INSERT INTO settings(company_id,setting_key,setting_value,value_type) VALUES (?,'collection_rules',?,'json')", [companyA, JSON.stringify(rules)]);
+    const snapshot = async () => {
+      const [invoices] = await db.query("SELECT id,document_value,base_value,iva_value,balance,status FROM invoices ORDER BY id");
+      const [payments] = await db.query("SELECT * FROM payments ORDER BY id"); const [allocations] = await db.query("SELECT * FROM payment_allocations ORDER BY id");
+      const [customers] = await db.query("SELECT id,nit,name,address,city,phone FROM customers ORDER BY id");
+      return JSON.stringify({ invoices, payments, allocations, customers });
+    };
+    const before = await snapshot();
+    const rows = [
+      mertelRow({ Numero: "ME-OVERDUE", Emitida: "01/09/2026", Vence: "01/10/2026", Corriente: "", "60-90 días": "2,500,000", "Valor doc.": "3,000,000" }),
+      mertelRow({ "Nit Cliente": "800002001", Numero: "ME-DUE", Emitida: "01/10/2026", Vence: "06/10/2026", Corriente: "250,000", "Valor doc.": "500,000" }),
+      mertelRow({ "Nit Cliente": "800002002", Numero: "ME-FIVE", Emitida: "01/10/2026", Vence: "11/10/2026", Corriente: "1,000", "Valor doc.": "1,000" }),
+      mertelRow({ "Nit Cliente": "800002000", "Nombre cliente": "CLIENTE PRONTO", Numero: "ME-PROMPT", Emitida: "01/10/2026", Vence: "21/11/2026", Corriente: "900", "Valor doc.": "1,000" }),
+      mertelRow({ Numero: "ME-OVERDUE-2", Emitida: "02/09/2026", Vence: "02/10/2026", Corriente: "", "60-90 días": "100", "Valor doc.": "2,000" }),
+      mertelRow({ Numero: "DEV-1", Movimiento: "023 Devolucion de clientes", "Valor doc.": "-100" }),
+      mertelRow({ Numero: "NDB-1", Movimiento: "014 Nota debito cliente", "Valor doc.": "100" }),
+      mertelRow({ Numero: "ME-BAD", Emitida: "", Vence: "", Corriente: "texto" }),
+    ];
+    const bytes = await makeMertelWorkbook({ rows });
+    const pipelineRequest = async (referenceDate) => {
+      const url = new URL(`${root}/pipeline`); url.searchParams.set("file_name", "cartera al 06-10.xlsx");
+      if (referenceDate) url.searchParams.set("reference_date", referenceDate);
+      return fetch(url, { method: "POST", headers: { Authorization: `Bearer ${adminA.token}`, "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }, body: bytes });
+    };
+    assert.equal((await pipelineRequest(null)).status, 400); // No implicit server date.
+    const accepted = await pipelineRequest("2026-10-06"); const result = await accepted.json(); const data = result.data;
+    assert.equal(accepted.status, 200); assert.equal(accepted.headers.get("cache-control"), "no-store");
+    assert.deepEqual([data.summary.overdue, data.summary.due_today, data.summary.due_in_five_days, data.summary.prompt_payment], [1, 1, 1, 1]);
+    assert.equal(data.pipeline.length, 4); assert.equal(data.pipeline.find(item => item.customer.nit === "800.001.269-0").invoices.length, 2);
+    const overdue = data.pipeline.find(item => item.stage === "overdue"); assert.equal(overdue.main_invoice.invoice.invoice_number, "ME-OVERDUE");
+    assert.equal(overdue.documents.filter(document => document.movement_type === "return" || document.movement_type === "debit_note").length, 2);
+    assert.equal(overdue.invoices.reduce((sum, item) => sum + Number(item.invoice.balance), 0), 2500100);
+    const prompt = data.pipeline.find(item => item.stage === "prompt_payment");
+    assert.equal(prompt.main_invoice.prompt_payment.eligibility.status, "manual_review"); assert.equal(prompt.main_invoice.prompt_payment.discount.preview_amount, null);
+    assert.equal(data.errors.some(error => error.code === "INVALID_AGING_BALANCE" || error.code === "MISSING_ISSUE_DATE"), true);
+    assert.equal(data.metadata.persisted, false); assert.equal(data.metadata.document_value_used_as_balance, false);
+    assert.equal(await snapshot(), before);
+    const invalid = await pipelineRequest("06/10/2026");
+    assert.equal(invalid.status, 400); assert.equal(await snapshot(), before);
   });
 });

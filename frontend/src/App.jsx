@@ -1,4 +1,4 @@
-import { Route, Routes } from "react-router-dom";
+import { Route, Routes, useLocation } from "react-router-dom";
 import MainLayout from "./layouts/MainLayout";
 import Dashboard from "./pages/Dashboard/Dashboard";
 import Clientes from "./pages/Clientes/Clientes";
@@ -6,6 +6,7 @@ import Facturas from "./pages/Factura/Facturas";
 import Pagos from "./pages/Pagos/Pagos";
 import Cartera from "./pages/Cartera/Cartera";
 import Cobranza from "./pages/Cobranza/Cobranza";
+import PortfolioPipelineView from "./pages/Cobranza/PortfolioPipelineView";
 import Configuracion from "./pages/Configuracion/Configuracion";
 import MessageTemplates from "./pages/Administracion/MessageTemplates";
 import CollectionSettings from "./pages/Administracion/CollectionSettings";
@@ -49,7 +50,7 @@ function App() {
 
         <Route
           path="/cobranza"
-          element={<Cobranza />}
+          element={<CobranzaRoute />}
         />
 
         <Route
@@ -96,3 +97,8 @@ function App() {
 }
 
 export default App;
+
+function CobranzaRoute() {
+  const location = useLocation();
+  return location.state?.portfolioPipeline ? <PortfolioPipelineView data={location.state.portfolioPipeline} /> : <Cobranza />;
+}
