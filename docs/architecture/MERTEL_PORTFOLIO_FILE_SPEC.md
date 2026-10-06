@@ -78,7 +78,7 @@ El análisis reconoce extensión y MIME de `.csv` y `.xlsx`, aplica el límite a
 
 Por fila documento valida NIT, número, movimiento, fecha de emisión, vencimiento obligatorio para factura, valor del documento e IVA; detecta fechas o importes inválidos, movimientos no reconocidos y duplicados. Reporta filas vacías, resúmenes y filas incompletas. La copia real no generó incidencias.
 
-Solo se guarda el lote de análisis con nombre, tipo, conteos, hash, estado y errores estructurales sin valores de celdas. No se guarda el archivo ni las filas/previsualización. No se insertan clientes, documentos, pagos, allocations o saldos. El lote continúa con estado `analyzed_unconfigured` para indicar que no existe un flujo autorizado de aplicación.
+Con el esquema de historial completo se guarda solo el lote de análisis con nombre, tipo, conteos, hash, estado y errores estructurales sin valores de celdas. No se guarda el archivo ni las filas/previsualización. Si faltan tablas/columnas/índice de importación, el endpoint aún devuelve preview en memoria con estado `preview_only_unpersisted`, no crea lote y señala que el historial necesita revisión. No se repara el esquema automáticamente. En ningún modo se insertan clientes, documentos, pagos, allocations o saldos. Con esquema completo, el lote queda `analyzed_unconfigured` porque no existe un flujo autorizado de aplicación.
 
 ## Relación con tablas existentes
 

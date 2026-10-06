@@ -28,7 +28,7 @@ router.post("/portfolio/imports/analyze", requirePermission("portfolio.import"),
 router.get("/portfolio/imports", requirePermission("portfolio.import"), requireCompanyScope, async (req, res, next) => {
   try { res.set("Cache-Control", "no-store"); return res.json({ success: true, data: await listPortfolioImports(req.companyScope) }); }
   catch (error) {
-    if ([400, 403, 404].includes(error.status)) return res.status(error.status).json({ success: false, message: error.message });
+    if ([400, 403, 404, 503].includes(error.status)) return res.status(error.status).json({ success: false, message: error.message, code: error.code });
     return next(error);
   }
 });

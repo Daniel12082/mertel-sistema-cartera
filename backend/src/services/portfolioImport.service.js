@@ -84,6 +84,21 @@ async function companyIsActive(db, companyId) {
   return rows.length > 0;
 }
 
+async function portfolioAnalysisSchemaIsReady(db) {
+  const requiredColumns = new Set([
+    "import_batches.company_id", "import_batches.user_id", "import_batches.file_name", "import_batches.file_type",
+    "import_batches.total_rows", "import_batches.processed_rows", "import_batches.successful_rows", "import_batches.failed_rows",
+    "import_batches.status", "import_batches.started_at", "import_batches.completed_at", "import_batches.file_sha256",
+    "import_errors.id", "import_errors.import_batch_id", "import_errors.row_number", "import_errors.field_name",
+    "import_errors.field_value", "import_errors.error_code", "import_errors.error_message",
+  ]);
+  const [columns] = await db.query("SELECT TABLE_NAME,COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME IN ('import_batches','import_errors')");
+  for (const column of columns) requiredColumns.delete(`${column.TABLE_NAME}.${column.COLUMN_NAME}`);
+  if (requiredColumns.size) return false;
+  const [indexes] = await db.query("SELECT INDEX_NAME FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='import_batches' AND INDEX_NAME='idx_import_batches_company_sha256'");
+  return indexes.length > 0;
+}
+
 export async function analyzePortfolioFile({ scope, actorId, fileName: suppliedName, mimeType, bytes, ipAddress = null, userAgent = null }) {
   if (!scope?.companyId) throw Object.assign(new Error("El contexto MERTEL no está disponible"), { status: 403 });
   if (!(bytes instanceof Buffer) || bytes.length === 0) throw Object.assign(new Error("Selecciona un archivo CSV o XLSX no vacío"), { status: 400 });
@@ -105,6 +120,11 @@ export async function analyzePortfolioFile({ scope, actorId, fileName: suppliedN
   let locked = false;
   try {
     if (!(await companyIsActive(db, scope.companyId))) throw Object.assign(new Error("Empresa no disponible"), { status: 404 });
+    if (!(await portfolioAnalysisSchemaIsReady(db))) {
+      return { ...analysis, batch_id: null, status: "preview_only_unpersisted", duplicate: false,
+        file: { name: fileName, size_bytes: bytes.length, sha256: digest }, format_configured: extension === "xlsx",
+        persistence: { saved: false, code: "PORTFOLIO_SCHEMA_UNAVAILABLE", message: "El esquema de historial de importaciones requiere una revisión de migración; esta previsualización no se guardó." } };
+    }
     const [[lock]] = await db.query("SELECT GET_LOCK(?, 10) AS acquired", [lockName]);
     if (lock.acquired !== 1) throw Object.assign(new Error("Ya hay un análisis en curso para esta empresa"), { status: 409 });
     locked = true;
@@ -137,6 +157,7 @@ export async function listPortfolioImports(scope) {
   if (!scope?.companyId) throw Object.assign(new Error("El contexto MERTEL no está disponible"), { status: 403 });
   const [companies] = await pool.query("SELECT id FROM companies WHERE id=? AND status='active' AND deleted_at IS NULL", [scope.companyId]);
   if (!companies.length) throw Object.assign(new Error("Empresa no disponible"), { status: 404 });
+  if (!(await portfolioAnalysisSchemaIsReady(pool))) throw Object.assign(new Error("El esquema del historial de importaciones está incompleto; requiere revisión de migración"), { status: 503, code: "PORTFOLIO_SCHEMA_UNAVAILABLE" });
   const [rows] = await pool.query("SELECT b.id,b.file_name,b.file_type,b.total_rows,b.successful_rows,b.failed_rows,b.status,b.created_at,b.user_id,u.first_name,COUNT(e.id) AS error_count FROM import_batches b LEFT JOIN users u ON u.id=b.user_id LEFT JOIN import_errors e ON e.import_batch_id=b.id WHERE b.company_id=? GROUP BY b.id,b.file_name,b.file_type,b.total_rows,b.successful_rows,b.failed_rows,b.status,b.created_at,b.user_id,u.first_name ORDER BY b.id DESC LIMIT 50", [scope.companyId]);
   return rows.map(row => ({ ...row, id: String(row.id), user_id: row.user_id == null ? null : String(row.user_id), error_count: Number(row.error_count) }));
 }

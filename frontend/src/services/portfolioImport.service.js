@@ -7,7 +7,7 @@ function unwrap(response) {
 function safeError(error) {
   if (error?.name === "CanceledError" || error?.code === "ERR_CANCELED") throw error;
   const status = error?.response?.status;
-  if ([400, 403, 404, 409, 413].includes(status)) throw new Error(error.response.data?.message || "No fue posible analizar el archivo.");
+  if ([400, 403, 404, 409, 413, 503].includes(status)) throw new Error(error.response.data?.message || "No fue posible analizar el archivo.");
   throw new Error("No fue posible consultar las importaciones. Intenta nuevamente.");
 }
 export async function analyzePortfolioFile(file, { signal } = {}) {

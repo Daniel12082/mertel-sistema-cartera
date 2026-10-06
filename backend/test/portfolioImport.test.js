@@ -109,4 +109,19 @@ describe("Fase 5.3 portfolio import HTTP / isolated MySQL", { skip: !(process.en
     assert.equal((await request("POST", globalAdmin, { body: "H\na\n" })).status, 200);
     assert.equal((await request("POST", globalAdmin, { body: "H\na\n", companyId: companyA })).status, 200);
   });
+  test("returns a safe XLSX preview without persistence when the import schema is incomplete", async () => {
+    const [[before]] = await db.query("SELECT COUNT(*) AS n FROM import_batches");
+    await db.query("RENAME TABLE import_errors TO import_errors_deferred");
+    try {
+      const bytes = await makeMertelWorkbook({ rows: [mertelRow()] });
+      const preview = await request("POST", adminA, { body: bytes, fileName: "cartera.xlsx", mime: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+      assert.equal(preview.status, 200); assert.equal(preview.body.data.status, "preview_only_unpersisted");
+      assert.equal(preview.body.data.persistence.saved, false); assert.equal(preview.body.data.summary.invoices, 1);
+      const history = await request("GET", adminA);
+      assert.equal(history.status, 503); assert.equal(history.body.code, "PORTFOLIO_SCHEMA_UNAVAILABLE");
+      const [[after]] = await db.query("SELECT COUNT(*) AS n FROM import_batches"); assert.equal(after.n, before.n);
+    } finally {
+      await db.query("RENAME TABLE import_errors_deferred TO import_errors");
+    }
+  });
 });

@@ -51,6 +51,21 @@ describe("Fase 5.3 portfolio import screen", () => {
     expect(screen.getByText(/Formato de análisis MERTEL reconocido/)).toBeVisible();
     expect(screen.queryByRole("button", { name: /aplicar|importar/i })).not.toBeInTheDocument();
   });
+  it("shows an in-memory preview and warns when incomplete import tables prevent history persistence", async () => {
+    const user = userEvent.setup();
+    analyzePortfolioFile.mockResolvedValue({ ...result, format: "mertel_xlsx", format_configured: true,
+      file: { ...result.file, name: "cartera al 06-10.xlsx" }, persistence: { saved: false, message: "El esquema del historial de importaciones requiere revisión." },
+      report: { company_name: "MERTEL IMPORTACIONES S.A.S.", company_nit: "900.499.744-8", report_date: "2026-10-06" },
+      summary: { clients_detected: 1, unique_documents: 1, invoices: 1, returns: 0, debit_notes: 0, unknown_movements: 0 },
+      classifications: { customer_summary_rows: 0, report_summary_rows: 0 },
+      preview: [{ row_number: 8, type: "DOCUMENT", customer_nit_original: "800.001.269-0", document_number: "ME-12345", movement: "012 Factura de venta credito", issue_date: "2026-10-06", due_date: "2026-11-21", document_value: 100, iva: 19, cupo_amount: 10, cupo_condition: "compartido" }],
+    });
+    view();
+    await user.upload(screen.getByLabelText("Archivo CSV o Excel"), new File(["x"], "cartera.xlsx", { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
+    await user.click(screen.getByRole("button", { name: "Analizar archivo" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("previsualización");
+    expect(screen.getByRole("table")).toHaveTextContent("ME-12345");
+  });
   it("resolves MERTEL automatically for global admins", async () => {
     view({ user: { id: "2", is_global_admin: true }, permissions: ["portfolio.import"] });
     await waitFor(() => expect(getPortfolioImports).toHaveBeenCalledWith(expect.objectContaining({ signal: expect.any(AbortSignal) })));
