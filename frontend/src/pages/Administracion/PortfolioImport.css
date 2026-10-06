@@ -1,0 +1,22 @@
+.portfolio-import-page { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1rem; min-width: 0; }
+.portfolio-import-page > header h2 { margin: 0; }
+.portfolio-import-page > header p, .portfolio-import-card > p { color: #64748b; margin: .4rem 0 0; }
+.portfolio-import-card { display: grid; grid-template-columns: minmax(0, 1fr); gap: .8rem; padding: 1.25rem; background: #fff; border: 1px solid #e2e8f0; border-radius: .75rem; min-width: 0; }
+.portfolio-import-card h3, .portfolio-import-issues h4 { margin: 0; }
+.portfolio-import-company, .portfolio-import-file { display: grid; gap: .45rem; max-width: 34rem; font-weight: 600; }
+.portfolio-import-company select, .portfolio-import-file input { width: 100%; min-width: 0; min-height: 2.5rem; padding: .5rem; border: 1px solid #cbd5e1; border-radius: .5rem; background: white; max-width: 100%; }
+.portfolio-import-file-meta { color: #475569; overflow-wrap: anywhere; }
+.portfolio-import-card > button { justify-self: start; min-height: 2.5rem; padding: .5rem 1rem; border: 0; border-radius: .5rem; color: #fff; background: #0f766e; font-weight: 600; cursor: pointer; }
+.portfolio-import-card > button:disabled { opacity: .55; cursor: wait; }
+.portfolio-import-notice { padding: .9rem 1rem; border-radius: .5rem; background: #f1f5f9; }
+.portfolio-import-notice.error { color: #991b1b; background: #fef2f2; }
+.portfolio-import-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: .65rem; }
+.portfolio-import-summary span { display: grid; gap: .2rem; min-width: 0; padding: .75rem; border: 1px solid #e2e8f0; border-radius: .5rem; overflow-wrap: anywhere; }
+.portfolio-import-table-wrap { width: 100%; min-width: 0; max-width: 100%; overflow: auto; }
+.portfolio-import-table-wrap table { width: 100%; min-width: 24rem; border-collapse: collapse; font-size: .9rem; }
+.portfolio-import-table-wrap th, .portfolio-import-table-wrap td { padding: .65rem; border: 1px solid #e2e8f0; text-align: left; vertical-align: top; overflow-wrap: anywhere; }
+.portfolio-import-table-wrap th { background: #f8fafc; }
+.portfolio-import-issues ul { display: grid; gap: .5rem; padding-left: 1.25rem; }
+.portfolio-import-issues li { overflow-wrap: anywhere; }
+.portfolio-import-issues li strong { margin-right: .3rem; }
+@media (max-width: 520px) { .portfolio-import-card { padding: 1rem; } .portfolio-import-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

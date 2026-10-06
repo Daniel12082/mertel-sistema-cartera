@@ -9,6 +9,7 @@ import Cobranza from "./pages/Cobranza/Cobranza";
 import Configuracion from "./pages/Configuracion/Configuracion";
 import MessageTemplates from "./pages/Administracion/MessageTemplates";
 import CollectionSettings from "./pages/Administracion/CollectionSettings";
+import PortfolioImport from "./pages/Administracion/PortfolioImport";
 import LoginPage from "./pages/Login/LoginPage";
 import ProtectedRoute from "./auth/ProtectedRoute";
 
@@ -72,6 +73,11 @@ function App() {
         <Route
           path="/administracion/configuracion-cobranza"
           element={<CollectionSettings />}
+        />
+
+        <Route
+          path="/administracion/importar-cartera"
+          element={<PortfolioImport />}
         />
 
         <Route

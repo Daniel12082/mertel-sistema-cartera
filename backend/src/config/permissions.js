@@ -5,7 +5,7 @@ const entries = [
   ["invoices", "Facturas", [["view", "Ver facturas", true], ["create", "Crear facturas", true], ["update", "Editar facturas", true], ["delete", "Eliminar facturas", true]]],
   ["payments", "Pagos", [["view", "Ver pagos", true], ["create", "Crear pagos", true], ["update", "Editar pagos", true], ["delete", "Eliminar pagos", true]]],
   ["payment_allocations", "Asignaciones", [["view", "Ver asignaciones", true], ["create", "Crear asignaciones", true], ["reverse", "Reversar asignaciones", true]]],
-  ["portfolio", "Cartera", [["view", "Ver cartera, resumen y conciliación", true], ["export", "Exportar cartera", false]]],
+  ["portfolio", "Cartera", [["view", "Ver cartera, resumen y conciliación", true], ["export", "Exportar cartera", false], ["import", "Analizar archivos de cartera sin aplicarlos", true]]],
   ["collection", "Cobranza", [["view", "Ver cobranza", true], ["manage", "Registrar gestiones y promesas manuales de cobranza", true]]],
   ["reports", "Reportes", [["view", "Ver reportes", false], ["export", "Exportar reportes", false]]],
   ["history", "Historial", [["view", "Ver historial; collector limitado a su propia actividad", false]]],

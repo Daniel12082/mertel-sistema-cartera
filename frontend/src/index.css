@@ -329,6 +329,7 @@ a {
   .mertel-sidebar {
     position: static;
     width: 100%;
+    box-sizing: border-box;
     min-height: auto;
     padding: 18px 14px;
   }

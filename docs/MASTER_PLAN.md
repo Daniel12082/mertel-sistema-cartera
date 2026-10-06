@@ -101,6 +101,12 @@ Se excluyeron `reminder_days_before_due`, `reminder_days_after_due`, `daily_mess
 
 La numeración específica de esta orden reemplaza la fase 5.2 de motor operativo descrita en versiones anteriores del roadmap. No se implementó Fase 5.3, envío de mensajes, ni ningún flujo financiero.
 
+## Fase 5.3 — Infraestructura de importación preliminar — 06/10/2026
+
+La orden específica de Fase 5.3 establece que la siguiente fase es infraestructura de análisis de cartera: se agregan permiso `portfolio.import`, análisis estructural restringido a CSV, preview, lotes/errores/auditoría y aislamiento por empresa. Solo se conserva metadata y hash; los valores de error no se persisten. No existe endpoint de aplicación, mapping, matching o reconciliación. El detalle se registra en [Fase 5.3](architecture/MERTEL_PHASE_5_3.md).
+
+**Esta fase NO habilita todavía la importación operativa de cartera MERTEL porque el formato fuente real aún no ha sido certificado.** Permanecen pendientes la identificación de clientes/facturas, columnas y productos reales, tratamiento de facturas ausentes, reconciliación de saldos, pagos posteriores y toda actualización financiera. Esta numeración específica desplaza el trabajo de mensajería previamente listado como 5.3 a una fase posterior; Fase 5.4 no se inicia como parte del cierre presente.
+
 ## Histórico: verificación documental previa del 05/10/2026
 
 Backend npm test: **148/148**, sin omisiones. Frontend npm test: **51/51**. Lint y build: **OK**. E2E existente se revisó como cobertura, sin nueva ejecución por tratarse de cambios exclusivamente documentales; el resultado histórico de 4.7 fue 12/12 y no se presenta como nueva ejecución.

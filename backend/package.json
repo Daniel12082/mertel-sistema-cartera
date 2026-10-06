@@ -10,6 +10,7 @@
     "test:authorization": "node --test test/authorization.test.js test/authorization.unit.test.js",
     "test:multi-company": "node --test test/multiCompany.test.js test/multiCompany.unit.test.js",
     "migrate:auth": "node scripts/migrate-auth.js",
+    "migrate:portfolio-import": "node scripts/migrate-portfolio-import.js",
     "provision:admin": "node scripts/provision-admin.js",
     "dev": "nodemon src/server.js",
     "start": "node src/server.js"

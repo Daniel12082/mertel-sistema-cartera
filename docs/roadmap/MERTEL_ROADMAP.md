@@ -1,6 +1,6 @@
 # Roadmap MERTEL posterior a 4.7
 
-Fecha: 06/10/2026. Cerradas: 4.6D, 4.7A, 4.7B, 4.7, 4.8, 4.9, 5.0, 5.1, 5.1A y 5.2 en sus alcances autorizados. Fase 5.2 implementa administración limitada de la configuración actual; Fase 5.3 y toda integración externa siguen futuras. La orden específica de Fase 5.2 sustituye la numeración anterior del motor operativo.
+Fecha: 06/10/2026. Cerradas: 4.6D, 4.7A, 4.7B, 4.7, 4.8, 4.9, 5.0, 5.1, 5.1A, 5.2 y 5.3 en sus alcances autorizados. La orden específica de Fase 5.2 sustituyó el motor operativo anterior y la orden de Fase 5.3 implementa análisis estructural preliminar de cartera; la mensajería externa y demás fases quedan futuras.
 
 Fuente: [reglas oficiales](../business/MERTEL_COBRANZA_RULES.md). Decisiones D/T: [registro pendiente](../business/MERTEL_DECISIONS_PENDING.md). Todas las fases exigen diff acotado, aislamiento, pruebas pertinentes y preservación de invariantes financieros; un cierre no implica validación de producción si no se ejecutó.
 
@@ -36,7 +36,13 @@ Implementada y validada por orden posterior: gestiones de tipo libre, promesas p
 
 La orden del 05/10/2026 sustituye el alcance anterior de esta numeración. Implementada y validada: tarjetas por cliente, detalle operativo, reutilización de gestiones/promesas 4.9 y selección de plantillas reales → vista previa → preparación temporal, sin envío/persistencia de mensajes. Ver [informe 5.1](../architecture/MERTEL_PHASE_5_1.md). Permisos y companyScope siguen obligatorios; no se cambian reglas de Fase 5. No se avanza a 5.2.
 
-## Importación/actualización de cartera — pendiente, fuera de esta orden
+## 5.3 — Infraestructura de análisis de importación de cartera
+
+Implementada según [informe Fase 5.3](../architecture/MERTEL_PHASE_5_3.md): CSV UTF-8 limitado, preview estructural, `import_batches`, `import_errors`, hash, auditoría y permisos por empresa. No aplica datos de negocio.
+
+**Esta fase NO habilita todavía la importación operativa de cartera MERTEL porque el formato fuente real aún no ha sido certificado.** El archivo real, columnas, matching, productos, reconciliación y saldos siguen pendientes. D10–D15/D33 continúan abiertos. Sin cambios a clientes, facturas, balances, pagos o allocations.
+
+## Importación/actualización conciliada de cartera — futura
 
 - **Objetivo:** archivo semanal validado, preview de diferencias, trazabilidad de lote y actualización conciliada, seguida de reevaluación.
 - **Dependencias:** 4.8–5.0; D10–D15/D33, fuente de SKU si se utiliza; diseño financiero aprobado antes de aplicar diferencias. La coordinación operativa de 5.4 se diseña como dependencia de contrato, no se implementa anticipadamente.
@@ -50,7 +56,7 @@ Implementada y validada; ver [informe Fase 5.2](../architecture/MERTEL_PHASE_5_2
 
 La previsión previa de esta numeración para motor operativo queda pendiente fuera de esta entrega: coordinación de promesas, frecuencia, idempotencia y criterios de reingreso siguen sin implementación ni decisión.
 
-## 5.3 — Mensajería/WhatsApp
+## 5.4 — Mensajería/WhatsApp
 
 - **Objetivo:** envío manual y automático autorizado con proveedor aprobado, plantillas oficiales y estados trazables.
 - **Dependencias:** motor operativo pendiente, D16–D21/D30/D31/D35 y cuenta/proveedor autorizado. La configuración existente de 5.2 no supone habilitación ni autorización de envío.
@@ -58,7 +64,7 @@ La previsión previa de esta numeración para motor operativo queda pendiente fu
 - **Decisiones necesarias:** proveedor, plantillas, estados, retries, horarios, reglas diaria/semanal y alcance de límites.
 - **Cierre:** pruebas de integración con entorno apropiado, deduplicación y errores inciertos controlados; secretos fuera de Git y cuotas respetadas. Envíos externos requieren autorización específica; no inventar WhatsApp usando el esquema histórico.
 
-## 5.4 — Pagos y reevaluación
+## 5.5 — Pagos y reevaluación
 
 - **Objetivo:** integrar efectos de pagos/allocations/reversiones e importación conciliada con la actualización operativa de cobranza.
 - **Dependencias:** pagos actuales, 5.1–5.3; D23/D25/D29/D33 y definiciones de fuente financiera.
@@ -66,7 +72,7 @@ La previsión previa de esta numeración para motor operativo queda pendiente fu
 - **Decisiones necesarias:** acreditación de pago/descuento, permanencia parcial y correspondencia del saldo externo con allocations.
 - **Cierre:** pago total aplicado retira al cliente si no queda deuda; parcial permanece según política aprobada; reevaluación después de commit y correcta reversión/reallocation. Integridad financiera y read-only de consultas preservados.
 
-## 5.5 — Reportes y métricas
+## 5.6 — Reportes y métricas
 
 - **Objetivo:** dinero recuperado, clientes gestionados, promesas realizadas/cumplidas y cartera pendiente con definiciones oficiales.
 - **Dependencias:** hechos de 4.9–5.4 y D09/D22/D23/D34; auditoría suficiente.
@@ -74,7 +80,7 @@ La previsión previa de esta numeración para motor operativo queda pendiente fu
 - **Decisiones necesarias:** fuente, período, fecha corte, deduplicación y atribución de cada indicador.
 - **Cierre:** métricas conciliables y reproducibles, pruebas de correcciones/reversiones y filtros autorizados; no reportes definitivos con definiciones abiertas.
 
-## 5.6 — Configuración operativa avanzada
+## 5.7 — Configuración operativa avanzada
 
 - **Objetivo:** resolver necesidades futuras de configuración que dependan de decisiones comerciales pendientes y no estén soportadas por el editor acotado de Fase 5.2.
 - **Dependencias:** motor operativo aún pendiente, mensajería 5.3 y decisiones D01/D03/D04/D05/D17/D18/D26/D35.
@@ -82,7 +88,7 @@ La previsión previa de esta numeración para motor operativo queda pendiente fu
 - **Decisiones necesarias:** quién aprueba/edita y vigencia de cambios, validación de configuración y revisión de descuentos.
 - **Cierre:** ampliar solo después de aprobar reglas y garantizar consumidores reales, validación, auditoría y compatibilidad. Sin tenants comerciales ni nuevos sistemas de roles.
 
-## 5.7 — Auditoría/endurecimiento
+## 5.8 — Auditoría/endurecimiento
 
 - **Objetivo:** revisar trazabilidad integral, seguridad, concurrencia, integridad, IDs, rendimiento y recuperación antes de producción.
 - **Dependencias:** 4.8–5.6, registros operativos/financieros y políticas aprobadas.

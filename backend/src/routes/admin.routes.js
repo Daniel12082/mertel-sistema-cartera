@@ -5,7 +5,28 @@ import { requireCompanyScope, requireGlobalAdmin } from "../middleware/companySc
 import { findCompany, listCompanies } from "../models/company.model.js";
 import { validCompanyId } from "../utils/companyScope.js";
 import { getCollectionSettings, updateCollectionStageSettings } from "../services/collectionSettingsAdmin.service.js";
+import { analyzePortfolioFile, listPortfolioImports, MAX_IMPORT_BYTES } from "../services/portfolioImport.service.js";
 const router = express.Router();
+router.post("/portfolio/imports/analyze", requirePermission("portfolio.import"), requireCompanyScope,
+  express.raw({ type: ["text/csv", "application/csv", "application/vnd.ms-excel"], limit: MAX_IMPORT_BYTES }), async (req, res, next) => {
+    try {
+      if (!Buffer.isBuffer(req.body)) return res.status(400).json({ success: false, message: "Envía el contenido del archivo como CSV" });
+      res.set("Cache-Control", "no-store");
+      const data = await analyzePortfolioFile({ scope: req.companyScope, actorId: req.user.id, fileName: req.query.file_name,
+        mimeType: req.get("content-type")?.split(";")[0], bytes: req.body, ipAddress: req.ip, userAgent: req.get("user-agent") });
+      return res.json({ success: true, data });
+    } catch (error) {
+      if ([400, 403, 404, 409, 413].includes(error.status)) return res.status(error.status).json({ success: false, message: error.message, code: error.code });
+      return next(error);
+    }
+  });
+router.get("/portfolio/imports", requirePermission("portfolio.import"), requireCompanyScope, async (req, res, next) => {
+  try { res.set("Cache-Control", "no-store"); return res.json({ success: true, data: await listPortfolioImports(req.companyScope) }); }
+  catch (error) {
+    if ([400, 403, 404].includes(error.status)) return res.status(error.status).json({ success: false, message: error.message });
+    return next(error);
+  }
+});
 router.get("/companies", requirePermission("companies.view"), requireGlobalAdmin, async (req, res, next) => {
   try {
     res.set("Cache-Control", "no-store");
