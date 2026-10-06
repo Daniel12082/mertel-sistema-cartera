@@ -12,6 +12,7 @@ import {
   MessageSquareText,
   SlidersHorizontal,
   FileSpreadsheet,
+  Gauge,
 } from "lucide-react";
 import { useAuth } from "../auth/useAuth";
 
@@ -56,6 +57,8 @@ function MainLayout() {
           ))}
           {(permissions.includes("message_templates.manage") || permissions.includes("settings.manage") || permissions.includes("portfolio.import")) && <div className="mertel-navigation-group">
             <span>Administración</span>
+            {permissions.includes("collection.view") && permissions.includes("settings.manage") && <NavLink to="/administracion/dashboard-cobranza" className={({ isActive }) =>
+              `mertel-nav-item ${isActive ? "active" : ""}`}><Gauge size={19} strokeWidth={2} /><span>Dashboard de cobranza</span></NavLink>}
             {permissions.includes("settings.manage") && <NavLink to="/administracion/configuracion-cobranza" className={({ isActive }) =>
               `mertel-nav-item ${isActive ? "active" : ""}`}>
               <SlidersHorizontal size={19} strokeWidth={2} />

@@ -184,4 +184,37 @@ describe("5.1A template and 5.2 collection settings administration HTTP / MySQL"
     assert.equal(scopedToB.status, 200);
     assert.equal((await request("GET", `/admin/settings?company_id=${companyA}`, adminB)).body.data.stages.find(item => item.key === "due_today").value, true);
   });
+
+  test("dashboard aggregates real company sources, reuses collection classification and rejects unauthorized or invalid scope", async () => {
+    const dashboardUrl = (companyId = "") => `/admin/collection/dashboard?reference_date=2026-10-06&activity_from=2026-10-01&activity_to=2026-10-06${companyId ? `&company_id=${companyId}` : ""}`;
+    const [action] = await db.query("INSERT INTO collection_actions(company_id,customer_id,user_id,action_type,description,action_date,status) VALUES (?,?,?,'llamada','fixture de dashboard','2026-10-06 12:00:00','completed')", [companyA, customer, adminA.id]);
+    const [promise] = await db.query("INSERT INTO payment_promises(company_id,customer_id,created_by,promised_date,promised_amount,status) VALUES (?,?,?,'2026-10-10',25.50,'pending')", [companyA, customer, adminA.id]);
+    try {
+      assert.equal((await request("GET", dashboardUrl(), null)).status, 401);
+      assert.equal((await request("GET", dashboardUrl(), collectorA)).status, 403);
+      assert.equal((await request("GET", dashboardUrl(), supervisorA)).status, 403);
+      assert.equal((await request("GET", dashboardUrl(), globalAdmin)).status, 400);
+      assert.equal((await request("GET", dashboardUrl("invalid"), globalAdmin)).status, 400);
+      assert.equal((await request("GET", dashboardUrl().replace("activity_from=2026-10-01", "activity_from=2026-10-07"), adminA)).status, 400);
+      assert.equal((await request("GET", dashboardUrl().replace("activity_to=2026-10-06", "activity_to=2026-11-15"), adminA)).status, 400);
+      const before = await request("GET", `/collection?reference_date=2026-10-06`, adminA);
+      const dashboard = await request("GET", dashboardUrl(), adminA);
+      assert.equal(dashboard.status, 200); assert.equal(dashboard.cache, "no-store");
+      assert.equal(dashboard.body.data.reference_date, "2026-10-06");
+      assert.equal(dashboard.body.data.portfolio.total_balance, before.body.data.summary.total_balance);
+      assert.equal(dashboard.body.data.portfolio.customers_in_collection, before.body.data.summary.total_customers);
+      assert.equal(dashboard.body.data.stages.find(stage => stage.key === supportedStage).customers, 1);
+      assert.equal(dashboard.body.data.promises.pending_count, 1); assert.equal(dashboard.body.data.promises.pending_amount, "25.50");
+      assert.equal(dashboard.body.data.activity.actions_period, 1);
+      assert.equal((await request("GET", dashboardUrl(companyA), globalAdmin)).body.data.portfolio.total_balance, dashboard.body.data.portfolio.total_balance);
+      const companyBData = await request("GET", dashboardUrl(companyB), globalAdmin);
+      assert.equal(companyBData.status, 200); assert.equal(companyBData.body.data.portfolio.total_balance, "0.00");
+      assert.equal(companyBData.body.data.promises.pending_count, 0); assert.equal(companyBData.body.data.activity.actions_period, 0);
+      const [[balance]] = await db.query("SELECT balance FROM invoices WHERE customer_id=?", [customer]);
+      assert.equal(String(balance.balance), "100.00");
+    } finally {
+      await db.query("DELETE FROM collection_actions WHERE id=?", [action.insertId]);
+      await db.query("DELETE FROM payment_promises WHERE id=?", [promise.insertId]);
+    }
+  });
 });

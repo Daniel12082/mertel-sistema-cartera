@@ -29,6 +29,22 @@ export async function listOperations(kind, customerId, invoiceId, scope, db) {
     ORDER BY o.created_at DESC,o.id DESC`, [customerId, ...company.values, ...(invoiceId ? [invoiceId] : [])]);
   return rows.map(row => ({ ...row, created_at: new Date(Number(row.created_at)).toISOString() }));
 }
+
+export async function getDashboardPromiseSummary(scope, db) {
+  const company = companyFilter(scope, "p.company_id");
+  const [[row]] = await db.query(`SELECT COUNT(*) AS pending_count,
+    COALESCE(SUM(p.promised_amount), 0) AS pending_amount
+    FROM payment_promises p WHERE p.status='pending' ${company.sql}`, company.values);
+  return { pending_count: Number(row.pending_count), pending_amount: String(row.pending_amount) };
+}
+
+export async function getDashboardActionCount(scope, fromUtc, toUtc, db) {
+  const company = companyFilter(scope, "a.company_id");
+  const [[row]] = await db.query(`SELECT COUNT(*) AS actions_period FROM collection_actions a
+    WHERE a.action_date >= ? AND a.action_date < ? ${company.sql}`,
+  [fromUtc, toUtc, ...company.values]);
+  return Number(row.actions_period);
+}
 export async function insertOperation(kind, customerId, data, scope, db) {
   if (kind === "action") await db.query(`INSERT INTO collection_actions (company_id,customer_id,invoice_id,user_id,action_type,description,action_date,status)
     VALUES (?,?,?,?,?,?,UTC_TIMESTAMP(),'completed')`, [scope.companyId, customerId, data.invoice_id, scope.actorId, data.action_type, data.description]);

@@ -1,0 +1,24 @@
+.collection-dashboard { display: grid; gap: 1rem; min-width: 0; }
+.dashboard-header h2 { margin: 0; }
+.dashboard-header p, .dashboard-panel > p { color: var(--mertel-muted); margin: .35rem 0 0; }
+.dashboard-filters { display: flex; flex-wrap: wrap; gap: .85rem; padding: 1rem; background: white; border: 1px solid var(--mertel-border); border-radius: .75rem; }
+.dashboard-filters label { display: grid; gap: .35rem; min-width: 12rem; font-size: .9rem; font-weight: 600; }
+.dashboard-filters input, .dashboard-filters select { min-height: 2.5rem; padding: .45rem .6rem; border: 1px solid #cbd5e1; border-radius: .45rem; background: white; }
+.dashboard-reference { margin: 0; color: var(--mertel-muted); }
+.dashboard-cards { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .85rem; }
+.dashboard-cards article, .dashboard-stages article, .dashboard-panel { min-width: 0; padding: 1rem; background: white; border: 1px solid var(--mertel-border); border-radius: .75rem; box-shadow: var(--mertel-shadow); }
+.dashboard-cards article { display: grid; align-content: start; gap: .5rem; }
+.dashboard-cards article > span { color: var(--mertel-muted); font-size: .9rem; }
+.dashboard-cards article > strong { font-size: clamp(1.25rem, 2vw, 1.8rem); overflow-wrap: anywhere; }
+.dashboard-cards small { color: var(--mertel-muted); }
+.dashboard-panel h3 { margin: 0 0 .85rem; }
+.dashboard-stages { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .75rem; }
+.dashboard-stages article { display: grid; gap: .55rem; }
+.dashboard-stages h4 { margin: 0; }
+.dashboard-stages span { overflow-wrap: anywhere; }
+.dashboard-warnings { border-color: #f2d18b; background: #fffbeb; }
+.dashboard-notice { padding: .85rem 1rem; border-radius: .5rem; background: #f1f5f9; }
+.dashboard-notice.error { color: #991b1b; background: #fef2f2; }
+.dashboard-warnings li + li { margin-top: .45rem; }
+@media (max-width: 900px) { .dashboard-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); } .dashboard-stages { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 520px) { .dashboard-cards, .dashboard-stages { grid-template-columns: 1fr; } .dashboard-filters { display: grid; } .dashboard-filters label { min-width: 0; } }

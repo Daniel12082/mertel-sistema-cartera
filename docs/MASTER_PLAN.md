@@ -1,6 +1,6 @@
 # Plan maestro MERTEL
 
-Actualizado: 06/10/2026. Producto exclusivo: MERTEL Importaciones — Sistema de Cobranza. Fase 5.4 consolida el centro operativo del cobrador sobre capacidades existentes. El envío externo y la siguiente fase permanecen futuros.
+Actualizado: 06/10/2026. Producto exclusivo: MERTEL Importaciones — Sistema de Cobranza. Fase 5.5 agrega un dashboard operativo administrativo de solo lectura sobre fuentes existentes. El envío externo permanece futuro.
 
 ## Dónde estamos
 
@@ -33,11 +33,12 @@ Documentos de fases anteriores y VALIDACION-4.7.md son evidencia histórica, no 
 | 5.2 | Configuración administrativa de cobranza | IMPLEMENTADA Y VALIDADA; no hay reglas reales por empresa en la DB configurada |
 | 5.3 | Infraestructura de análisis de importación | CERRADA; aplicación real de cartera pendiente de certificar archivo |
 | 5.4 | Centro operativo del cobrador | IMPLEMENTADA Y VALIDADA en alcance técnico; datos reales pendientes |
-| 5.5 | Mensajería/WhatsApp externa | FUTURA; preparación local disponible sin envío |
-| 5.6 | Pagos y reevaluación | FUTURA |
-| 5.7 | Reportes y métricas | FUTURA |
-| 5.8 | Configuración operativa avanzada pendiente de decisiones | FUTURA |
-| 5.9 | Auditoría/endurecimiento | FUTURA |
+| 5.5 | Dashboard operativo de cobranza | IMPLEMENTADA; métricas basadas en fuentes existentes |
+| 5.6 | Mensajería/WhatsApp externa | FUTURA; preparación local disponible sin envío |
+| 5.7 | Pagos y reevaluación | FUTURA |
+| 5.8 | Reportes y métricas | FUTURA; definiciones oficiales pendientes |
+| 5.9 | Configuración operativa avanzada pendiente de decisiones | FUTURA |
+| 5.10 | Auditoría/endurecimiento | FUTURA |
 | 6.0 | Producción MERTEL | FUTURA |
 
 ## Alcance autorizado de 4.8
@@ -117,7 +118,11 @@ La consulta de promesas pendientes es agrupada, de solo lectura y filtrada por `
 
 Se reutilizan `/api/collection`, `/api/collection/customers/:customerId/actions`, `/promises`, `/message-templates`, `/messages/preview` y `/messages/prepare`, además de `/api/admin/companies` para selección de contexto global. No hay endpoint nuevo ni migración. Informe: [Fase 5.4](architecture/MERTEL_PHASE_5_4.md). La importación real sigue pendiente de recibir y certificar el archivo fuente MERTEL.
 
-No se avanzó a Fase 5.5, no se enviaron mensajes, no se crearon datos ficticios y no se cambió saldo, factura, pago ni allocation.
+## Fase 5.5 — Dashboard operativo de cobranza — 06/10/2026
+
+Dashboard administrativo solo lectura en `GET /api/admin/collection/dashboard`. Reutiliza `readCompanyCollection` y agrega promesas pendientes y gestiones por período mediante consultas SQL agrupadas. Requiere `collection.view` + `settings.manage`, valida `companyScope` y empresa explícita para administrador global. Los saldos se derivan de `invoices.balance`; se separan fecha de cartera y rango de actividad Colombia. Se excluyen dinero recuperado, clientes gestionados, tasas, cumplimiento de promesas y productividad. Informe y definiciones: [Fase 5.5](architecture/MERTEL_PHASE_5_5.md).
+
+No se crearon fixtures en la DB real, no se mutaron facturas, saldos, pagos o allocations, no se enviaron mensajes y no se avanzó a Fase 5.6.
 
 ## Histórico: verificación documental previa del 05/10/2026
 

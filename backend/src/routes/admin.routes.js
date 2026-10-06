@@ -6,7 +6,9 @@ import { findCompany, listCompanies } from "../models/company.model.js";
 import { validCompanyId } from "../utils/companyScope.js";
 import { getCollectionSettings, updateCollectionStageSettings } from "../services/collectionSettingsAdmin.service.js";
 import { analyzePortfolioFile, listPortfolioImports, MAX_IMPORT_BYTES } from "../services/portfolioImport.service.js";
+import { getCollectionDashboardController } from "../controllers/collectionDashboard.controller.js";
 const router = express.Router();
+router.get("/collection/dashboard", requirePermission("collection.view"), requirePermission("settings.manage"), requireCompanyScope, getCollectionDashboardController);
 router.post("/portfolio/imports/analyze", requirePermission("portfolio.import"), requireCompanyScope,
   express.raw({ type: ["text/csv", "application/csv", "application/vnd.ms-excel"], limit: MAX_IMPORT_BYTES }), async (req, res, next) => {
     try {

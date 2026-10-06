@@ -10,6 +10,7 @@ import Configuracion from "./pages/Configuracion/Configuracion";
 import MessageTemplates from "./pages/Administracion/MessageTemplates";
 import CollectionSettings from "./pages/Administracion/CollectionSettings";
 import PortfolioImport from "./pages/Administracion/PortfolioImport";
+import CollectionDashboard from "./pages/Administracion/CollectionDashboard";
 import LoginPage from "./pages/Login/LoginPage";
 import ProtectedRoute from "./auth/ProtectedRoute";
 
@@ -69,6 +70,8 @@ function App() {
           path="/administracion/plantillas-whatsapp"
           element={<MessageTemplates />}
         />
+
+        <Route path="/administracion/dashboard-cobranza" element={<CollectionDashboard />} />
 
         <Route
           path="/administracion/configuracion-cobranza"
