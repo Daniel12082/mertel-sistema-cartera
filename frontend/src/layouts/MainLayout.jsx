@@ -9,7 +9,9 @@ import {
   CreditCard,
   BarChart3,
   Settings,
+  MessageSquareText,
 } from "lucide-react";
+import { useAuth } from "../auth/useAuth";
 
 const navigation = [
   { label: "Dashboard", path: "/", icon: LayoutDashboard },
@@ -23,6 +25,7 @@ const navigation = [
 ];
 
 function MainLayout() {
+  const { permissions = [] } = useAuth();
   return (
     <div className="mertel-layout">
       <aside className="mertel-sidebar">
@@ -49,6 +52,14 @@ function MainLayout() {
               <span>{label}</span>
             </NavLink>
           ))}
+          {permissions.includes("message_templates.manage") && <div className="mertel-navigation-group">
+            <span>Administración</span>
+            <NavLink to="/administracion/plantillas-whatsapp" className={({ isActive }) =>
+              `mertel-nav-item ${isActive ? "active" : ""}`}>
+              <MessageSquareText size={19} strokeWidth={2} />
+              <span>Plantillas WhatsApp</span>
+            </NavLink>
+          </div>}
         </nav>
 
         <div className="mertel-sidebar-footer">

@@ -1,6 +1,6 @@
 # Plan maestro MERTEL
 
-Actualizado: 05/10/2026. Producto exclusivo: MERTEL Importaciones — Sistema de Cobranza. **La orden vigente autoriza Fase 5.1: panel operativo y preparación de mensajes WhatsApp sin envío. No autoriza Fase 5.2 ni integración externa**.
+Actualizado: 05/10/2026. Producto exclusivo: MERTEL Importaciones — Sistema de Cobranza. **La orden vigente cierra la Fase 5.1A: administrador de plantillas WhatsApp conectado a 5.1. No autoriza Fase 5.2 ni integración externa**.
 
 ## Dónde estamos
 
@@ -29,6 +29,7 @@ Documentos de fases anteriores y VALIDACION-4.7.md son evidencia histórica, no 
 | 5 | Reglas comerciales confirmadas, beneficios independientes y facturas no vencidas | Implementación y validación documentadas en el informe específico |
 | 5.0 | Activación de reglas comerciales reales (orden vigente) | CERRADA en el alcance de Fase 5; ciclo automático de promesas pendiente |
 | 5.1 | Panel operativo, plantillas, vista previa y preparación sin envío | IMPLEMENTADA Y VALIDADA; empresas/plantillas reales aún no configuradas |
+| 5.1A | Administración de plantillas WhatsApp existente, permisos y previsualización de ejemplos | IMPLEMENTADA Y VALIDADA; sin datos de empresa/plantillas en la base configurada |
 | 5.2 | Motor operativo de cobranza | FUTURA |
 | 5.3 | Mensajería/WhatsApp | FUTURA |
 | 5.4 | Pagos y reevaluación | FUTURA |

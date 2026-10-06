@@ -46,9 +46,19 @@ export async function collectionMessage({ customerId, referenceDate, templateId,
     if (!template) throw operationError(404, "Plantilla no disponible para este cliente.");
     const primary = item?.main_invoice;
     const invoice = primary?.invoice;
-    const values = { cliente: customer.name || null, factura: invoice?.invoice_number || null, saldo: money(item?.total_balance),
-      fecha_vencimiento: invoice?.due_date || null,
-      dias_mora: primary?.days_until_due == null ? null : Math.max(0, -primary.days_until_due) };
+    const invoiceNumber = invoice?.invoice_number || null;
+    const customerBalance = money(item?.total_balance);
+    const daysUntilDue = primary?.days_until_due ?? null;
+    const overdueDays = daysUntilDue == null ? null : Math.max(0, -daysUntilDue);
+    const values = {
+      nombre_cliente: customer.name || null, identificacion_cliente: customer.nit || null, telefono_cliente: customer.phone || null,
+      numero_factura: invoiceNumber, fecha_factura: invoice?.issue_date || null, fecha_vencimiento: invoice?.due_date || null,
+      valor_factura: money(invoice?.document_value), saldo_pendiente: customerBalance,
+      dias_mora: overdueDays, dias_para_vencimiento: daysUntilDue == null ? null : Math.max(0, daysUntilDue),
+      etapa_cobranza: item?.stage_label || item?.stage || null, motivo_cobranza: item?.reason || null,
+      // Preserve the exact variable names already accepted by Fase 5.1 templates.
+      cliente: customer.name || null, factura: invoiceNumber, saldo: customerBalance,
+    };
     const rendered = renderMessageTemplate(template.content, values);
     const phoneAvailable = typeof customer.phone === "string" && customer.phone.trim().length > 0;
     const emptyContent = !template.content.trim();

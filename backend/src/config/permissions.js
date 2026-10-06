@@ -10,6 +10,7 @@ const entries = [
   ["reports", "Reportes", [["view", "Ver reportes", false], ["export", "Exportar reportes", false]]],
   ["history", "Historial", [["view", "Ver historial; collector limitado a su propia actividad", false]]],
   ["messages", "Mensajes", [["view", "Ver mensajes", false], ["manage", "Gestionar mensajes", false]]],
+  ["message_templates", "Plantillas WhatsApp", [["manage", "Administrar plantillas de WhatsApp", true]]],
   ["settings", "Configuración", [["manage", "Administrar configuración", false]]],
   ["users", "Usuarios", [["view", "Ver usuarios", false], ["create", "Crear usuarios internos", false], ["update", "Editar usuarios", false], ["deactivate", "Desactivar usuarios", false]]],
   ["roles", "Roles", [["view", "Consultar matriz administrativa de roles y permisos", true]]],

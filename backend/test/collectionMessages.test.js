@@ -50,7 +50,8 @@ describe("5.1 message preparation HTTP / MySQL", { skip: !(process.env.DB_HOST &
     await db.query("INSERT INTO invoices(company_id,customer_id,invoice_number,issue_date,due_date,document_value,base_value,balance) VALUES (?,?,'NEW-FIXTURE','2026-09-01','2026-09-25',50,50,50)", [a.companyId, customer]);
     const rules = await readFile(new URL("../config/mertel-collection-rules.json", import.meta.url), "utf8");
     await db.query("INSERT INTO settings(company_id,setting_key,setting_value,value_type) VALUES (?,'collection_rules',?,'json')", [a.companyId, rules]);
-    const [message] = await db.query("INSERT INTO message_templates(company_id,name,content) VALUES (?,'Plantilla de prueba','{{cliente}} | {{factura}} | {{saldo}} | {{fecha_vencimiento}} | {{dias_mora}}')", [a.companyId]); template = String(message.insertId);
+    const [message] = await db.query(`INSERT INTO message_templates(company_id,name,content) VALUES (?,'Plantilla de prueba',
+      '{{cliente}} | {{factura}} | {{saldo}} | {{fecha_vencimiento}} | {{dias_mora}} | {{nombre_cliente}} | {{identificacion_cliente}} | {{telefono_cliente}} | {{numero_factura}} | {{fecha_factura}} | {{valor_factura}} | {{saldo_pendiente}} | {{dias_para_vencimiento}} | {{etapa_cobranza}} | {{motivo_cobranza}}')`, [a.companyId]); template = String(message.insertId);
     const [foreign] = await db.query("INSERT INTO message_templates(company_id,name,content) VALUES (?,'Ajena','Solo fixture')", [b.companyId]); foreignTemplate = String(foreign.insertId);
     await db.query("INSERT INTO message_templates(company_id,name,content,status) VALUES (?,'Inactiva','Solo fixture','inactive')", [a.companyId]);
     await db.query("INSERT INTO message_templates(company_id,name,content,channel) VALUES (?,'Email','Solo fixture','email')", [a.companyId]);
@@ -74,7 +75,9 @@ describe("5.1 message preparation HTTP / MySQL", { skip: !(process.env.DB_HOST &
   }
   test("active WhatsApp templates are company/stage scoped, without legacy NULL fallback", async () => {
     const response = await request("GET", listPath()); assert.equal(response.status, 200); assert.equal(response.cache, "no-store");
-    assert.deepEqual(response.body.data.map(item => item.id), [template]); assert.deepEqual(response.body.data[0].variables, ["cliente", "factura", "saldo", "fecha_vencimiento", "dias_mora"]);
+    assert.deepEqual(response.body.data.map(item => item.id), [template]);
+    assert.deepEqual(response.body.data[0].variables, ["cliente", "factura", "saldo", "fecha_vencimiento", "dias_mora", "nombre_cliente",
+      "identificacion_cliente", "telefono_cliente", "numero_factura", "fecha_factura", "valor_factura", "saldo_pendiente", "dias_para_vencimiento", "etapa_cobranza", "motivo_cobranza"]);
   });
   test("preview and preparation use backend main_invoice, preserve exact phone and write nothing", async () => {
     const before = await snapshot();
@@ -82,7 +85,9 @@ describe("5.1 message preparation HTTP / MySQL", { skip: !(process.env.DB_HOST &
       const result = await request("POST", `/customers/${customer}/messages/${step}`, a, body()); assert.equal(result.status, 200);
       const data = result.body.data;
       assert.equal(data.customer.id, customer); assert.equal(data.customer.phone, "300 000 0000"); assert.equal(data.main_invoice.id, primary);
-      assert.match(data.content, /OLD-FIXTURE/); assert.match(data.content, /150/); assert.match(data.content, /2026-09-01 \| 34$/);
+      assert.match(data.content, /OLD-FIXTURE/); assert.match(data.content, /150/); assert.match(data.content, /2026-09-01 \| 34 \|/);
+      assert.match(data.content, /Fixture cliente \| FIXTURE-A \| 300 000 0000 \| OLD-FIXTURE \| 2026-08-01/);
+      assert.match(data.content, /\$\s*100,00 \| \$\s*150,00 \| 0 \| En mora \| .+$/);
       assert.equal(data.prepared, step === "prepare"); assert.equal(data.can_prepare, true); assert.equal(data.sent_at, undefined); assert.equal(data.status, undefined);
     }
     assert.deepEqual(await snapshot(), before);

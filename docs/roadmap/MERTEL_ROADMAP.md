@@ -1,6 +1,6 @@
 # Roadmap MERTEL posterior a 4.7
 
-Fecha: 05/10/2026. Cerradas: 4.6D, 4.7A, 4.7B y 4.7. **4.8 CERRADA (alcance técnico autorizado)** y **4.9 IMPLEMENTADA Y VALIDADA en alcance manual**, por órdenes posteriores del usuario. No se inician fases posteriores a 4.9. Las dependencias son requisitos de diseño/datos, no autorización para implementar fases en paralelo o adelantar operaciones.
+Fecha: 05/10/2026. Cerradas: 4.6D, 4.7A, 4.7B, 4.7, 4.8, 4.9, 5.0, 5.1 y 5.1A en sus alcances autorizados. Fase 5.1A añade el administrador de plantillas WhatsApp y conserva la preparación sin envío; no se inicia 5.2 ni una integración externa. Las dependencias son requisitos de diseño/datos, no autorización para implementar fases en paralelo o adelantar operaciones.
 
 Fuente: [reglas oficiales](../business/MERTEL_COBRANZA_RULES.md). Decisiones D/T: [registro pendiente](../business/MERTEL_DECISIONS_PENDING.md). Todas las fases exigen diff acotado, aislamiento, pruebas pertinentes y preservación de invariantes financieros; un cierre no implica validación de producción si no se ejecutó.
 
