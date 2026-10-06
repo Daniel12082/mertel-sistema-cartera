@@ -4,10 +4,12 @@ import { getCollection } from "../controllers/collection.controller.js";
 import { collectionOperationController } from "../controllers/collectionOperations.controller.js";
 import { collectionMessageController } from "../controllers/collectionMessages.controller.js";
 import { activateTemplate, createTemplate, deactivateTemplate, listTemplates, updateTemplate } from "../controllers/messageTemplatesAdmin.controller.js";
+import { customerCollectionHistory } from "../controllers/collectionHistory.controller.js";
 
 const router = express.Router();
 router.use(requirePermission("collection.view"));
 router.get("/", getCollection);
+router.get("/customers/:customerId/history", requirePermission("history.view"), customerCollectionHistory);
 router.get("/customers/:customerId/actions", collectionOperationController("action"));
 router.post("/customers/:customerId/actions", requirePermission("collection.manage"), collectionOperationController("action", true));
 router.get("/customers/:customerId/promises", collectionOperationController("promise"));

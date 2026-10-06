@@ -46,8 +46,9 @@ devuelta al frontend incluye únicamente operaciones implementadas: 17 para
 admin, 11 para supervisor y 7 para collector. Los permisos previstos se
 documentan en el catálogo pero no autorizan endpoints ficticios. Por ejemplo,
 `portfolio.export` no se activa mientras no exista una operación de exportación.
-`history.view` del collector incluye `scope=own_user`; al implementar historial,
-el backend deberá filtrar por el usuario real, antes de habilitar esa operación.
+`history.view` del collector incluye `scope=own_user`. La Fase 5.6 activa su
+implementación existente y el backend limita las consultas de historial al actor
+autenticado; el cliente no decide ni puede ampliar ese alcance.
 
 El permiso administrativo no omite las restricciones financieras: la ruta de
 borrado de pagos sigue sin eliminar pagos reales, según la regla existente.

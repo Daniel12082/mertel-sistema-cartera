@@ -13,10 +13,10 @@ test("policy has exactly the three existing roles and unique described permissio
 });
 test("collector and supervisor receive the exact initial active grants", () => {
   assert.deepEqual(permissionsForRoles([{ name: "collector" }]).sort(), ["customers.view", "invoices.view", "payments.create", "payments.view",
-    "payment_allocations.create", "payment_allocations.view", "portfolio.view", "collection.view", "collection.manage"].sort());
+    "payment_allocations.create", "payment_allocations.view", "portfolio.view", "collection.view", "collection.manage", "history.view"].sort());
   assert.deepEqual(permissionsForRoles([{ name: "supervisor" }]).sort(), ["customers.view", "customers.update", "invoices.view", "invoices.update",
-    "payments.create", "payments.view", "payments.update", "payment_allocations.create", "payment_allocations.view", "payment_allocations.reverse", "portfolio.view", "collection.view", "collection.manage"].sort());
-  assert.equal(permissionsForRoles([{ name: "admin" }]).length, 23);
+    "payments.create", "payments.view", "payments.update", "payment_allocations.create", "payment_allocations.view", "payment_allocations.reverse", "portfolio.view", "collection.view", "collection.manage", "history.view"].sort());
+  assert.equal(permissionsForRoles([{ name: "admin" }]).length, 24);
   assert.equal(permissionsForRoles([{ name: "admin" }]).includes("portfolio.import"), true);
   assert.equal(permissionsForRoles([{ name: "collector" }]).includes("portfolio.import"), false);
   assert.equal(permissionsForRoles([{ name: "supervisor" }]).includes("portfolio.import"), false);
@@ -32,12 +32,13 @@ test("unknown/missing roles fail closed; multi-role grants are a unique union", 
   assert.deepEqual(permissionsForRoles([{ name: "unknown" }, { name: "toString" }]), []);
   assert.deepEqual(permissionsForRoles([{ name: "collector" }, { name: "supervisor" }, { name: "collector" }]), permissionsForRoles([{ name: "supervisor" }]));
 });
-test("catalog includes enabled/disabled state and own-user history scope without activating planned endpoints", () => {
+test("catalog activates existing history permission with own-user collector scope", () => {
   const catalog = roleCatalog();
   assert.deepEqual(catalog.map(role => role.label), ["Admin", "Supervisor", "Collector"]);
   const collector = catalog.find(role => role.name === "collector");
   assert.equal(collector.permissions.find(permission => permission.name === "history.view").scope, "own_user");
-  assert.equal(collector.permissions.find(permission => permission.name === "history.view").implemented, false);
+  assert.equal(collector.permissions.find(permission => permission.name === "history.view").implemented, true);
+  assert.equal(permissionsForRoles([{ name: "collector" }]).includes("history.view"), true);
   assert.equal(collector.permissions.find(permission => permission.name === "roles.view").enabled, false);
   assert.equal(collector.permissions.find(permission => permission.name === "collection.view").implemented, true);
   assert.equal(collector.permissions.find(permission => permission.name === "collection.manage").implemented, true);

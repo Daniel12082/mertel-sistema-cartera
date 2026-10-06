@@ -1,6 +1,6 @@
 # Plan maestro MERTEL
 
-Actualizado: 06/10/2026. Producto exclusivo: MERTEL Importaciones — Sistema de Cobranza. Fase 5.5 agrega un dashboard operativo administrativo de solo lectura sobre fuentes existentes. El envío externo permanece futuro.
+Actualizado: 06/10/2026. Producto exclusivo: MERTEL Importaciones — Sistema de Cobranza. Fase 5.6 agrega historial y trazabilidad de cobranza en solo lectura sobre fuentes existentes. El envío externo permanece futuro.
 
 ## Dónde estamos
 
@@ -34,11 +34,12 @@ Documentos de fases anteriores y VALIDACION-4.7.md son evidencia histórica, no 
 | 5.3 | Infraestructura de análisis de importación | CERRADA; aplicación real de cartera pendiente de certificar archivo |
 | 5.4 | Centro operativo del cobrador | IMPLEMENTADA Y VALIDADA en alcance técnico; datos reales pendientes |
 | 5.5 | Dashboard operativo de cobranza | IMPLEMENTADA; métricas basadas en fuentes existentes |
-| 5.6 | Mensajería/WhatsApp externa | FUTURA; preparación local disponible sin envío |
-| 5.7 | Pagos y reevaluación | FUTURA |
-| 5.8 | Reportes y métricas | FUTURA; definiciones oficiales pendientes |
-| 5.9 | Configuración operativa avanzada pendiente de decisiones | FUTURA |
-| 5.10 | Auditoría/endurecimiento | FUTURA |
+| 5.6 | Historial y trazabilidad avanzada de cobranza | IMPLEMENTADA; lecturas aisladas y sin duplicar fuentes |
+| 5.7 | Mensajería/WhatsApp externa | FUTURA; preparación local disponible sin envío |
+| 5.8 | Pagos y reevaluación | FUTURA |
+| 5.9 | Reportes y métricas | FUTURA; definiciones oficiales pendientes |
+| 5.10 | Configuración operativa avanzada pendiente de decisiones | FUTURA |
+| 5.11 | Auditoría/endurecimiento | FUTURA |
 | 6.0 | Producción MERTEL | FUTURA |
 
 ## Alcance autorizado de 4.8
@@ -88,8 +89,8 @@ Prioridad de trabajo técnico, no prioridad comercial de clientes:
 
 - 4.8: selección/jerarquía/orden/labels corregidos; evaluador desde emisión y cálculo puro implementados. Quedan decisiones de calendario/límites, datos de productos y redondeo/registro financiero antes de activar beneficio real.
 - 4.9–5.2: historial, registro manual y administración acotada de reglas implementados; pausa por promesa, contrato seguro de importación y estado operativo continuo siguen pendientes.
-- 5.5–5.8: falta proveedor, cuotas aprobadas y fuentes de métricas; recordatorios, límites y horarios no se administran porque hoy no tienen consumidor estable.
-- 5.9: revisar precisión monetaria del helper de descuento, conversiones BIGINT, auditoría integral, escala de lectura y efectos de referencias huérfanas.
+- 5.7–5.10: falta proveedor, cuotas aprobadas y fuentes de métricas; recordatorios, límites y horarios no se administran porque hoy no tienen consumidor estable.
+- 5.11: revisar precisión monetaria del helper de descuento, conversiones BIGINT, auditoría integral, escala de lectura y efectos de referencias huérfanas.
 - 6.0: falta contexto real autorizado y evidencia de configuración/datos de producción; no confundir push con deploy.
 
 El registro previo de entrega 4.9 está cerrado y validado en su alcance manual; su autorización de publicación no amplía fases posteriores.
@@ -122,7 +123,11 @@ Se reutilizan `/api/collection`, `/api/collection/customers/:customerId/actions`
 
 Dashboard administrativo solo lectura en `GET /api/admin/collection/dashboard`. Reutiliza `readCompanyCollection` y agrega promesas pendientes y gestiones por período mediante consultas SQL agrupadas. Requiere `collection.view` + `settings.manage`, valida `companyScope` y empresa explícita para administrador global. Los saldos se derivan de `invoices.balance`; se separan fecha de cartera y rango de actividad Colombia. Se excluyen dinero recuperado, clientes gestionados, tasas, cumplimiento de promesas y productividad. Informe y definiciones: [Fase 5.5](architecture/MERTEL_PHASE_5_5.md).
 
-No se crearon fixtures en la DB real, no se mutaron facturas, saldos, pagos o allocations, no se enviaron mensajes y no se avanzó a Fase 5.6.
+No se crearon fixtures en la DB real, no se mutaron facturas, saldos, pagos o allocations y no se enviaron mensajes.
+
+## Fase 5.6 — Historial y trazabilidad avanzada de cobranza — 06/10/2026
+
+Implementada sobre las fuentes existentes de gestiones, promesas, cambios auditados de reglas de cobranza y lotes de importación. La consulta por cliente y el historial administrativo son de solo lectura, paginados y filtrables; usan orden determinista y `companyScope`. El collector conserva el permiso existente `history.view` limitado en backend a sus propios eventos. La vista administrativa también exige `settings.manage` y selección explícita de empresa activa para admin global. No se añadieron permisos, tablas ni migraciones. No se muestra preparación de mensajes como envío; pagos y allocations se excluyen porque el sistema todavía no expone un evento financiero reconciliado para este timeline. Sin escrituras financieras, envío externo o implementación de Fase 5.7. Evidencia: [Fase 5.6](architecture/MERTEL_PHASE_5_6.md).
 
 ## Histórico: verificación documental previa del 05/10/2026
 

@@ -1,6 +1,6 @@
 # Roadmap MERTEL posterior a 4.7
 
-Fecha: 06/10/2026. Cerradas: 4.6D, 4.7A, 4.7B, 4.7, 4.8, 4.9, 5.0, 5.1, 5.1A, 5.2, 5.3, 5.4 y 5.5 en sus alcances autorizados. La mensajería externa y fases financieras posteriores quedan futuras.
+Fecha: 06/10/2026. Cerradas: 4.6D, 4.7A, 4.7B, 4.7, 4.8, 4.9, 5.0, 5.1, 5.1A, 5.2, 5.3, 5.4, 5.5 y 5.6 en sus alcances autorizados. La mensajería externa y fases financieras posteriores quedan futuras.
 
 Fuente: [reglas oficiales](../business/MERTEL_COBRANZA_RULES.md). Decisiones D/T: [registro pendiente](../business/MERTEL_DECISIONS_PENDING.md). Todas las fases exigen diff acotado, aislamiento, pruebas pertinentes y preservación de invariantes financieros; un cierre no implica validación de producción si no se ejecutó.
 
@@ -66,7 +66,11 @@ Implementada y validada; ver [informe Fase 5.2](../architecture/MERTEL_PHASE_5_2
 
 La previsión previa de esta numeración para motor operativo queda pendiente fuera de esta entrega: coordinación de promesas, frecuencia, idempotencia y criterios de reingreso siguen sin implementación ni decisión.
 
-## 5.6 — Mensajería/WhatsApp externa
+## 5.6 — Historial y trazabilidad avanzada de cobranza
+
+Implementada según [informe Fase 5.6](../architecture/MERTEL_PHASE_5_6.md). Las vistas de cliente y administrativa agregan gestiones, promesas, cambios auditados de reglas de cobranza y lotes de importación desde sus fuentes originales. Son lecturas paginadas, filtrables y aisladas por `companyScope`; el permiso existente `history.view` aplica alcance propio al collector y la vista global exige además `settings.manage` y empresa activa explícita para admin global. Sin nueva tabla, migración o permiso. La preparación de WhatsApp no se representa como envío; pagos/allocations quedan excluidos hasta que exista un hecho reconciliado apto para historial. No se implementa la siguiente Fase 5.7.
+
+## 5.7 — Mensajería/WhatsApp externa
 
 - **Objetivo:** envío manual y automático autorizado con proveedor aprobado, plantillas oficiales y estados trazables.
 - **Dependencias:** motor operativo pendiente, D16–D21/D30/D31/D35 y cuenta/proveedor autorizado. La configuración existente de 5.2 no supone habilitación ni autorización de envío.
@@ -74,7 +78,7 @@ La previsión previa de esta numeración para motor operativo queda pendiente fu
 - **Decisiones necesarias:** proveedor, plantillas, estados, retries, horarios, reglas diaria/semanal y alcance de límites.
 - **Cierre:** pruebas de integración con entorno apropiado, deduplicación y errores inciertos controlados; secretos fuera de Git y cuotas respetadas. Envíos externos requieren autorización específica; no inventar WhatsApp usando el esquema histórico.
 
-## 5.7 — Pagos y reevaluación
+## 5.8 — Pagos y reevaluación
 
 - **Objetivo:** integrar efectos de pagos/allocations/reversiones e importación conciliada con la actualización operativa de cobranza.
 - **Dependencias:** pagos actuales, 5.1–5.4; D23/D25/D29/D33 y definiciones de fuente financiera.
@@ -82,7 +86,7 @@ La previsión previa de esta numeración para motor operativo queda pendiente fu
 - **Decisiones necesarias:** acreditación de pago/descuento, permanencia parcial y correspondencia del saldo externo con allocations.
 - **Cierre:** pago total aplicado retira al cliente si no queda deuda; parcial permanece según política aprobada; reevaluación después de commit y correcta reversión/reallocation. Integridad financiera y read-only de consultas preservados.
 
-## 5.8 — Reportes y métricas
+## 5.9 — Reportes y métricas
 
 - **Objetivo:** dinero recuperado, clientes gestionados, promesas realizadas/cumplidas y cartera pendiente con definiciones oficiales.
 - **Dependencias:** hechos de 4.9–5.4 y D09/D22/D23/D34; auditoría suficiente.
@@ -90,7 +94,7 @@ La previsión previa de esta numeración para motor operativo queda pendiente fu
 - **Decisiones necesarias:** fuente, período, fecha corte, deduplicación y atribución de cada indicador.
 - **Cierre:** métricas conciliables y reproducibles, pruebas de correcciones/reversiones y filtros autorizados; no reportes definitivos con definiciones abiertas.
 
-## 5.9 — Configuración operativa avanzada
+## 5.10 — Configuración operativa avanzada
 
 - **Objetivo:** resolver necesidades futuras de configuración que dependan de decisiones comerciales pendientes y no estén soportadas por el editor acotado de Fase 5.2.
 - **Dependencias:** motor operativo aún pendiente, mensajería 5.3 y decisiones D01/D03/D04/D05/D17/D18/D26/D35.
@@ -98,10 +102,10 @@ La previsión previa de esta numeración para motor operativo queda pendiente fu
 - **Decisiones necesarias:** quién aprueba/edita y vigencia de cambios, validación de configuración y revisión de descuentos.
 - **Cierre:** ampliar solo después de aprobar reglas y garantizar consumidores reales, validación, auditoría y compatibilidad. Sin tenants comerciales ni nuevos sistemas de roles.
 
-## 5.10 — Auditoría/endurecimiento
+## 5.11 — Auditoría/endurecimiento
 
 - **Objetivo:** revisar trazabilidad integral, seguridad, concurrencia, integridad, IDs, rendimiento y recuperación antes de producción.
-- **Dependencias:** 4.8–5.6, registros operativos/financieros y políticas aprobadas.
+- **Dependencias:** 4.8–5.10, registros operativos/financieros y políticas aprobadas.
 - **Riesgos:** datos sensibles en logs, referencias huérfanas, redondeo/BIGINT, carrera de envío/pago y respaldo no restaurable.
 - **Decisiones necesarias:** retención/acceso a historial y tratamiento autorizado de incidencias.
 - **Cierre:** evidencias de aislamiento/roles, idempotencia y no mutación indebida; restauración ensayada, deuda crítica resuelta y resultados documentados. No confundir unit tests con datos reales validados.

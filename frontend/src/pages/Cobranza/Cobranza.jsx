@@ -9,6 +9,7 @@ import "./Cobranza.css";
 import CollectionOperations from "./CollectionOperations";
 import CollectionBenefits from "./CollectionBenefits";
 import CollectionMessages from "./CollectionMessages";
+import CustomerHistory from "./CustomerHistory";
 
 function StageBadge({ stage, catalog = [], label }) {
   const category = catalog.find(item => item.key === stage)?.category;
@@ -47,7 +48,7 @@ function CustomerCard({ item, catalog, onDetail, onMessage, canManage, pending =
   </article>;
 }
 
-function CustomerDetail({ item, catalog, referenceDate, companyId, onClose, messageFirst }) {
+function CustomerDetail({ item, catalog, referenceDate, companyId, onClose, messageFirst, canViewHistory }) {
   const dialog = useRef(null);
   useEffect(() => {
     const previous = document.activeElement;
@@ -73,7 +74,7 @@ function CustomerDetail({ item, catalog, referenceDate, companyId, onClose, mess
     <section ref={dialog} className="cartera-modal cobranza-modal" role="dialog" aria-modal="true" aria-labelledby="cobranza-detail-title">
       <header className="cartera-modal-header"><div><h2 id="cobranza-detail-title">Cobranza de {item.customer.name || "Cliente"}</h2><p>Referencia {formatDate(referenceDate)}</p></div><button className="cartera-close" aria-label="Cerrar detalle" onClick={onClose}><X size={19} /></button></header>
       <div className="cartera-modal-body">
-        <nav className="cobranza-detail-navigation" aria-label="Secciones del cliente"><a href="#cobranza-resumen">Resumen</a><a href="#cobranza-facturas">Facturas</a><a href="#cobranza-gestiones">Gestiones</a><a href="#cobranza-promesas">Promesas</a><a href="#cobranza-whatsapp">WhatsApp</a></nav>
+        <nav className="cobranza-detail-navigation" aria-label="Secciones del cliente"><a href="#cobranza-resumen">Resumen</a><a href="#cobranza-facturas">Facturas</a><a href="#cobranza-gestiones">Gestiones</a><a href="#cobranza-promesas">Promesas</a>{canViewHistory && <a href="#cobranza-historial">Historial</a>}<a href="#cobranza-whatsapp">WhatsApp</a></nav>
         <div id="cobranza-resumen" className="cobranza-detail-grid">
           <DetailValue label="Cliente">{item.customer.name || "No registrado"}</DetailValue>
           <DetailValue label="NIT">{item.customer.nit}</DetailValue><DetailValue label="Teléfono">{item.customer.phone}</DetailValue>
@@ -91,6 +92,7 @@ function CustomerDetail({ item, catalog, referenceDate, companyId, onClose, mess
           <tbody>{item.invoices.map((row, index) => <tr key={row.invoice?.invoice_id ?? row.invoice?.id ?? index}><td data-label="Número"><strong>{row.invoice?.invoice_number || "—"}</strong></td><td data-label="Emisión">{formatDate(row.invoice?.issue_date)}</td><td data-label="Vencimiento">{formatDate(row.invoice?.due_date)}</td><td data-label="Valor">{displayMoney(row.invoice?.document_value)}</td><td data-label="Saldo">{displayMoney(row.invoice?.balance)}</td><td data-label="Días desde emisión">{row.days_since_issue ?? "—"}</td><td data-label="Días para vencimiento">{row.days_until_due ?? "—"}</td><td data-label="Etapa"><StageBadge stage={row.stage} catalog={catalog} label={row.stage_label} /></td><td data-label="Motivo">{row.reason || "—"}</td><td data-label="Prioridad">{row.priority ?? "—"}</td><td data-label="Elegible para cobranza">{row.eligible === true ? "Sí" : row.eligible === false ? "No" : "—"}</td><td data-label="Candidatos de etapa"><StageCandidates candidates={row.stage_candidates} /></td><td data-label="Beneficios"><CollectionBenefits row={row} /></td></tr>)}</tbody>
         </table></div>
         <CollectionOperations key={item.customer.id} customerId={item.customer.id} companyId={companyId} invoices={item.invoices} />
+        {canViewHistory && <CustomerHistory key={`history-${item.customer.id}-${companyId || ""}`} customerId={item.customer.id} companyId={companyId} />}
         <CollectionMessages key={`${item.customer.id}-${referenceDate}-${companyId || ""}`} customer={item.customer} companyId={companyId} referenceDate={referenceDate} autoOpen={messageFirst} />
       </div><footer className="cartera-modal-footer"><button className="cartera-button-secondary" onClick={onClose}>Cerrar</button></footer>
     </section>
@@ -101,6 +103,7 @@ function CollectionView() {
   const { permissions = [], user } = useAuth();
   const globalAdmin = user?.is_global_admin === true;
   const canManage = permissions.includes("collection.manage");
+  const canViewHistory = permissions.includes("history.view");
   const [companies, setCompanies] = useState({ loading: globalAdmin, rows: [], error: "" });
   const [companyId, setCompanyId] = useState("");
   const [referenceDate, setReferenceDate] = useState(localDateValue);
@@ -170,7 +173,7 @@ function CollectionView() {
         <p className="cobranza-note cobranza-panel-note">Las facturas no vencidas de clientes ya clasificados se consultan en su tarjeta principal.</p>
         {!pendingVisible.length ? <State title="No hay clientes con facturas no vencidas fuera de las etapas activas." /> : <div className="cobranza-client-grid">{pendingVisible.map(item => <CustomerCard key={item.customer.id} item={item} catalog={catalog} canManage={canManage} pending onDetail={() => openDetail(item)} onMessage={() => openDetail(item, true)} />)}</div>}
       </section>}
-      {selected && <CustomerDetail item={selected} catalog={catalog} referenceDate={data.reference_date} companyId={globalAdmin ? companyId : undefined} onClose={closeDetail} messageFirst={messageFirst} />}
+      {selected && <CustomerDetail item={selected} catalog={catalog} referenceDate={data.reference_date} companyId={globalAdmin ? companyId : undefined} onClose={closeDetail} messageFirst={messageFirst} canViewHistory={canViewHistory} />}
     </div>}
   </section>;
 }

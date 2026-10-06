@@ -59,6 +59,8 @@ function MainLayout() {
             <span>Administración</span>
             {permissions.includes("collection.view") && permissions.includes("settings.manage") && <NavLink to="/administracion/dashboard-cobranza" className={({ isActive }) =>
               `mertel-nav-item ${isActive ? "active" : ""}`}><Gauge size={19} strokeWidth={2} /><span>Dashboard de cobranza</span></NavLink>}
+            {permissions.includes("history.view") && permissions.includes("settings.manage") && <NavLink to="/administracion/historial-cobranza" className={({ isActive }) =>
+              `mertel-nav-item ${isActive ? "active" : ""}`}><ClipboardCheck size={19} strokeWidth={2} /><span>Historial de cobranza</span></NavLink>}
             {permissions.includes("settings.manage") && <NavLink to="/administracion/configuracion-cobranza" className={({ isActive }) =>
               `mertel-nav-item ${isActive ? "active" : ""}`}>
               <SlidersHorizontal size={19} strokeWidth={2} />

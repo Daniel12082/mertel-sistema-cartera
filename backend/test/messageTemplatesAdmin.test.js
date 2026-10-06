@@ -23,7 +23,7 @@ describe("5.1A template and 5.2 collection settings administration HTTP / MySQL"
     await db.query(`CREATE DATABASE \`${schema}\``); await db.query(`USE \`${schema}\``);
     const initial = await readFile(new URL("../../database/migrations/001_initial_schema.sql", import.meta.url), "utf8");
     const tables = new Set(["companies", "roles", "users", "user_roles", "customers", "invoices", "payments", "payment_allocations",
-      "collection_actions", "payment_promises", "message_templates", "messages", "settings", "audit_logs"]);
+      "collection_actions", "payment_promises", "message_templates", "messages", "settings", "audit_logs", "import_batches"]);
     for (const match of initial.matchAll(/CREATE TABLE (\w+) \([\s\S]*?;/g)) if (tables.has(match[1])) await db.query(match[0]);
     await db.query("INSERT INTO roles(name) VALUES ('admin'),('supervisor'),('collector')");
     await applyAuthMigrations(db);
@@ -215,6 +215,50 @@ describe("5.1A template and 5.2 collection settings administration HTTP / MySQL"
     } finally {
       await db.query("DELETE FROM collection_actions WHERE id=?", [action.insertId]);
       await db.query("DELETE FROM payment_promises WHERE id=?", [promise.insertId]);
+    }
+  });
+
+  test("customer and administrative histories paginate and isolate actors, types, companies and safe event sources", async () => {
+    const [firstAction] = await db.query("INSERT INTO collection_actions(company_id,customer_id,invoice_id,user_id,action_type,description,action_date) VALUES (?,?,?,?,'llamada','Seguimiento de fixture','2026-10-06 12:00:00')", [companyA, customer, null, adminA.id]);
+    const [secondAction] = await db.query("INSERT INTO collection_actions(company_id,customer_id,user_id,action_type,description,action_date) VALUES (?, ?, ?,'nota','Observación de cobrador','2026-10-06 12:00:00')", [companyA, customer, collectorA.id]);
+    const [promise] = await db.query("INSERT INTO payment_promises(company_id,customer_id,invoice_id,created_by,promised_date,promised_amount,notes,status) VALUES (?,?,NULL,?,'2026-10-10',25.50,'Promesa de fixture','pending')", [companyA, customer, adminA.id]);
+    const [batch] = await db.query("INSERT INTO import_batches(company_id,user_id,file_name,total_rows,failed_rows,status) VALUES (?,?,'cartera-fixture.csv',4,1,'analyzed_unconfigured')", [companyA, adminA.id]);
+    try {
+      const scoped = `/collection/customers/${customer}/history`;
+      assert.equal((await request("GET", scoped, null)).status, 401);
+      assert.equal((await request("GET", scoped, adminB)).status, 404);
+      assert.equal((await request("GET", scoped, globalAdmin)).status, 400);
+      assert.equal((await request("GET", `${scoped}?company_id=${companyA}`, globalAdmin)).status, 200);
+      assert.equal((await request("GET", `/collection/customers/${customer}/history?company_id=${companyA}`, collectorA)).status, 200);
+      const own = await request("GET", scoped, collectorA);
+      assert.equal(own.body.data.pagination.total, 1); assert.equal(own.body.data.events[0].type, "action");
+      assert.equal(own.body.data.events[0].actor, "Fixture"); assert.equal(own.body.data.events[0].invoice, null);
+      assert.equal((await request("GET", "/collection/customers/999999/history", adminA)).status, 404);
+      assert.equal((await request("GET", scoped + "?limit=999999", adminA)).status, 400);
+      const actions = await request("GET", scoped + "?type=action&limit=1", adminA);
+      assert.equal(actions.body.data.pagination.total, 2); assert.equal(actions.body.data.pagination.has_next, true);
+      assert.equal(actions.body.data.events[0].id, `action:${secondAction.insertId}`);
+      const timeline = await request("GET", scoped + "?type=all", adminA);
+      assert.ok(timeline.body.data.events.some(event => event.type === "promise" && event.metadata.amount === "25.50" && event.status === "pending"));
+      assert.ok(timeline.body.data.events.every(event => !JSON.stringify(event).match(/password|token|secret|headers|sql/i)));
+      assert.ok(timeline.body.data.events.every(event => !String(event.title).toLowerCase().includes("enviado")));
+      const url = "/admin/collection/history?limit=100";
+      assert.equal((await request("GET", url, collectorA)).status, 403);
+      assert.equal((await request("GET", url, globalAdmin)).status, 400);
+      const global = await request("GET", `${url}&company_id=${companyA}`, globalAdmin);
+      assert.equal(global.status, 200);
+      assert.ok(global.body.data.events.some(event => event.type === "import" && event.metadata.file_name === "cartera-fixture.csv"));
+      assert.ok(global.body.data.events.some(event => event.type === "configuration"));
+      assert.equal((await request("GET", `${url}&company_id=${companyB}`, globalAdmin)).body.data.pagination.total, 0);
+      const actors = await request("GET", `/admin/collection/history/actors?company_id=${companyA}`, globalAdmin);
+      assert.ok(actors.body.data.some(actor => actor.id === collectorA.id && actor.name === "Fixture"));
+      const financial = await db.query("SELECT balance FROM invoices WHERE company_id=?", [companyA]);
+      assert.equal(String(financial[0][0].balance), "100.00");
+      assert.ok(firstAction.insertId < secondAction.insertId); assert.ok(promise.insertId > 0); assert.ok(batch.insertId > 0);
+    } finally {
+      await db.query("DELETE FROM collection_actions WHERE id IN (?,?)", [firstAction.insertId, secondAction.insertId]);
+      await db.query("DELETE FROM payment_promises WHERE id=?", [promise.insertId]);
+      await db.query("DELETE FROM import_batches WHERE id=?", [batch.insertId]);
     }
   });
 });

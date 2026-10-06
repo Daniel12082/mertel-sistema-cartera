@@ -23,6 +23,10 @@
 .cobranza-operation-form textarea { min-height: 90px; resize: vertical; }
 .cobranza-history { list-style: none; padding: 0; }
 .cobranza-history li { padding: 13px; margin-bottom: 8px; border: 1px solid #e2e8f0; border-radius: 8px; display: flex; flex-direction: column; gap: 6px; overflow-wrap: anywhere; }
+.history-pagination { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: .75rem; }
+.history-pagination div { display: flex; gap: .5rem; }
+.history-pagination button { min-height: 2.4rem; padding: .4rem .85rem; border: 1px solid #cbd5e1; border-radius: .45rem; background: white; }
+.history-pagination button:disabled { opacity: .5; cursor: not-allowed; }
 .cobranza-history span { color: #64748b; font-size: 12px; }
 .cobranza-history p, .cobranza-draft-preview { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; }
 .cobranza-draft-preview { margin-top: 12px; padding: 12px; border: 1px solid #cbd5e1; border-radius: 7px; background: #fff; }

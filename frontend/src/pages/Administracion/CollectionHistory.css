@@ -1,0 +1,20 @@
+.collection-history-page { display: grid; gap: 1rem; min-width: 0; }
+.collection-history-page header h2 { margin: 0; }
+.collection-history-page header p { color: var(--mertel-muted); margin: .35rem 0 0; }
+.collection-history-page > label, .history-filters label { display: grid; gap: .35rem; min-width: 0; font-size: .9rem; font-weight: 600; }
+.collection-history-page select, .history-filters input, .history-filters select { min-height: 2.4rem; min-width: 0; padding: .45rem .6rem; border: 1px solid #cbd5e1; border-radius: .45rem; background: white; }
+.history-filters { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: .7rem; padding: 1rem; background: white; border: 1px solid var(--mertel-border); border-radius: .75rem; }
+.history-timeline { list-style: none; padding: 0; margin: 0; display: grid; gap: .75rem; }
+.history-timeline li { display: grid; grid-template-columns: minmax(9rem, 12rem) minmax(0, 1fr); gap: .8rem; align-items: start; }
+.history-timeline time { color: var(--mertel-muted); padding-top: .9rem; }
+.history-event { display: grid; gap: .35rem; min-width: 0; padding: .9rem 1rem; border: 1px solid var(--mertel-border); border-left: 3px solid var(--mertel-red); border-radius: .55rem; background: white; overflow-wrap: anywhere; }
+.history-event span { color: #526078; font-size: .9rem; }
+.history-event p { margin: .25rem 0 0; white-space: pre-wrap; }
+.history-pagination { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: .75rem; }
+.history-pagination div { display: flex; gap: .5rem; }
+.history-pagination button { min-height: 2.4rem; padding: .4rem .85rem; border: 1px solid #cbd5e1; border-radius: .45rem; background: white; }
+.history-pagination button:disabled { opacity: .5; cursor: not-allowed; }
+.history-notice { padding: .85rem 1rem; border-radius: .5rem; background: #f1f5f9; }
+.history-notice.error { color: #991b1b; background: #fef2f2; }
+@media (max-width: 900px) { .history-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 520px) { .history-filters { grid-template-columns: 1fr; } .history-timeline li { grid-template-columns: 1fr; gap: .25rem; } .history-timeline time { padding-top: .35rem; } }
