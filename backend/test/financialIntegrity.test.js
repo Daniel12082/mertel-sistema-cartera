@@ -75,12 +75,12 @@ describe("financial integrity HTTP / MySQL integration", { skip: !configured }, 
   });
 
   beforeEach(async () => {
-    const [firstCompany] = await pool.query("INSERT INTO companies (name) VALUES ('Test company')");
-    const [secondCompany] = await pool.query("INSERT INTO companies (name) VALUES ('Other test company')");
-    company = firstCompany.insertId;
-    otherCompany = secondCompany.insertId;
-    const [first] = await pool.query("INSERT INTO customers (nit, name) VALUES (?, 'Test customer')", [randomUUID()]);
-    const [second] = await pool.query("INSERT INTO customers (nit, name) VALUES (?, 'Other customer')", [randomUUID()]);
+    const [mertelRows] = await pool.query("SELECT id FROM companies WHERE name='MERTEL IMPORTACIONES' ORDER BY id LIMIT 1");
+    if (mertelRows.length) company = mertelRows[0].id;
+    else { const [firstCompany] = await pool.query("INSERT INTO companies (name) VALUES ('MERTEL IMPORTACIONES')"); company = firstCompany.insertId; }
+    otherCompany = 999999999;
+    const [first] = await pool.query("INSERT INTO customers (company_id,nit, name) VALUES (?,?,'Test customer')", [company, randomUUID()]);
+    const [second] = await pool.query("INSERT INTO customers (company_id,nit, name) VALUES (?,?,'Other customer')", [company, randomUUID()]);
     customer = first.insertId;
     otherCustomer = second.insertId;
   });
@@ -171,15 +171,15 @@ describe("financial integrity HTTP / MySQL integration", { skip: !configured }, 
   test("invoice customer can change without application history but company stays immutable", async () => {
     const i = await invoice();
     const updated = await expectStatus("PUT", `/invoices/${i.id}`, { ...i, customer_id: otherCustomer, issue_date: null, due_date: null }, 200);
-    assert.equal(updated.customer_id, otherCustomer); assert.equal(updated.company_id, null);
-    await expectStatus("PUT", `/invoices/${i.id}`, { ...i, customer_id: otherCustomer, company_id: company, issue_date: null, due_date: null }, 409);
+    assert.equal(updated.customer_id, otherCustomer); assert.equal(String(updated.company_id), String(company));
+    await expectStatus("PUT", `/invoices/${i.id}`, { ...i, customer_id: otherCustomer, company_id: otherCompany, issue_date: null, due_date: null }, 409);
   });
   test("invoice customer and company cannot change with active or reversed applications", async () => {
     const { i, p, a } = await pair();
     for (const reversed of [false, true]) {
       if (reversed) await expectStatus("DELETE", `/payments/${p.id}/allocations/${a.id}`, undefined, 200);
       await expectStatus("PUT", `/invoices/${i.id}`, { ...i, customer_id: otherCustomer, issue_date: null, due_date: null }, 409);
-      await expectStatus("PUT", `/invoices/${i.id}`, { ...i, company_id: company, issue_date: null, due_date: null }, 409);
+      await expectStatus("PUT", `/invoices/${i.id}`, { ...i, company_id: otherCompany, issue_date: null, due_date: null }, 409);
     }
   });
   test("safe invoice edits remain allowed and backend ignores supplied balance", async () => {
@@ -191,7 +191,7 @@ describe("financial integrity HTTP / MySQL integration", { skip: !configured }, 
     const i = await invoice();
     await pool.query("INSERT INTO payment_promises (customer_id, invoice_id, promised_date, promised_amount, status) VALUES (?, ?, '2026-10-02', 100, 'fulfilled')", [customer, i.id]);
     await expectStatus("PUT", `/invoices/${i.id}`, { ...i, customer_id: otherCustomer, issue_date: null, due_date: null }, 409);
-    await expectStatus("PUT", `/invoices/${i.id}`, { ...i, company_id: company, issue_date: null, due_date: null }, 409);
+    await expectStatus("PUT", `/invoices/${i.id}`, { ...i, company_id: otherCompany, issue_date: null, due_date: null }, 409);
     await expectStatus("PUT", `/invoices/${i.id}`, { ...i, notes: "Safe promise edit", issue_date: null, due_date: null }, 200);
   });
   test("invoice cannot fall below applications; total changes recalculate balance", async () => {
@@ -230,7 +230,7 @@ describe("financial integrity HTTP / MySQL integration", { skip: !configured }, 
     for (const reversed of [false, true]) {
       if (reversed) await expectStatus("DELETE", `/payments/${p.id}/allocations/${a.id}`, undefined, 200);
       await expectStatus("PUT", `/payments/${p.id}`, { ...p, payment_date: "2026-10-02", customer_id: otherCustomer }, 409);
-      await expectStatus("PUT", `/payments/${p.id}`, { ...p, payment_date: "2026-10-02", company_id: company }, 409);
+      await expectStatus("PUT", `/payments/${p.id}`, { ...p, payment_date: "2026-10-02", company_id: otherCompany }, 409);
       await expectStatus("PUT", `/payments/${p.id}`, { ...p, payment_date: "2026-10-02", amount: "49.99" }, 409);
     }
   });
@@ -259,23 +259,22 @@ describe("financial integrity HTTP / MySQL integration", { skip: !configured }, 
     const i = await invoice({ customer_id: otherCustomer }); const p = await payment();
     await allocate(p, i, "50.00", 409);
   });
-  test("allocation rejects incompatible and mixed-null companies; global admin retains same-null legacy operations", async () => {
+  test("financial lookups stay scoped to MERTEL and hide records moved outside that context", async () => {
     const i = await invoice(); const p = await payment();
     // Deliberately inconsistent historical fixtures, only inside this disposable database.
     await pool.query("UPDATE invoices SET company_id=? WHERE id=?", [company, i.id]);
-    await pool.query("UPDATE payments SET company_id=? WHERE id=?", [otherCompany, p.id]);
-    await allocate(p, i, "50.00", 409);
-    const nullable = await payment(); await allocate(nullable, i, "50.00", 409);
-    const noCompany = await invoice(); await allocate(p, noCompany, "50.00", 409);
-    await allocate(nullable, noCompany);
+    await pool.query("UPDATE payments SET company_id=NULL WHERE id=?", [p.id]);
+    await allocate(p, i, "50.00", 404);
+    const nullable = await payment(); await pool.query("UPDATE payments SET company_id=NULL WHERE id=?", [nullable.id]);
+    await allocate(nullable, i, "50.00", 404);
   });
-  test("documents reject incompatible customer company and absent company", async () => {
+  test("document writes derive MERTEL from authenticated scope and ignore forged company fields", async () => {
     await pool.query("UPDATE customers SET company_id = ? WHERE id = ?", [company, customer]);
     const i = await invoice({ company_id: company }); const p = await payment({ company_id: company });
-    await expectStatus("POST", "/invoices", { ...i, invoice_number: randomUUID(), company_id: otherCompany, issue_date: null, due_date: null }, 409);
-    await expectStatus("POST", "/payments", { ...p, company_id: otherCompany, payment_date: "2026-10-02" }, 409);
-    await expectStatus("POST", "/invoices", { ...i, invoice_number: randomUUID(), company_id: 999999999, issue_date: null, due_date: null }, 404);
-    await expectStatus("POST", "/payments", { ...p, company_id: 999999999, payment_date: "2026-10-02" }, 404);
+    const forgedInvoice = await expectStatus("POST", "/invoices", { ...i, invoice_number: randomUUID(), company_id: otherCompany, issue_date: null, due_date: null }, 201);
+    const forgedPayment = await expectStatus("POST", "/payments", { ...p, company_id: otherCompany, payment_date: "2026-10-02" }, 201);
+    assert.equal(String(forgedInvoice.company_id), String(company));
+    assert.equal(String(forgedPayment.company_id), String(company));
   });
   test("allocations cannot exceed payment available or invoice balance", async () => {
     const i = await invoice({ document_value: "200.00" }); const p = await payment();

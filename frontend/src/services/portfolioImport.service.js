@@ -10,24 +10,19 @@ function safeError(error) {
   if ([400, 403, 404, 409, 413].includes(status)) throw new Error(error.response.data?.message || "No fue posible analizar el archivo.");
   throw new Error("No fue posible consultar las importaciones. Intenta nuevamente.");
 }
-export async function analyzePortfolioFile(file, { companyId, signal } = {}) {
+export async function analyzePortfolioFile(file, { signal } = {}) {
+  const mimeType = file.name.toLowerCase().endsWith(".xlsx")
+    ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    : "text/csv";
   try {
     return unwrap(await api.post("/admin/portfolio/imports/analyze", file, {
-      params: { file_name: file.name, ...(companyId ? { company_id: companyId } : {}) }, signal,
-      headers: { "Content-Type": "text/csv" }, timeout: 30000,
+      params: { file_name: file.name }, signal,
+      headers: { "Content-Type": mimeType }, timeout: 60000,
     }));
   } catch (error) { return safeError(error); }
 }
-export async function getPortfolioImports({ companyId, signal } = {}) {
+export async function getPortfolioImports({ signal } = {}) {
   try {
-    return unwrap(await api.get("/admin/portfolio/imports", { params: companyId ? { company_id: companyId } : undefined, signal }));
-  } catch (error) { return safeError(error); }
-}
-export async function getPortfolioImportCompanies({ signal } = {}) {
-  try {
-    const response = await api.get("/admin/companies", { signal });
-    const rows = response?.data?.data;
-    if (!Array.isArray(rows)) throw new Error("Empresas inválidas");
-    return rows.filter(company => company.status === "active");
+    return unwrap(await api.get("/admin/portfolio/imports", { signal }));
   } catch (error) { return safeError(error); }
 }

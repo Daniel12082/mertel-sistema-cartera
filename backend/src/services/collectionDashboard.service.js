@@ -50,7 +50,7 @@ export function buildCollectionDashboard({ collection, promises, actionsPeriod, 
 }
 
 export async function getCollectionDashboard({ referenceDate, activityFrom, activityTo, scope }) {
-  if (!validCompanyId(scope?.companyId)) throw Object.assign(new Error("Debe seleccionarse una empresa para consultar el dashboard"), { status: 400 });
+  if (!validCompanyId(scope?.companyId)) throw Object.assign(new Error("El contexto MERTEL no está disponible"), { status: 403 });
   const connection = await pool.getConnection();
   try {
     await connection.query("START TRANSACTION READ ONLY");

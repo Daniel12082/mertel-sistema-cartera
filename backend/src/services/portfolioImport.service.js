@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import pool from "../config/database.js";
+import { parseMertelPortfolioXlsx } from "./mertelPortfolioXlsxParser.js";
 
 export const MAX_IMPORT_BYTES = 2 * 1024 * 1024;
 const MAX_ROWS = 10000;
@@ -84,15 +85,20 @@ async function companyIsActive(db, companyId) {
 }
 
 export async function analyzePortfolioFile({ scope, actorId, fileName: suppliedName, mimeType, bytes, ipAddress = null, userAgent = null }) {
-  if (!scope?.companyId) throw Object.assign(new Error("El administrador global debe seleccionar una empresa"), { status: 400 });
-  if (!(bytes instanceof Buffer) || bytes.length === 0) throw Object.assign(new Error("Selecciona un archivo CSV no vacío"), { status: 400 });
+  if (!scope?.companyId) throw Object.assign(new Error("El contexto MERTEL no está disponible"), { status: 403 });
+  if (!(bytes instanceof Buffer) || bytes.length === 0) throw Object.assign(new Error("Selecciona un archivo CSV o XLSX no vacío"), { status: 400 });
   if (bytes.length > MAX_IMPORT_BYTES) throw Object.assign(new Error("El archivo supera el límite de 2 MiB"), { status: 413 });
   const fileName = safeFileName(suppliedName);
-  if (!fileName.toLowerCase().endsWith(".csv") || !["text/csv", "application/csv", "application/vnd.ms-excel"].includes(String(mimeType || "").toLowerCase())) {
-    throw Object.assign(new Error("Solo se aceptan archivos .csv con tipo MIME CSV"), { status: 400, code: "UNSUPPORTED_FILE" });
+  const normalizedMime = String(mimeType || "").toLowerCase();
+  const extension = fileName.split(".").at(-1).toLowerCase();
+  let analysis; let storedFileType;
+  if (extension === "csv" && ["text/csv", "application/csv", "application/vnd.ms-excel"].includes(normalizedMime)) {
+    analysis = inspectRecords(parseCsv(bytes)); storedFileType = "text/csv";
+  } else if (extension === "xlsx" && normalizedMime === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet") {
+    analysis = await parseMertelPortfolioXlsx(bytes); storedFileType = "xlsx";
+  } else {
+    throw Object.assign(new Error("Solo se aceptan archivos .csv UTF-8 o .xlsx de cartera MERTEL con su tipo MIME correspondiente"), { status: 400, code: "UNSUPPORTED_FILE" });
   }
-  const records = parseCsv(bytes);
-  const analysis = inspectRecords(records);
   const digest = createHash("sha256").update(bytes).digest("hex");
   const db = await pool.getConnection();
   const lockName = `mertel_import_${createHash("sha256").update(String(scope.companyId)).digest("hex").slice(0, 32)}`;
@@ -107,19 +113,19 @@ export async function analyzePortfolioFile({ scope, actorId, fileName: suppliedN
       const duplicate = existing[0];
       await db.query("INSERT INTO audit_logs (company_id,user_id,action,entity_type,entity_id,new_values,ip_address,user_agent) VALUES (?,?,'duplicate_attempt','import_batch',?,?,?,?)",
         [scope.companyId, actorId, duplicate.id, JSON.stringify({ file_sha256: digest }), ipAddress, userAgent?.slice(0, 500) || null]);
-      return { ...analysis, batch_id: String(duplicate.id), status: duplicate.status, duplicate: true, file: { name: fileName, size_bytes: bytes.length, sha256: digest }, format_configured: false };
+      return { ...analysis, batch_id: String(duplicate.id), status: duplicate.status, duplicate: true, file: { name: fileName, size_bytes: bytes.length, sha256: digest }, format_configured: extension === "xlsx" };
     }
     await db.beginTransaction();
     try {
-      const [insert] = await db.query("INSERT INTO import_batches(company_id,user_id,file_name,file_type,total_rows,processed_rows,successful_rows,failed_rows,status,started_at,completed_at,file_sha256) VALUES (?,?,?,'text/csv',?,?,?,?, 'analyzed_unconfigured',NOW(),NOW(),?)",
-        [scope.companyId, actorId, fileName, analysis.total_rows, analysis.total_rows, analysis.successful_rows, analysis.failed_rows, digest]);
+      const [insert] = await db.query("INSERT INTO import_batches(company_id,user_id,file_name,file_type,total_rows,processed_rows,successful_rows,failed_rows,status,started_at,completed_at,file_sha256) VALUES (?,?,?,?,?,?,?,?, 'analyzed_unconfigured',NOW(),NOW(),?)",
+        [scope.companyId, actorId, fileName, storedFileType, analysis.total_rows, analysis.total_rows, analysis.successful_rows, analysis.failed_rows, digest]);
       for (const issue of analysis.issues.filter(item => item.severity === "error")) await db.query("INSERT INTO import_errors(import_batch_id,`row_number`,field_name,field_value,error_code,error_message) VALUES (?,?,?,NULL,?,?)",
         [insert.insertId, issue.row_number, issue.field_name?.slice(0, 100) || null, issue.error_code, issue.message]);
       await db.query("INSERT INTO audit_logs (company_id,user_id,action,entity_type,entity_id,new_values,ip_address,user_agent) VALUES (?,?,'analyzed','import_batch',?,?,?,?)",
         [scope.companyId, actorId, insert.insertId, JSON.stringify({ status: "analyzed_unconfigured", file_sha256: digest, total_rows: analysis.total_rows, successful_rows: analysis.successful_rows, failed_rows: analysis.failed_rows }), ipAddress, userAgent?.slice(0, 500) || null]);
       await db.commit();
       return { ...analysis, batch_id: String(insert.insertId), status: "analyzed_unconfigured", duplicate: false,
-        file: { name: fileName, size_bytes: bytes.length, sha256: digest }, format_configured: false };
+        file: { name: fileName, size_bytes: bytes.length, sha256: digest }, format_configured: extension === "xlsx" };
     } catch (error) { await db.rollback(); throw error; }
   } finally {
     if (locked) await db.query("SELECT RELEASE_LOCK(?)", [lockName]);
@@ -128,7 +134,7 @@ export async function analyzePortfolioFile({ scope, actorId, fileName: suppliedN
 }
 
 export async function listPortfolioImports(scope) {
-  if (!scope?.companyId) throw Object.assign(new Error("El administrador global debe seleccionar una empresa"), { status: 400 });
+  if (!scope?.companyId) throw Object.assign(new Error("El contexto MERTEL no está disponible"), { status: 403 });
   const [companies] = await pool.query("SELECT id FROM companies WHERE id=? AND status='active' AND deleted_at IS NULL", [scope.companyId]);
   if (!companies.length) throw Object.assign(new Error("Empresa no disponible"), { status: 404 });
   const [rows] = await pool.query("SELECT b.id,b.file_name,b.file_type,b.total_rows,b.successful_rows,b.failed_rows,b.status,b.created_at,b.user_id,u.first_name,COUNT(e.id) AS error_count FROM import_batches b LEFT JOIN users u ON u.id=b.user_id LEFT JOIN import_errors e ON e.import_batch_id=b.id WHERE b.company_id=? GROUP BY b.id,b.file_name,b.file_type,b.total_rows,b.successful_rows,b.failed_rows,b.status,b.created_at,b.user_id,u.first_name ORDER BY b.id DESC LIMIT 50", [scope.companyId]);

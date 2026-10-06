@@ -143,7 +143,7 @@ function globalSelects({ companyId, type, dateFrom, dateTo, actorId, query }) {
 }
 
 export async function getAdministrativeCollectionHistory({ scope, page, limit, type, dateFrom, dateTo, actorId, query }, dbPool = pool) {
-  if (!validCompanyId(scope?.companyId)) throw operationError(scope?.globalAdmin ? 400 : 403, "El administrador global debe seleccionar una empresa.");
+  if (!validCompanyId(scope?.companyId)) throw operationError(403, "El contexto MERTEL no está disponible.");
   const paging = normalizePage(page, limit); const selectedType = normalizeType(type, TYPES);
   if (dateFrom && dateTo && dateFrom > dateTo) throw operationError(400, "date_from no puede ser posterior a date_to.");
   if (actorId !== undefined && (!/^[1-9]\d{0,19}$/.test(String(actorId)) || BigInt(actorId) > 18446744073709551615n)) throw operationError(400, "actor_id inválido.");
@@ -165,7 +165,7 @@ export async function getAdministrativeCollectionHistory({ scope, page, limit, t
 }
 
 export async function getAdministrativeHistoryActors({ scope }, dbPool = pool) {
-  if (!validCompanyId(scope?.companyId)) throw operationError(scope?.globalAdmin ? 400 : 403, "El administrador global debe seleccionar una empresa.");
+  if (!validCompanyId(scope?.companyId)) throw operationError(403, "El contexto MERTEL no está disponible.");
   const db = await dbPool.getConnection();
   try {
     await db.query("START TRANSACTION READ ONLY");

@@ -4,6 +4,10 @@ Fecha: 06/10/2026. Cerradas: 4.6D, 4.7A, 4.7B, 4.7, 4.8, 4.9, 5.0, 5.1, 5.1A, 5.
 
 Fuente: [reglas oficiales](../business/MERTEL_COBRANZA_RULES.md). Decisiones D/T: [registro pendiente](../business/MERTEL_DECISIONS_PENDING.md). Todas las fases exigen diff acotado, aislamiento, pruebas pertinentes y preservación de invariantes financieros; un cierre no implica validación de producción si no se ejecutó.
 
+## Contexto vigente de empresa única — 06/10/2026
+
+La orden posterior de consolidación fija MERTEL Importaciones como único contexto de ejecución. El frontend ya no solicita selección de empresa ni envía `company_id`; el backend resuelve la única compañía MERTEL y conserva `companyScope` como límite de seguridad. Por tanto, las menciones a selección explícita de empresa en los informes históricos 5.4, 5.5 y 5.6 describen el comportamiento anterior. La base local fue limpiada de registros operativos de prueba sin compañía tras autorización explícita, y provisionada idempotentemente con la compañía MERTEL. No se ejecutó la migración 006 incompleta. Detalle: [arquitectura MERTEL de empresa única](../architecture/MERTEL_SINGLE_COMPANY.md).
+
 ## 4.8 — Reglas reales de cobranza
 
 Implementación técnica de selección/orden/jerarquía y catálogo ya realizada. Evaluador desde emisión y 3% exacto separados de elegibilidad/aplicación financiera; calendario/límites pendientes se representan sin otorgar Pronto Pago. Productos unknown/mixed requieren revisión manual. Informe y evidencias: [fase 4.8](../architecture/MERTEL_PHASE_4_8.md). Los tests, lint/build y E2E aprobaron; los pendientes comerciales no se declaran resueltos.
@@ -38,15 +42,15 @@ La orden del 05/10/2026 sustituye el alcance anterior de esta numeración. Imple
 
 ## 5.3 — Infraestructura de análisis de importación de cartera
 
-Implementada según [informe Fase 5.3](../architecture/MERTEL_PHASE_5_3.md): CSV UTF-8 limitado, preview estructural, `import_batches`, `import_errors`, hash, auditoría y permisos por empresa. No aplica datos de negocio.
+Implementada según [informe Fase 5.3](../architecture/MERTEL_PHASE_5_3.md): CSV UTF-8 limitado, preview estructural, `import_batches`, `import_errors`, hash, auditoría y permisos por empresa. La adaptación del Excel real agrega el parser MERTEL documentado en [especificación de cartera](../architecture/MERTEL_PORTFOLIO_FILE_SPEC.md): XLSX validado y clasificado, sin aplicar datos de negocio.
 
-**Esta fase NO habilita todavía la importación operativa de cartera MERTEL porque el formato fuente real aún no ha sido certificado.** El archivo real, columnas, matching, productos, reconciliación y saldos siguen pendientes. D10–D15/D33 continúan abiertos. Sin cambios a clientes, facturas, balances, pagos o allocations.
+**El archivo real está certificado para análisis y previsualización, pero la aplicación operativa sigue deshabilitada.** Matching definitivo, tratamiento de documentos desaparecidos/reaparecidos, movimientos no factura, productos, reconciliación y saldos siguen pendientes. D10–D15/D33 y decisiones adicionales descritas en la especificación permanecen abiertas. Sin cambios a clientes, facturas, balances, pagos o allocations.
 
 ## 5.4 — Centro operativo del cobrador
 
 Consolidado y validado sobre los endpoints existentes; detalle en [informe Fase 5.4](../architecture/MERTEL_PHASE_5_4.md). El pipeline mantiene el orden backend, una tarjeta por cliente, búsqueda sobre la respuesta completa, filtros por etapa, días de vencimiento y promesa pendiente. El detalle centraliza facturas, gestiones, promesas e historial, y permite preparar WhatsApp sin envío. El administrador global selecciona una empresa activa y el `company_id` acompaña cada lectura/escritura que requiere ese contexto; backend mantiene ownership y `companyScope`.
 
-No cambia el núcleo financiero, roles, reglas de negocio, permisos ni esquema. La base real continúa vacía de empresas/datos operativos según la inspección de Fase 5.3; las pruebas son aisladas. La importación de cartera MERTEL sigue bloqueada hasta recibir y certificar el archivo fuente. La siguiente entrega se registra como 5.5.
+No cambia el núcleo financiero, roles, reglas de negocio, permisos ni esquema. La base real tiene provisionada una única compañía MERTEL y permanece sin cartera operativa; las pruebas usan bases aisladas. La importación del archivo se limita a análisis hasta cerrar las decisiones financieras pendientes. La siguiente entrega se registra como 5.5.
 
 ## 5.5 — Dashboard operativo de cobranza
 

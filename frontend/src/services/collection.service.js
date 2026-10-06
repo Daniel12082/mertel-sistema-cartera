@@ -22,32 +22,19 @@ export function collectionError(error) {
   const status = error?.response?.status;
   if (status === 403) return "No tienes permiso para consultar cobranza.";
   if (status === 404 || status === 501) return "La consulta de cobranza no está disponible en este servidor. Verifica el despliegue de la API.";
-  if (status === 400 && error.response?.data?.message === "El administrador global debe indicar company_id para consultar una empresa.") return "Esta sesión requiere un contexto de empresa para consultar MERTEL. Utiliza una cuenta asignada a MERTEL.";
   if (status === 400) return "Revisa la fecha de referencia seleccionada.";
   if (error?.message === "collection_contract") return "No fue posible interpretar la respuesta de cobranza del servidor. Intenta nuevamente.";
   return "No fue posible consultar cobranza. Intenta nuevamente.";
 }
 
-export async function getCollection(referenceDate, { signal, companyId } = {}) {
+export async function getCollection(referenceDate, { signal } = {}) {
   try {
-    const { data } = await api.get("/collection", { params: { reference_date: referenceDate, ...(companyId ? { company_id: companyId } : {}) }, signal });
+    const { data } = await api.get("/collection", { params: { reference_date: referenceDate }, signal });
     return readCollectionResponse(data);
   } catch (error) {
     if (signal?.aborted) throw error;
     const safe = new Error(collectionError(error));
     safe.status = error?.response?.status;
     throw safe;
-  }
-}
-
-export async function getCollectionAdminCompanies({ signal } = {}) {
-  try {
-    const { data } = await api.get("/admin/companies", { signal });
-    const rows = data?.data;
-    if (data?.success !== true || !Array.isArray(rows)) throw new Error("companies_contract");
-    return rows.filter(company => company?.status === "active");
-  } catch (error) {
-    if (signal?.aborted) throw error;
-    throw new Error(error?.response?.status === 403 ? "No tienes permiso para consultar las empresas disponibles." : "No fue posible cargar las empresas disponibles.", { cause: error });
   }
 }

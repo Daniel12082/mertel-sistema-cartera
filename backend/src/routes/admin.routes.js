@@ -13,9 +13,9 @@ router.get("/collection/dashboard", requirePermission("collection.view"), requir
 router.get("/collection/history", requirePermission("history.view"), requirePermission("settings.manage"), requireCompanyScope, administrativeCollectionHistory);
 router.get("/collection/history/actors", requirePermission("history.view"), requirePermission("settings.manage"), requireCompanyScope, administrativeHistoryActors);
 router.post("/portfolio/imports/analyze", requirePermission("portfolio.import"), requireCompanyScope,
-  express.raw({ type: ["text/csv", "application/csv", "application/vnd.ms-excel"], limit: MAX_IMPORT_BYTES }), async (req, res, next) => {
+  express.raw({ type: ["text/csv", "application/csv", "application/vnd.ms-excel", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"], limit: MAX_IMPORT_BYTES }), async (req, res, next) => {
     try {
-      if (!Buffer.isBuffer(req.body)) return res.status(400).json({ success: false, message: "Envía el contenido del archivo como CSV" });
+      if (!Buffer.isBuffer(req.body)) return res.status(400).json({ success: false, message: "Envía el contenido del archivo como CSV o XLSX" });
       res.set("Cache-Control", "no-store");
       const data = await analyzePortfolioFile({ scope: req.companyScope, actorId: req.user.id, fileName: req.query.file_name,
         mimeType: req.get("content-type")?.split(";")[0], bytes: req.body, ipAddress: req.ip, userAgent: req.get("user-agent") });

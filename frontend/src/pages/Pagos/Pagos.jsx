@@ -215,7 +215,6 @@ export default function Pagos() {
     if (!validDate(paymentForm.payment_date)) { setAllocationError("Ingresa una fecha de pago válida."); return; }
     if (!positiveMoney(paymentForm.amount)) { setAllocationError("El monto debe ser mayor que cero y tener máximo dos decimales."); return; }
     const payload = {
-      company_id: modal.editing ? modal.payment.company_id ?? null : null,
       customer_id: Number(paymentForm.customer_id),
       payment_date: paymentForm.payment_date,
       amount: String(paymentForm.amount),

@@ -18,24 +18,13 @@ async function request(path, params, signal) {
 }
 export const getCustomerHistory = (customerId, params, { signal } = {}) => request(`/collection/customers/${encodeURIComponent(customerId)}/history`, params, signal);
 export const getAdministrativeHistory = (params, { signal } = {}) => request("/admin/collection/history", params, signal);
-export async function getAdministrativeHistoryActors({ companyId, signal } = {}) {
+export async function getAdministrativeHistoryActors({ signal } = {}) {
   try {
-    const response = await api.get("/admin/collection/history/actors", { params: companyId ? { company_id: companyId } : undefined, signal });
+    const response = await api.get("/admin/collection/history/actors", { signal });
     if (response.data?.success !== true || !Array.isArray(response.data?.data)) throw new Error("history_actors_contract");
     return response.data.data;
   } catch (error) {
     if (signal?.aborted || error?.name === "CanceledError" || error?.code === "ERR_CANCELED") throw error;
     throw new Error(message(error), { cause: error });
-  }
-}
-export async function getHistoryCompanies({ signal } = {}) {
-  try {
-    const response = await api.get("/admin/companies", { signal });
-    const rows = response.data?.data;
-    if (response.data?.success !== true || !Array.isArray(rows)) throw new Error("history_companies_contract");
-    return rows.filter(company => company.status === "active");
-  } catch (error) {
-    if (signal?.aborted || error?.name === "CanceledError" || error?.code === "ERR_CANCELED") throw error;
-    throw new Error("No fue posible consultar las empresas disponibles.", { cause: error });
   }
 }

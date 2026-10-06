@@ -10,11 +10,24 @@ async function setup(page, { admin = true, globalAdmin = false } = {}) {
     if (url.pathname === "/api/auth/refresh") return route.fulfill({ json: { data: { access_token: "fixture-memory", user } } });
     if (url.pathname === "/api/admin/companies") return route.fulfill({ json: { success: true, data: [{ id: "1", name: "Empresa fixture", status: "active" }] } });
     if (url.pathname === "/api/admin/portfolio/imports" && request.method() === "GET") return route.fulfill({ json: { success: true, data: [] } });
-    if (url.pathname === "/api/admin/portfolio/imports/analyze") return route.fulfill({ json: { success: true, data: {
-      batch_id: "1", status: "analyzed_unconfigured", duplicate: false, format_configured: false,
-      file: { name: "fixture.csv", size_bytes: 20, sha256: "a".repeat(64) }, headers: ["Columna uno", "Columna dos"], total_rows: 1, empty_rows: 0,
-      successful_rows: 1, failed_rows: 0, preview: [["A", "B"]], issues: [],
-    } } });
+    if (url.pathname === "/api/admin/portfolio/imports/analyze") {
+      const isXlsx = url.searchParams.get("file_name")?.endsWith(".xlsx");
+      return route.fulfill({ json: { success: true, data: isXlsx ? {
+        batch_id: "2", status: "analyzed_unconfigured", duplicate: false, format_configured: true,
+        file: { name: "cartera al 06-10.xlsx", size_bytes: 955390, sha256: "b".repeat(64) }, format: "mertel_xlsx",
+        report: { company_name: "MERTEL IMPORTACIONES S.A.S.", company_nit: "900.499.744-8", report_date: "2026-10-06" },
+        selected_sheet: "cartera de clientes NIIF0", sheet_names: ["cartera de clientes NIIF0", "Hoja1"],
+        headers: ["Nit Cliente", "Numero", "Movimiento"], total_rows: 4121, empty_rows: 970, successful_rows: 3151, failed_rows: 0,
+        classifications: { document_rows: 2177, customer_summary_rows: 968, report_summary_rows: 6, summary_rows: 974, empty_rows: 970, invalid_rows: 0 },
+        summary: { clients_detected: 961, unique_documents: 2177, invoices: 1827, returns: 347, debit_notes: 3, unknown_movements: 0 },
+        preview: [{ row_number: 8, type: "DOCUMENT", customer_nit_original: "800.001.269-0", document_number: "ME-74743",
+          movement: "012 Factura de venta credito", issue_date: "2026-09-23", due_date: "2026-11-08", document_value: 3482310, iva: 567932, cupo_amount: 10000000, cupo_condition: "compartido" }], issues: [],
+      } : {
+        batch_id: "1", status: "analyzed_unconfigured", duplicate: false, format_configured: false,
+        file: { name: "fixture.csv", size_bytes: 20, sha256: "a".repeat(64) }, headers: ["Columna uno", "Columna dos"], total_rows: 1, empty_rows: 0,
+        successful_rows: 1, failed_rows: 0, preview: [["A", "B"]], issues: [],
+      } } });
+    }
     return route.fulfill({ status: 404, json: { success: false } });
   });
   return calls;
@@ -24,9 +37,9 @@ for (const width of [1440, 390, 320]) test(`admin analyzes CSV without applicati
   await page.setViewportSize({ width, height: 900 }); const calls = await setup(page);
   await page.goto("/administracion/importar-cartera");
   await expect(page.getByRole("heading", { name: "Importar cartera" })).toBeVisible();
-  await page.getByLabel("Archivo CSV").setInputFiles({ name: "fixture.csv", mimeType: "text/csv", buffer: Buffer.from("A,B\nA,B\n") });
+  await page.getByLabel("Archivo CSV o Excel").setInputFiles({ name: "fixture.csv", mimeType: "text/csv", buffer: Buffer.from("A,B\nA,B\n") });
   await page.getByRole("button", { name: "Analizar archivo" }).click();
-  await expect(page.getByText(/formato de cartera de MERTEL aún no está configurado/)).toBeVisible();
+  await expect(page.getByText(/Análisis y previsualización solamente/)).toBeVisible();
   await expect(page.getByRole("table")).toContainText("Columna uno");
   await expect(page.getByRole("button", { name: /importar/i })).toHaveCount(0);
   expect(calls.some(call => call.method === "POST" && call.path.endsWith("/analyze") && call.contentType.includes("text/csv"))).toBe(true);
@@ -40,11 +53,23 @@ test("collector cannot access portfolio import", async ({ page }) => {
   expect(calls.some(call => call.path === "/api/admin/portfolio/imports")).toBe(false);
 });
 
-test("global admin must select company before requesting import history", async ({ page }) => {
+test("global admin resolves MERTEL before requesting import history", async ({ page }) => {
   const calls = await setup(page, { globalAdmin: true }); await page.goto("/administracion/importar-cartera");
-  const company = page.getByRole("combobox", { name: "Empresa" }); await expect(company).toHaveValue("");
-  expect(calls.some(call => call.path === "/api/admin/portfolio/imports")).toBe(false);
-  await company.selectOption("1");
-  await expect(page.getByLabel("Archivo CSV")).toBeVisible();
-  expect(calls.filter(call => call.path === "/api/admin/portfolio/imports").every(call => call.params.company_id === "1")).toBe(true);
+  await expect(page.getByLabel("Archivo CSV o Excel")).toBeVisible();
+  await expect(page.getByRole("combobox", { name: "Empresa" })).toHaveCount(0);
+  expect(calls.some(call => call.path === "/api/admin/portfolio/imports" && !Object.hasOwn(call.params, "company_id"))).toBe(true);
+});
+
+test("admin previews the real MERTEL XLSX structure without applying data", async ({ page }) => {
+  const calls = await setup(page); await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/administracion/importar-cartera");
+  await page.getByLabel("Archivo CSV o Excel").setInputFiles({ name: "cartera al 06-10.xlsx", mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", buffer: Buffer.from([0x50, 0x4b, 3, 4]) });
+  await page.getByRole("button", { name: "Analizar archivo" }).click();
+  await expect(page.getByText("MERTEL IMPORTACIONES S.A.S.")).toBeVisible();
+  await expect(page.getByText("cartera de clientes NIIF0")).toBeVisible();
+  await expect(page.getByRole("table")).toContainText("ME-74743");
+  await expect(page.getByText(/Formato de análisis MERTEL reconocido/)).toBeVisible();
+  expect(calls.some(call => call.method === "POST" && call.path.endsWith("/analyze") && call.contentType.includes("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))).toBe(true);
+  await expect(page.getByRole("button", { name: /aplicar|importar/i })).toHaveCount(0);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });

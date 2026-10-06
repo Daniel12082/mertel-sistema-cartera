@@ -32,9 +32,6 @@ function parseQuery(query) {
 export async function getCollection(req, res) {
   const parsed = parseQuery(req.query);
   if (parsed.error) return res.status(400).json({ success: false, message: parsed.error });
-  if (req.companyScope?.globalAdmin && req.companyScope.companyId === null) {
-    return res.status(400).json({ success: false, message: "El administrador global debe indicar company_id para consultar una empresa." });
-  }
   try {
     const data = await getCompanyCollection({ ...parsed.criteria, scope: req.companyScope });
     return res.status(200).json({ success: true, data });

@@ -3,10 +3,10 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { AuthContext } from "../src/auth/auth.context";
 import MessageTemplates from "../src/pages/Administracion/MessageTemplates";
-import { createMessageTemplate, getAdminCompanies, getMessageTemplateAdminData, setMessageTemplateActive, updateMessageTemplate } from "../src/services/messageTemplatesAdmin.service";
+import { createMessageTemplate, getMessageTemplateAdminData, setMessageTemplateActive, updateMessageTemplate } from "../src/services/messageTemplatesAdmin.service";
 
 vi.mock("../src/services/messageTemplatesAdmin.service", () => ({
-  createMessageTemplate: vi.fn(), getAdminCompanies: vi.fn(), getMessageTemplateAdminData: vi.fn(),
+  createMessageTemplate: vi.fn(), getMessageTemplateAdminData: vi.fn(),
   setMessageTemplateActive: vi.fn(), updateMessageTemplate: vi.fn(),
 }));
 
@@ -23,7 +23,7 @@ function view({ permissions = ["message_templates.manage"], user = { id: "1", is
 
 beforeEach(() => {
   vi.clearAllMocks(); vi.stubGlobal("confirm", vi.fn(() => true));
-  getMessageTemplateAdminData.mockResolvedValue(adminData([template])); getAdminCompanies.mockResolvedValue([{ id: "1", name: "MERTEL Importaciones", status: "active" }]);
+  getMessageTemplateAdminData.mockResolvedValue(adminData([template]));
   createMessageTemplate.mockResolvedValue({ id: "11" }); updateMessageTemplate.mockResolvedValue(template);
   setMessageTemplateActive.mockResolvedValue({ ...template, status: "active" });
 });
@@ -46,7 +46,7 @@ describe("5.1A WhatsApp template admin UI", () => {
     expect(content).toHaveValue("Hola {{nombre_cliente}}"); expect(screen.getByLabelText("Vista previa con ejemplos")).toHaveTextContent("Hola Juan Pérez");
     expect(screen.getByLabelText("Vista previa con ejemplos")).toHaveTextContent("Datos de ejemplo ficticios");
     await user.click(screen.getByRole("button", { name: "Crear plantilla" }));
-    await waitFor(() => expect(createMessageTemplate).toHaveBeenCalledWith({ name: "Primer aviso", channel: "whatsapp", content: "Hola {{nombre_cliente}}", stage: null, status: "inactive" }, {}));
+    await waitFor(() => expect(createMessageTemplate).toHaveBeenCalledWith({ name: "Primer aviso", channel: "whatsapp", content: "Hola {{nombre_cliente}}", stage: null, status: "inactive" }));
     expect(screen.queryByRole("form")).not.toBeInTheDocument();
   });
 
@@ -63,15 +63,15 @@ describe("5.1A WhatsApp template admin UI", () => {
     await user.click(await screen.findByRole("button", { name: "Editar Recordatorio fixture" }));
     const name = screen.getByLabelText("Nombre de plantilla"); await user.clear(name); await user.type(name, "Aviso editado");
     await user.click(screen.getByRole("button", { name: "Guardar cambios" }));
-    await waitFor(() => expect(updateMessageTemplate).toHaveBeenCalledWith("10", { name: "Aviso editado", channel: "whatsapp", content: "Hola {{nombre_cliente}}", stage: "overdue" }, {}));
+    await waitFor(() => expect(updateMessageTemplate).toHaveBeenCalledWith("10", { name: "Aviso editado", channel: "whatsapp", content: "Hola {{nombre_cliente}}", stage: "overdue" }));
     expect(screen.queryByLabelText("Estado inicial")).not.toBeInTheDocument();
     getMessageTemplateAdminData.mockResolvedValueOnce(adminData([{ ...template, status: "active" }]));
     const activate = await screen.findByRole("button", { name: "Activar Recordatorio fixture" }); await user.click(activate);
     expect(window.confirm).toHaveBeenCalledWith("¿Deseas activar la plantilla «Recordatorio fixture»?");
-    await waitFor(() => expect(setMessageTemplateActive).toHaveBeenCalledWith("10", true, {}));
+    await waitFor(() => expect(setMessageTemplateActive).toHaveBeenCalledWith("10", true));
     const deactivate = await screen.findByRole("button", { name: "Desactivar Recordatorio fixture" }); await user.click(deactivate);
     expect(window.confirm).toHaveBeenLastCalledWith("¿Deseas desactivar la plantilla «Recordatorio fixture»?");
-    await waitFor(() => expect(setMessageTemplateActive).toHaveBeenCalledWith("10", false, {}));
+    await waitFor(() => expect(setMessageTemplateActive).toHaveBeenCalledWith("10", false));
   });
 
   it("provides loading, error and empty states", async () => {
@@ -83,12 +83,11 @@ describe("5.1A WhatsApp template admin UI", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("Error seguro de carga");
   });
 
-  it("uses the explicit backend company list for global admins and hides administration from other roles", async () => {
+  it("uses the fixed backend MERTEL context for global admins and hides administration from other roles", async () => {
     const { unmount } = view({ user: { id: "2", company_id: null, is_global_admin: true } });
-    await screen.findByRole("combobox", { name: "Empresa" });
     expect(await screen.findByRole("row", { name: /Recordatorio fixture/ })).toBeVisible();
-    await waitFor(() => expect(getMessageTemplateAdminData).toHaveBeenCalledWith(expect.objectContaining({ companyId: "1", signal: expect.any(AbortSignal) })));
-    expect(getAdminCompanies).toHaveBeenCalledOnce();
+    await waitFor(() => expect(getMessageTemplateAdminData).toHaveBeenCalledWith(expect.objectContaining({ signal: expect.any(AbortSignal) })));
+    expect(screen.queryByRole("combobox", { name: "Empresa" })).not.toBeInTheDocument();
     unmount();
     getMessageTemplateAdminData.mockClear();
     view({ permissions: ["collection.manage"], user: { id: "3" } });

@@ -8,11 +8,11 @@ export function operationErrorMessage(error) {
   if (status === 409) return "El cliente no está disponible para registrar operaciones.";
   return "No fue posible procesar la operación. Intenta nuevamente.";
 }
-async function request(kind, customerId, { body, invoiceId, signal, companyId } = {}) {
+async function request(kind, customerId, { body, invoiceId, signal } = {}) {
   try {
     const path = `/collection/customers/${encodeURIComponent(customerId)}/${kind}`;
-    const params = { ...(invoiceId ? { invoice_id: invoiceId } : {}), ...(companyId ? { company_id: companyId } : {}) };
-    const response = body ? (companyId ? await api.post(path, body, { params }) : await api.post(path, body)) : await api.get(path, { params, signal });
+    const params = { ...(invoiceId ? { invoice_id: invoiceId } : {}) };
+    const response = body ? await api.post(path, body) : await api.get(path, { params, signal });
     if (response.data?.success !== true || (body ? !response.data.data?.id : !Array.isArray(response.data.data))) throw new Error("operation_contract");
     return response.data.data;
   } catch (error) {

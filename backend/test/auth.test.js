@@ -69,8 +69,9 @@ describe("secure authentication HTTP / MySQL integration", { skip: !configured }
     else process.env.DB_NAME = originalDatabase;
   });
   beforeEach(async () => {
-    const [company] = await pool.query("INSERT INTO companies (name) VALUES ('Auth test company')");
-    companyId = company.insertId;
+    const [existingCompanies] = await pool.query("SELECT id FROM companies WHERE name='MERTEL IMPORTACIONES' ORDER BY id LIMIT 1");
+    if (existingCompanies.length) companyId = existingCompanies[0].id;
+    else { const [company] = await pool.query("INSERT INTO companies (name) VALUES ('MERTEL IMPORTACIONES')"); companyId = company.insertId; }
     email = `${randomUUID()}@example.test`;
     const [user] = await pool.query("INSERT INTO users (company_id, first_name, last_name, email, password_hash) VALUES (?, 'Auth', 'Test', ?, ?)", [companyId, email, storedHash]);
     userId = String(user.insertId);

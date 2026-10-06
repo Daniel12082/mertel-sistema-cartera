@@ -34,13 +34,13 @@ for (const width of [1440, 1024, 768, 390, 320]) test(`customer history timeline
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
 
-test("global administrative history selects a company and filters by actor and event type", async ({ page }) => {
+test("global administrative history resolves MERTEL and filters by actor and event type", async ({ page }) => {
   const calls = await setup(page, { globalAdmin: true }); await page.goto("/administracion/historial-cobranza");
-  await page.getByRole("combobox", { name: "Empresa" }).selectOption("1");
   await expect(page.getByRole("heading", { name: "Historial de cobranza" })).toBeVisible();
+  await expect(page.getByRole("combobox", { name: "Empresa" })).toHaveCount(0);
   await page.getByRole("combobox", { name: "Usuario" }).selectOption("1");
   await page.getByRole("combobox", { name: "Tipo de evento" }).selectOption("promise");
-  await expect.poll(() => calls.some(call => call.path.endsWith("/collection/history") && call.params.company_id === "1" && call.params.actor_id === "1" && call.params.type === "promise")).toBe(true);
+  await expect.poll(() => calls.some(call => call.path.endsWith("/collection/history") && !Object.hasOwn(call.params, "company_id") && call.params.actor_id === "1" && call.params.type === "promise")).toBe(true);
 });
 
 test("history page denies users without history permission", async ({ page }) => {

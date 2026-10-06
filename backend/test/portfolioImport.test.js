@@ -7,13 +7,14 @@ import mysql from "mysql2/promise";
 import { loadAuthConfig } from "../src/config/auth.js";
 import { applyAuthMigrations } from "../src/services/authMigrations.service.js";
 import { applyPortfolioImportMigration } from "../src/services/portfolioImportMigration.service.js";
+import { makeMertelWorkbook, mertelRow } from "./fixtures/mertelPortfolioWorkbook.js";
 dotenv.config({ path: new URL("../.env", import.meta.url), quiet: true });
 
 describe("Fase 5.3 portfolio import HTTP / isolated MySQL", { skip: !(process.env.DB_HOST && process.env.DB_USER) }, () => {
   const schema = `mertel_portfolio_import_test_${randomUUID().replaceAll("-", "")}`;
   const originalDatabase = process.env.DB_NAME;
   const config = loadAuthConfig({ JWT_SECRET: randomBytes(48).toString("base64url"), FRONTEND_URL: "http://localhost:5173", AUTH_COOKIE_SAME_SITE: "lax", NODE_ENV: "test" });
-  let db, pool, server, root, companyA, companyB, adminA, collectorA, adminB, globalAdmin;
+  let db, pool, server, root, companyA, adminA, collectorA, adminB, globalAdmin;
   before(async () => {
     db = await mysql.createConnection({ host: process.env.DB_HOST, port: Number(process.env.DB_PORT), user: process.env.DB_USER, password: process.env.DB_PASSWORD, multipleStatements: true });
     await db.query(`CREATE DATABASE \`${schema}\``); await db.query(`USE \`${schema}\``);
@@ -25,8 +26,7 @@ describe("Fase 5.3 portfolio import HTTP / isolated MySQL", { skip: !(process.en
     }
     await db.query("INSERT INTO roles(name) VALUES ('admin'),('supervisor'),('collector')");
     await applyAuthMigrations(db); assert.equal((await applyPortfolioImportMigration(db)).applied, true); assert.equal((await applyPortfolioImportMigration(db)).applied, false);
-    const [a] = await db.query("INSERT INTO companies(name) VALUES ('Import fixture A')"); companyA = String(a.insertId);
-    const [b] = await db.query("INSERT INTO companies(name) VALUES ('Import fixture B')"); companyB = String(b.insertId);
+    const [a] = await db.query("INSERT INTO companies(name) VALUES ('MERTEL IMPORTACIONES')"); companyA = String(a.insertId);
     const [customer] = await db.query("INSERT INTO customers(company_id,nit,name,phone) VALUES (?,'F-IMPORT','Fixture','3000000000')", [companyA]);
     await db.query("INSERT INTO invoices(company_id,customer_id,invoice_number,issue_date,due_date,document_value,base_value,balance) VALUES (?,?,'F-IMPORT','2026-09-01','2026-10-01',100,100,73)", [companyA, customer.insertId]);
     async function actor(companyId, role) {
@@ -35,7 +35,7 @@ describe("Fase 5.3 portfolio import HTTP / isolated MySQL", { skip: !(process.en
     }
     process.env.DB_NAME = schema; ({ default: pool } = await import("../src/config/database.js"));
     const { issueAccessToken } = await import("../src/services/auth.service.js");
-    adminA = await actor(companyA, "admin"); collectorA = await actor(companyA, "collector"); adminB = await actor(companyB, "admin"); globalAdmin = await actor(null, "admin");
+    adminA = await actor(companyA, "admin"); collectorA = await actor(companyA, "collector"); adminB = await actor(companyA, "admin"); globalAdmin = await actor(null, "admin");
     for (const user of [adminA, collectorA, adminB, globalAdmin]) user.token = issueAccessToken(user.id, config);
     const { createApp } = await import("../src/app.js");
     server = await new Promise(resolve => { const listener = createApp(config).listen(0, "127.0.0.1", () => resolve(listener)); });
@@ -68,6 +68,26 @@ describe("Fase 5.3 portfolio import HTTP / isolated MySQL", { skip: !(process.en
     assert.equal(batch[0].status, "analyzed_unconfigured"); assert.match(batch[0].file_sha256, /^[a-f0-9]{64}$/);
     assert.ok(errors.some(row => row.error_code === "RAGGED_ROW")); assert.ok(errors.every(row => row.field_value === null)); assert.deepEqual(await snapshot(), before);
   });
+  test("analyzes an MERTEL XLSX through HTTP without writing customers, invoices, payments or allocations", async () => {
+    const snapshot = async () => {
+      const [[c]] = await db.query("SELECT COUNT(*) AS n FROM customers"); const [[i]] = await db.query("SELECT COUNT(*) AS n,SUM(balance) AS balance FROM invoices");
+      const [[p]] = await db.query("SELECT COUNT(*) AS n FROM payments"); const [[a]] = await db.query("SELECT COUNT(*) AS n FROM payment_allocations");
+      return { customers: c.n, invoices: i.n, balance: String(i.balance), payments: p.n, allocations: a.n };
+    };
+    const before = await snapshot();
+    const bytes = await makeMertelWorkbook({ rows: [mertelRow(), mertelRow({ Numero: "DVC-123", Movimiento: "023 Devolucion de clientes", "Valor doc.": "-165,065" }),
+      mertelRow({ Numero: "NDC-123", Movimiento: "014 Nota debito cliente" }), mertelRow({ Numero: "", Movimiento: "", Emitida: "", Vence: "", "Valor doc.": "" }), []] });
+    const response = await request("POST", adminA, { body: bytes, fileName: "cartera al 06-10.xlsx", mime: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+    const data = response.body.data;
+    assert.equal(response.status, 200); assert.equal(data.format, "mertel_xlsx"); assert.equal(data.report.company_name, "MERTEL IMPORTACIONES S.A.S.");
+    assert.equal(data.report.company_nit, "900.499.744-8"); assert.equal(data.report.report_date, "2026-10-06");
+    assert.deepEqual(data.classifications, { document_rows: 3, customer_summary_rows: 1, report_summary_rows: 0, summary_rows: 1, empty_rows: 1, invalid_rows: 0 });
+    assert.equal(data.summary.clients_detected, 1); assert.equal(data.summary.unique_documents, 3); assert.equal(data.summary.invoices, 1);
+    assert.equal(data.summary.returns, 1); assert.equal(data.summary.debit_notes, 1); assert.equal(data.format_configured, true);
+    const [batch] = await db.query("SELECT file_type,status FROM import_batches WHERE id=?", [data.batch_id]);
+    assert.equal(batch[0].file_type, "xlsx"); assert.equal(batch[0].status, "analyzed_unconfigured");
+    assert.deepEqual(await snapshot(), before);
+  });
   test("rejects unsafe files before creating batches", async () => {
     const [[before]] = await db.query("SELECT COUNT(*) AS n FROM import_batches");
     assert.equal((await request("POST", adminA, { body: "abc", fileName: "bad.xlsx", mime: "application/octet-stream" })).status, 400);
@@ -76,16 +96,17 @@ describe("Fase 5.3 portfolio import HTTP / isolated MySQL", { skip: !(process.en
     assert.equal((await request("POST", adminA, { body: Buffer.alloc(2 * 1024 * 1024 + 1) })).status, 413);
     const [[afterRows]] = await db.query("SELECT COUNT(*) AS n FROM import_batches"); assert.equal(afterRows.n, before.n);
   });
-  test("deduplicates identical files, isolates company history and requires global scope", async () => {
+  test("deduplicates identical files, keeps MERTEL history scoped and resolves global admin automatically", async () => {
     const first = await request("POST", adminA, { body: "H1,H2\na,b\n" });
     const duplicate = await request("POST", adminA, { body: "H1,H2\na,b\n", fileName: "renamed.csv" });
     assert.equal(duplicate.body.data.duplicate, true); assert.equal(duplicate.body.data.batch_id, first.body.data.batch_id);
     assert.equal((await request("GET", collectorA)).status, 403);
     assert.equal((await request("GET", adminA)).body.data.some(row => row.id === first.body.data.batch_id), true);
-    assert.equal((await request("GET", adminB)).body.data.length, 0);
-    assert.equal((await request("GET", globalAdmin)).status, 400);
+    assert.equal((await request("GET", adminB)).body.data.length, 3);
+    assert.equal((await request("GET", globalAdmin)).status, 200);
     assert.equal((await request("GET", globalAdmin, { companyId: companyA })).status, 200);
-    assert.equal((await request("POST", globalAdmin, { body: "H\na\n" })).status, 400);
+    assert.equal((await request("GET", globalAdmin, { companyId: "999999999" })).status, 403);
+    assert.equal((await request("POST", globalAdmin, { body: "H\na\n" })).status, 200);
     assert.equal((await request("POST", globalAdmin, { body: "H\na\n", companyId: companyA })).status, 200);
   });
 });

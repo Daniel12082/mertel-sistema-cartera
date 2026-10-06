@@ -8,7 +8,7 @@ function formatTime(value) {
   return Number.isNaN(date.getTime()) ? "—" : new Intl.DateTimeFormat("es-CO", { dateStyle: "short", timeStyle: "short", timeZone: "America/Bogota" }).format(date);
 }
 
-export default function CollectionOperations({ customerId, companyId, invoices }) {
+export default function CollectionOperations({ customerId, invoices }) {
   const { permissions = [] } = useAuth();
   const canManage = permissions.includes("collection.manage");
   const [history, setHistory] = useState({ loading: true, error: "", actions: [], promises: [] });
@@ -25,11 +25,11 @@ export default function CollectionOperations({ customerId, companyId, invoices }
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
   useEffect(() => {
     const controller = new AbortController();
-    Promise.all([getCollectionActions(customerId, { invoiceId, companyId, signal: controller.signal }), getPaymentPromises(customerId, { invoiceId, companyId, signal: controller.signal })])
+    Promise.all([getCollectionActions(customerId, { invoiceId, signal: controller.signal }), getPaymentPromises(customerId, { invoiceId, signal: controller.signal })])
       .then(([actions, promises]) => { if (!controller.signal.aborted) setHistory({ loading: false, error: "", actions, promises }); })
       .catch(failure => { if (!controller.signal.aborted) setHistory({ loading: false, error: failure.message, actions: [], promises: [] }); });
     return () => controller.abort();
-  }, [customerId, invoiceId, reload, companyId]);
+  }, [customerId, invoiceId, reload]);
   useEffect(() => { if (mode) firstField.current?.focus(); }, [mode]);
   function change(event) { setForm(current => ({ ...current, [event.target.name]: event.target.value })); }
   function loadAgain() { setHistory({ loading: true, error: "", actions: [], promises: [] }); setReload(value => value + 1); }
@@ -40,7 +40,7 @@ export default function CollectionOperations({ customerId, companyId, invoices }
     const body = mode === "action" ? { invoice_id: form.invoice_id || null, action_type: form.action_type, description: form.description } :
       { invoice_id: form.invoice_id || null, promised_date: form.promised_date, promised_amount: form.promised_amount, notes: form.notes || null };
     try {
-      await (mode === "action" ? (companyId ? createCollectionAction(customerId, body, { companyId }) : createCollectionAction(customerId, body)) : (companyId ? createPaymentPromise(customerId, body, { companyId }) : createPaymentPromise(customerId, body)));
+      await (mode === "action" ? createCollectionAction(customerId, body) : createPaymentPromise(customerId, body));
       if (alive.current) {
         setNotice(mode === "action" ? "Gestión registrada." : "Promesa registrada como pendiente.");
         setMode(""); setForm({ invoice_id: "", action_type: "", description: "", promised_date: "", promised_amount: "", notes: "" }); loadAgain();

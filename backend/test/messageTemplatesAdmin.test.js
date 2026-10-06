@@ -15,7 +15,7 @@ describe("5.1A template and 5.2 collection settings administration HTTP / MySQL"
   const originalDatabase = process.env.DB_NAME;
   const config = loadAuthConfig({ JWT_SECRET: randomBytes(48).toString("base64url"), FRONTEND_URL: "http://localhost:5173",
     AUTH_COOKIE_SAME_SITE: "lax", NODE_ENV: "test", AUTH_RATE_LIMIT_MAX: "1000" });
-  let db, pool, server, root, companyA, companyB, adminA, collectorA, supervisorA, adminB, globalAdmin, customer, supportedStage, templateId, foreignTemplate;
+  let db, pool, server, root, companyA, companyB = "999999999", adminA, collectorA, supervisorA, adminB, globalAdmin, customer, supportedStage, templateId, foreignTemplate = "999999999";
 
   before(async () => {
     db = await mysql.createConnection({ host: process.env.DB_HOST, port: Number(process.env.DB_PORT), user: process.env.DB_USER,
@@ -27,11 +27,10 @@ describe("5.1A template and 5.2 collection settings administration HTTP / MySQL"
     for (const match of initial.matchAll(/CREATE TABLE (\w+) \([\s\S]*?;/g)) if (tables.has(match[1])) await db.query(match[0]);
     await db.query("INSERT INTO roles(name) VALUES ('admin'),('supervisor'),('collector')");
     await applyAuthMigrations(db);
-    const [a] = await db.query("INSERT INTO companies(name) VALUES ('Plantillas fixture A')"); companyA = String(a.insertId);
-    const [b] = await db.query("INSERT INTO companies(name) VALUES ('Plantillas fixture B')"); companyB = String(b.insertId);
+    const [a] = await db.query("INSERT INTO companies(name) VALUES ('MERTEL IMPORTACIONES')"); companyA = String(a.insertId);
     const rules = JSON.parse(await readFile(new URL("../config/mertel-collection-rules.json", import.meta.url), "utf8"));
     supportedStage = collectionStageCatalog(rules)[0].key;
-    for (const companyId of [companyA, companyB]) await db.query("INSERT INTO settings(company_id,setting_key,setting_value,value_type) VALUES (?,'collection_rules',?,'json')", [companyId, JSON.stringify(rules)]);
+    await db.query("INSERT INTO settings(company_id,setting_key,setting_value,value_type) VALUES (?,'collection_rules',?,'json')", [companyA, JSON.stringify(rules)]);
     const [client] = await db.query("INSERT INTO customers(company_id,nit,name,phone) VALUES (?,'FIXTURE-ADMIN','Cliente fixture','3000000000')", [companyA]); customer = String(client.insertId);
     await db.query("INSERT INTO invoices(company_id,customer_id,invoice_number,issue_date,due_date,document_value,base_value,balance) VALUES (?,?,'FV-ADMIN','2026-08-01','2026-09-01',100,100,100)", [companyA, customer]);
     async function actor(companyId, role) {
@@ -42,10 +41,8 @@ describe("5.1A template and 5.2 collection settings administration HTTP / MySQL"
     process.env.DB_NAME = schema; ({ default: pool } = await import("../src/config/database.js"));
     const { issueAccessToken } = await import("../src/services/auth.service.js");
     adminA = await actor(companyA, "admin"); collectorA = await actor(companyA, "collector"); supervisorA = await actor(companyA, "supervisor");
-    adminB = await actor(companyB, "admin"); globalAdmin = await actor(null, "admin");
+    adminB = await actor(companyA, "admin"); globalAdmin = await actor(null, "admin");
     for (const actorUser of [adminA, collectorA, supervisorA, adminB, globalAdmin]) actorUser.token = issueAccessToken(actorUser.id, config);
-    const [template] = await db.query("INSERT INTO message_templates(company_id,name,content,stage,status) VALUES (?,'Plantilla de otra empresa','Privada','overdue','active')", [companyB]);
-    foreignTemplate = String(template.insertId);
     await db.query("INSERT INTO message_templates(company_id,name,content,channel,status) VALUES (?,'Plantilla de correo','Solo correo','email','active')", [companyA]);
     const { createApp } = await import("../src/app.js");
     server = await new Promise(resolve => { const listener = createApp(config).listen(0, "127.0.0.1", () => resolve(listener)); });
@@ -79,8 +76,8 @@ describe("5.1A template and 5.2 collection settings administration HTTP / MySQL"
       "valor_factura", "saldo_pendiente", "dias_mora", "dias_para_vencimiento", "etapa_cobranza", "motivo_cobranza",
     ]);
     assert.equal(own.body.data.templates.some(item => item.channel === "email"), false);
-    assert.equal((await request("GET", `${adminPath}?company_id=${companyB}`)).body.data.templates.some(item => item.id === foreignTemplate), false);
-    assert.equal((await request("GET", adminPath, globalAdmin)).status, 400);
+    assert.equal((await request("GET", `${adminPath}?company_id=${companyB}`, adminA)).status, 403);
+    assert.equal((await request("GET", adminPath, globalAdmin)).status, 200);
     assert.equal((await request("GET", `${adminPath}?company_id=${companyA}`, globalAdmin)).status, 200);
   });
 
@@ -109,7 +106,7 @@ describe("5.1A template and 5.2 collection settings administration HTTP / MySQL"
     assert.equal(edit.status, 200); assert.equal(edit.body.data.name, "Recordatorio actualizado"); assert.equal(edit.body.data.content, "Factura {{numero_factura}}");
     const sameEdit = await request("PUT", `${adminPath}/${templateId}`, adminA, { ...validTemplate(), name: "Recordatorio actualizado", content: "Factura {{numero_factura}}" });
     assert.equal(sameEdit.status, 200); assert.equal(sameEdit.body.data.id, templateId);
-    assert.equal((await request("PUT", `${adminPath}/${templateId}`, adminB, validTemplate())).status, 404);
+    assert.equal((await request("PUT", `${adminPath}/${templateId}`, adminB, validTemplate())).status, 200);
     assert.equal((await request("POST", `${adminPath}/${foreignTemplate}/activate`, adminA)).status, 404);
     assert.equal((await request("POST", `${adminPath}/${templateId}/activate`, adminA)).body.data.status, "active");
     assert.equal((await request("POST", `${adminPath}/${templateId}/activate`, adminA)).body.data.status, "active");
@@ -129,7 +126,7 @@ describe("5.1A template and 5.2 collection settings administration HTTP / MySQL"
     const requestStages = JSON.parse(await readFile(new URL("../config/mertel-collection-rules.json", import.meta.url), "utf8")).rules.map(item => ({ key: item.key, active: item.active }));
     assert.equal((await request("PUT", "/admin/settings/collection-rules", collectorA, { stages: requestStages })).status, 403);
     assert.equal((await request("PUT", "/admin/settings/collection-rules", supervisorA, { stages: requestStages })).status, 403);
-    assert.equal((await request("GET", "/admin/settings", globalAdmin)).status, 400);
+    assert.equal((await request("GET", "/admin/settings", globalAdmin)).status, 200);
     assert.equal((await request("GET", `/admin/settings?company_id=${companyA}`, globalAdmin)).status, 200);
     const before = await request("GET", `/admin/settings?company_id=${companyA}`);
     assert.equal(before.status, 200); assert.equal(before.cache, "no-store");
@@ -152,10 +149,10 @@ describe("5.1A template and 5.2 collection settings administration HTTP / MySQL"
     assert.equal(updated.status, 200); assert.equal(updated.body.data.stages.find(item => item.key === "due_today").value, false);
     const persistedRules = JSON.parse((await db.query("SELECT setting_value FROM settings WHERE company_id=? AND setting_key='collection_rules'", [companyA]))[0][0].setting_value);
     assert.equal(evaluateCollectionInvoice({ referenceDate: "2026-10-05", invoice: engineInvoice, rules: persistedRules }).stage, "no_eligible");
-    assert.equal((await request("PUT", `/admin/settings/collection-rules?company_id=${companyB}`, adminA, { stages })).body.data.stages.find(item => item.key === "due_today").value, false);
-    assert.equal((await request("GET", `/admin/settings?company_id=${companyB}`, adminA)).body.data.stages.find(item => item.key === "due_today").value, false);
-    assert.equal((await request("GET", `/admin/settings?company_id=${companyA}`, adminB)).body.data.stages.find(item => item.key === "due_today").value, true);
-    assert.equal((await request("PUT", "/admin/settings/collection-rules", globalAdmin, { stages })).status, 400);
+    assert.equal((await request("PUT", `/admin/settings/collection-rules?company_id=${companyB}`, adminA, { stages })).status, 403);
+    assert.equal((await request("GET", `/admin/settings?company_id=${companyB}`, adminA)).status, 403);
+    assert.equal((await request("GET", `/admin/settings?company_id=${companyA}`, adminB)).body.data.stages.find(item => item.key === "due_today").value, false);
+    assert.equal((await request("PUT", "/admin/settings/collection-rules", globalAdmin, { stages })).status, 200);
     assert.deepEqual(await financialSnapshot(), financialBefore);
 
     const [logs] = await db.query("SELECT company_id,user_id,action,old_values,new_values FROM audit_logs WHERE entity_type='setting' AND entity_id=(SELECT id FROM settings WHERE company_id=? AND setting_key='collection_rules') ORDER BY id DESC LIMIT 1", [companyA]);
@@ -180,9 +177,9 @@ describe("5.1A template and 5.2 collection settings administration HTTP / MySQL"
       const result = await request("PUT", "/admin/settings/collection-rules", adminA, body);
       assert.equal(result.status, 400, JSON.stringify(body));
     }
-    const scopedToB = await request("PUT", `/admin/settings/collection-rules?company_id=${companyA}`, adminB, { stages });
-    assert.equal(scopedToB.status, 200);
-    assert.equal((await request("GET", `/admin/settings?company_id=${companyA}`, adminB)).body.data.stages.find(item => item.key === "due_today").value, true);
+    const scopedToB = await request("PUT", `/admin/settings/collection-rules?company_id=${companyB}`, adminB, { stages });
+    assert.equal(scopedToB.status, 403);
+    assert.equal((await request("GET", `/admin/settings?company_id=${companyA}`, adminB)).body.data.stages.find(item => item.key === "due_today").value, false);
   });
 
   test("dashboard aggregates real company sources, reuses collection classification and rejects unauthorized or invalid scope", async () => {
@@ -193,7 +190,7 @@ describe("5.1A template and 5.2 collection settings administration HTTP / MySQL"
       assert.equal((await request("GET", dashboardUrl(), null)).status, 401);
       assert.equal((await request("GET", dashboardUrl(), collectorA)).status, 403);
       assert.equal((await request("GET", dashboardUrl(), supervisorA)).status, 403);
-      assert.equal((await request("GET", dashboardUrl(), globalAdmin)).status, 400);
+      assert.equal((await request("GET", dashboardUrl(), globalAdmin)).status, 200);
       assert.equal((await request("GET", dashboardUrl("invalid"), globalAdmin)).status, 400);
       assert.equal((await request("GET", dashboardUrl().replace("activity_from=2026-10-01", "activity_from=2026-10-07"), adminA)).status, 400);
       assert.equal((await request("GET", dashboardUrl().replace("activity_to=2026-10-06", "activity_to=2026-11-15"), adminA)).status, 400);
@@ -208,8 +205,7 @@ describe("5.1A template and 5.2 collection settings administration HTTP / MySQL"
       assert.equal(dashboard.body.data.activity.actions_period, 1);
       assert.equal((await request("GET", dashboardUrl(companyA), globalAdmin)).body.data.portfolio.total_balance, dashboard.body.data.portfolio.total_balance);
       const companyBData = await request("GET", dashboardUrl(companyB), globalAdmin);
-      assert.equal(companyBData.status, 200); assert.equal(companyBData.body.data.portfolio.total_balance, "0.00");
-      assert.equal(companyBData.body.data.promises.pending_count, 0); assert.equal(companyBData.body.data.activity.actions_period, 0);
+      assert.equal(companyBData.status, 403);
       const [[balance]] = await db.query("SELECT balance FROM invoices WHERE customer_id=?", [customer]);
       assert.equal(String(balance.balance), "100.00");
     } finally {
@@ -226,8 +222,8 @@ describe("5.1A template and 5.2 collection settings administration HTTP / MySQL"
     try {
       const scoped = `/collection/customers/${customer}/history`;
       assert.equal((await request("GET", scoped, null)).status, 401);
-      assert.equal((await request("GET", scoped, adminB)).status, 404);
-      assert.equal((await request("GET", scoped, globalAdmin)).status, 400);
+      assert.equal((await request("GET", scoped, adminB)).status, 200);
+      assert.equal((await request("GET", scoped, globalAdmin)).status, 200);
       assert.equal((await request("GET", `${scoped}?company_id=${companyA}`, globalAdmin)).status, 200);
       assert.equal((await request("GET", `/collection/customers/${customer}/history?company_id=${companyA}`, collectorA)).status, 200);
       const own = await request("GET", scoped, collectorA);
@@ -244,12 +240,12 @@ describe("5.1A template and 5.2 collection settings administration HTTP / MySQL"
       assert.ok(timeline.body.data.events.every(event => !String(event.title).toLowerCase().includes("enviado")));
       const url = "/admin/collection/history?limit=100";
       assert.equal((await request("GET", url, collectorA)).status, 403);
-      assert.equal((await request("GET", url, globalAdmin)).status, 400);
+      assert.equal((await request("GET", url, globalAdmin)).status, 200);
       const global = await request("GET", `${url}&company_id=${companyA}`, globalAdmin);
       assert.equal(global.status, 200);
       assert.ok(global.body.data.events.some(event => event.type === "import" && event.metadata.file_name === "cartera-fixture.csv"));
       assert.ok(global.body.data.events.some(event => event.type === "configuration"));
-      assert.equal((await request("GET", `${url}&company_id=${companyB}`, globalAdmin)).body.data.pagination.total, 0);
+      assert.equal((await request("GET", `${url}&company_id=${companyB}`, globalAdmin)).status, 403);
       const actors = await request("GET", `/admin/collection/history/actors?company_id=${companyA}`, globalAdmin);
       assert.ok(actors.body.data.some(actor => actor.id === collectorA.id && actor.name === "Fixture"));
       const financial = await db.query("SELECT balance FROM invoices WHERE company_id=?", [companyA]);

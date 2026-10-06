@@ -12,10 +12,10 @@ describe("Collection service boundary", () => {
     expect(api.get).toHaveBeenCalledWith("/collection", { params: { reference_date: "2026-10-03" }, signal });
     expect(result.customers).toHaveLength(2);
   });
-  it("passes the selected company only as a global-admin scope parameter", async () => {
+  it("never sends a client-selected company context", async () => {
     api.get.mockResolvedValue({ data: { success: true, data: collectionFixture() } });
     await getCollection("2026-10-03", { companyId: "42" });
-    expect(api.get).toHaveBeenCalledWith("/collection", { params: { reference_date: "2026-10-03", company_id: "42" }, signal: undefined });
+    expect(api.get).toHaveBeenCalledWith("/collection", { params: { reference_date: "2026-10-03" }, signal: undefined });
   });
   it("preserves engine decisions and does not manufacture balances", () => {
     const fixture = collectionFixture(); delete fixture.customers[0].total_balance;

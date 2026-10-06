@@ -12,10 +12,3 @@ export async function getCollectionDashboard(params, { signal } = {}) {
     throw new Error("No fue posible cargar el dashboard de cobranza.", { cause: error });
   }
 }
-
-export async function getDashboardCompanies({ signal } = {}) {
-  const response = await api.get("/admin/companies", { signal });
-  const companies = response.data?.data;
-  if (!Array.isArray(companies)) throw new Error("No fue posible consultar las empresas disponibles.");
-  return companies.filter(company => company.status === "active");
-}

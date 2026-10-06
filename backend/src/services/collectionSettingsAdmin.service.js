@@ -13,7 +13,7 @@ const editableStageKeys = new Set(Object.keys(STAGE_LABELS));
 
 function settingError(status, message) { return Object.assign(new Error(message), { status }); }
 function companyIdFor(scope) {
-  if (!validCompanyId(scope?.companyId)) throw settingError(scope?.globalAdmin ? 400 : 403, "Se requiere seleccionar una empresa.");
+  if (!validCompanyId(scope?.companyId)) throw settingError(403, "El contexto MERTEL no está disponible.");
   return String(scope.companyId);
 }
 function parseConfiguration(setting) {

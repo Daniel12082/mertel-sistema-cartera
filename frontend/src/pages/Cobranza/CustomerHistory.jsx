@@ -5,17 +5,17 @@ import { getCustomerHistory } from "../../services/collectionHistory.service";
 function dateTime(value) { return new Intl.DateTimeFormat("es-CO", { dateStyle: "short", timeStyle: "short", timeZone: "America/Bogota" }).format(new Date(value)); }
 const labels = { action: "Gestión de cobranza", promise: "Promesa de pago" };
 
-export default function CustomerHistory({ customerId, companyId }) {
+export default function CustomerHistory({ customerId }) {
   const [type, setType] = useState("all"); const [page, setPage] = useState(1);
   const [state, setState] = useState({ key: null, error: "", data: null });
-  const key = `${customerId}|${companyId || ""}|${type}|${page}`;
+  const key = `${customerId}|${type}|${page}`;
   useEffect(() => {
     const controller = new AbortController();
-    getCustomerHistory(customerId, { type, page, limit: 20, ...(companyId ? { company_id: companyId } : {}) }, { signal: controller.signal })
+    getCustomerHistory(customerId, { type, page, limit: 20 }, { signal: controller.signal })
       .then(data => { if (!controller.signal.aborted) setState({ key, error: "", data }); })
       .catch(error => { if (!controller.signal.aborted) setState({ key, error: error.message, data: null }); });
     return () => controller.abort();
-  }, [customerId, companyId, type, page, key]);
+  }, [customerId, type, page, key]);
   const current = state.key === key; const data = current ? state.data : null;
   return <section id="cobranza-historial" className="cobranza-operations" aria-label="Historial cronológico del cliente">
     <h3>Historial del cliente</h3>

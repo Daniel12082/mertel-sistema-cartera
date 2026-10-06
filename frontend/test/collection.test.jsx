@@ -2,16 +2,16 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { AuthContext } from "../src/auth/auth.context";
 import Cobranza from "../src/pages/Cobranza/Cobranza";
-import { getCollection, getCollectionAdminCompanies, readCollectionResponse } from "../src/services/collection.service";
+import { getCollection, readCollectionResponse } from "../src/services/collection.service";
 import { collectionFixture } from "./collection.fixture";
 
-vi.mock("../src/services/collection.service", async importOriginal => ({ ...await importOriginal(), getCollection: vi.fn(), getCollectionAdminCompanies: vi.fn() }));
+vi.mock("../src/services/collection.service", async importOriginal => ({ ...await importOriginal(), getCollection: vi.fn() }));
 vi.mock("../src/services/collectionOperations.service", () => ({ getCollectionActions: vi.fn().mockResolvedValue([]), getPaymentPromises: vi.fn().mockResolvedValue([]) }));
 function view(permissions = ["collection.view"], user = { id: 1 }) {
   return render(<AuthContext.Provider value={{ user, permissions }}><Cobranza /></AuthContext.Provider>);
 }
 async function loaded() { view(); await screen.findByRole("button", { name: "Ver detalle de Cliente Águila" }); }
-beforeEach(() => { vi.clearAllMocks(); getCollection.mockResolvedValue(readCollectionResponse({ data: collectionFixture() })); getCollectionAdminCompanies.mockResolvedValue([{ id: "8", name: "Empresa de prueba", status: "active" }]); });
+beforeEach(() => { vi.clearAllMocks(); getCollection.mockResolvedValue(readCollectionResponse({ data: collectionFixture() })); });
 
 describe("Cobranza de MERTEL", () => {
   it("uses the backend stage catalog, labels and order without static stage cards", async () => {
@@ -72,14 +72,11 @@ describe("Cobranza de MERTEL", () => {
     fireEvent.click(screen.getByRole("button", { name: "Ver detalle de Cliente Águila" }));
     expect(within(screen.getByRole("dialog")).getByText(/8\/10\/2026/)).toBeVisible();
   });
-  it("requires a company context for global admin and scopes collection requests", async () => {
+  it("resolves MERTEL automatically for global admin", async () => {
     view(["collection.view"], { id: 99, is_global_admin: true });
-    await screen.findByRole("combobox", { name: "Empresa" });
-    expect(screen.getByText("Selecciona una empresa para consultar su cobranza.")).toBeVisible();
-    expect(getCollection).not.toHaveBeenCalled();
-    fireEvent.change(screen.getByLabelText("Empresa"), { target: { value: "8" } });
     await screen.findByRole("button", { name: "Ver detalle de Cliente Águila" });
-    expect(getCollection).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ companyId: "8" }));
+    expect(screen.queryByRole("combobox", { name: "Empresa" })).not.toBeInTheDocument();
+    expect(getCollection).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ signal: expect.any(AbortSignal) }));
   });
   it("shows detail, backend priority and all invoice stages without choosing another principal invoice", async () => {
     await loaded(); const button = screen.getByRole("button", { name: "Ver detalle de Cliente Águila" }); button.focus(); fireEvent.click(button);

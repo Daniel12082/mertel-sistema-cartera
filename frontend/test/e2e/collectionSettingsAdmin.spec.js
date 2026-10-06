@@ -50,12 +50,9 @@ test("collector cannot access collection settings", async ({ page }) => {
   expect(calls.some(call => call.path === "/api/admin/settings")).toBe(false);
 });
 
-test("global administrator must choose a company before any settings request", async ({ page }) => {
+test("global administrator resolves MERTEL without a company selector", async ({ page }) => {
   const { calls } = await setup(page, { globalAdmin: true }); await page.goto("/administracion/configuracion-cobranza");
-  const company = page.getByRole("combobox", { name: "Empresa" });
-  await expect(company).toHaveValue("");
-  expect(calls.some(call => call.path === "/api/admin/settings")).toBe(false);
-  await company.selectOption("1");
   await expect(page.getByRole("checkbox", { name: "Activar En mora" })).toBeVisible();
-  expect(calls.filter(call => call.path === "/api/admin/settings").every(call => call.params.company_id === "1")).toBe(true);
+  await expect(page.getByRole("combobox", { name: "Empresa" })).toHaveCount(0);
+  expect(calls.some(call => call.path === "/api/admin/settings" && !Object.hasOwn(call.params, "company_id"))).toBe(true);
 });

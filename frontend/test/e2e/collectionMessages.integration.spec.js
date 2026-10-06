@@ -25,7 +25,7 @@ test.describe("5.4 browser / real API / isolated MySQL", () => {
     const tables = new Set(["companies", "roles", "users", "user_roles", "customers", "invoices", "payments", "payment_allocations", "collection_actions", "payment_promises", "message_templates", "messages", "settings", "audit_logs"]);
     for (const match of initial.matchAll(/CREATE TABLE (\w+) \([\s\S]*?;/g)) if (tables.has(match[1])) await db.query(match[0]);
     for (const migration of ["004_auth_refresh_sessions.sql", "005_users_username.sql"]) await db.query(await readFile(new URL(`../../../database/migrations/${migration}`, import.meta.url), "utf8"));
-    await db.query("INSERT INTO companies(id,name) VALUES (1,'Browser fixture company')"); await db.query("INSERT INTO roles(id,name) VALUES (1,'collector')");
+    await db.query("INSERT INTO companies(id,name) VALUES (1,'MERTEL IMPORTACIONES')"); await db.query("INSERT INTO roles(id,name) VALUES (1,'collector')");
     const hash = await argon2.hash(fixturePassword, { type: argon2.argon2id });
     await db.query("INSERT INTO users(id,company_id,first_name,email,password_hash) VALUES (1,1,'Cobrador fixture',?,?)", [fixtureEmail, hash]); await db.query("INSERT INTO user_roles VALUES (1,1)");
     await db.query("INSERT INTO customers(id,company_id,nit,name,phone) VALUES (1,1,'BROWSER-FIXTURE','Cliente de prueba aislada','300 000 0000')");

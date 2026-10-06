@@ -10,10 +10,10 @@ beforeEach(() => { vi.clearAllMocks(); getCustomerHistory.mockResolvedValue(data
 
 describe("customer history timeline", () => {
   it("renders event date, actor, invoice and filters event type", async () => {
-    render(<CustomerHistory customerId="8" companyId="2" />);
+    render(<CustomerHistory customerId="8" />);
     expect(await screen.findByText("Paga mañana")).toBeVisible(); expect(screen.getByText("Factura: FV-1")).toBeVisible(); expect(screen.getByText(/Carlos/)).toBeVisible();
     fireEvent.change(screen.getByRole("combobox", { name: "Tipo de evento" }), { target: { value: "promise" } });
-    await waitFor(() => expect(getCustomerHistory).toHaveBeenLastCalledWith("8", expect.objectContaining({ type: "promise", company_id: "2" }), expect.anything()));
+    await waitFor(() => expect(getCustomerHistory).toHaveBeenLastCalledWith("8", expect.objectContaining({ type: "promise" }), expect.anything()));
   });
   it("shows empty and error states without edit or send actions", async () => {
     getCustomerHistory.mockResolvedValueOnce({ ...data, events: [], pagination: { ...data.pagination, total: 0, pages: 0 } });

@@ -31,7 +31,7 @@ describe("4.9 manual collection HTTP / MySQL", { skip: !(process.env.DB_HOST && 
   const original = process.env.DB_NAME;
   const password = randomBytes(32).toString("base64url");
   const config = loadAuthConfig({ JWT_SECRET: randomBytes(48).toString("base64url"), FRONTEND_URL: "http://localhost:5173", AUTH_COOKIE_SAME_SITE: "lax", NODE_ENV: "test", AUTH_RATE_LIMIT_MAX: "1000" });
-  let db, pool, server, url, a, b, global, roleless, customerA, customerB, invoiceA, invoiceB;
+  let db, pool, server, url, a, b, global, roleless, customerA, customerB = "999999999", invoiceA, invoiceB = "999999999";
   before(async () => {
     db = await mysql.createConnection({ host: process.env.DB_HOST, port: Number(process.env.DB_PORT), user: process.env.DB_USER, password: process.env.DB_PASSWORD, multipleStatements: true });
     await db.query(`CREATE DATABASE \`${schemaName}\``); await db.query(`USE \`${schemaName}\``);
@@ -52,13 +52,10 @@ describe("4.9 manual collection HTTP / MySQL", { skip: !(process.env.DB_HOST && 
       const login = await fetch(url.replace(/\/collection$/, "/auth/login"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, password }) });
       assert.equal(login.status, 200); const session = await login.json(); return { id: String(user.insertId), token: session.data.access_token, companyId };
     }
-    const [company1] = await db.query("INSERT INTO companies(name) VALUES ('Fixture A')");
-    const [company2] = await db.query("INSERT INTO companies(name) VALUES ('Fixture B')");
-    a = await actor(company1.insertId, "collector"); b = await actor(company2.insertId, "collector"); global = await actor(null, "admin"); roleless = await actor(a.companyId, null);
+    const [company1] = await db.query("INSERT INTO companies(name) VALUES ('MERTEL IMPORTACIONES')");
+    a = await actor(company1.insertId, "collector"); b = await actor(company1.insertId, "collector"); global = await actor(null, "admin"); roleless = await actor(a.companyId, null);
     const [ca] = await db.query("INSERT INTO customers(company_id,nit,name) VALUES (?,'a','A')", [a.companyId]); customerA = String(ca.insertId);
-    const [cb] = await db.query("INSERT INTO customers(company_id,nit,name) VALUES (?,'b','B')", [b.companyId]); customerB = String(cb.insertId);
     const [ia] = await db.query("INSERT INTO invoices(company_id,customer_id,invoice_number,document_value,base_value,iva_value,balance) VALUES (?,?,'A-1',119,100,19,119)", [a.companyId, customerA]); invoiceA = String(ia.insertId);
-    const [ib] = await db.query("INSERT INTO invoices(company_id,customer_id,invoice_number,document_value,base_value,iva_value,balance) VALUES (?,?,'B-1',119,100,19,119)", [b.companyId, customerB]); invoiceB = String(ib.insertId);
     await db.query("UPDATE invoices SET issue_date='2026-08-01',due_date='2026-09-01' WHERE id=?", [invoiceA]);
     await db.query("INSERT INTO settings(company_id,setting_key,setting_value,value_type) VALUES (?,'collection_rules',?,'json')", [a.companyId, JSON.stringify([{ key: "overdue", active: true }])]);
   });
@@ -110,7 +107,7 @@ describe("4.9 manual collection HTTP / MySQL", { skip: !(process.env.DB_HOST && 
     const [other] = await db.query("INSERT INTO customers(company_id,nit,name) VALUES (?,'other','Other fixture')", [a.companyId]);
     const [otherInvoice] = await db.query("INSERT INTO invoices(company_id,customer_id,invoice_number,document_value,base_value,iva_value,balance) VALUES (?,?,'Other-1',10,10,0,10)", [a.companyId, other.insertId]);
     for (const kind of ["actions", "promises"]) assert.equal((await request("POST", path(kind), a, { ...(kind === "actions" ? action() : promise()), invoice_id: String(otherInvoice.insertId) })).status, 404);
-    await db.query("INSERT INTO collection_actions(company_id,customer_id,invoice_id,user_id,action_type,description) VALUES (?,?,?,?,'malformed','foreign fixture note')", [a.companyId, customerA, invoiceB, a.id]);
+    await db.query("INSERT INTO collection_actions(company_id,customer_id,invoice_id,user_id,action_type,description) VALUES (?,?,?,?,'malformed','foreign fixture note')", [a.companyId, customerA, otherInvoice.insertId, a.id]);
     const history = await request("GET", path("actions"), a); assert.equal(history.status, 200);
     assert.ok(history.body.data.every(row => row.description !== "foreign fixture note"));
   });
@@ -126,13 +123,14 @@ describe("4.9 manual collection HTTP / MySQL", { skip: !(process.env.DB_HOST && 
       assert.equal((await request("GET", `/customers/${customerB}/${kind}`, a)).status, 404);
       assert.equal((await request("POST", path(kind), a, { ...(kind === "actions" ? action() : promise()), invoice_id: invoiceB })).status, 404);
       assert.equal((await request("GET", path(kind) + `?invoice_id=${invoiceB}`, a)).status, 404);
-      const own = await request("GET", path(kind), a); const spoof = await request("GET", path(kind) + `?company_id=${b.companyId}`, a); assert.deepEqual(spoof, own);
+      assert.equal((await request("GET", path(kind) + `?company_id=999999999`, a)).status, 403);
       assert.equal((await request("POST", `/customers/${customerB}/${kind}`, a, kind === "actions" ? action() : promise())).status, 404);
     }
   });
-  test("global admin requires explicit company and may record within that scope", async () => {
-    assert.equal((await request("GET", path("actions"), global)).status, 400);
+  test("global admin receives MERTEL automatically and cannot switch company", async () => {
+    assert.equal((await request("GET", path("actions"), global)).status, 200);
     assert.equal((await request("POST", path("actions") + `?company_id=${a.companyId}`, global, action())).status, 201);
+    assert.equal((await request("POST", path("actions") + `?company_id=999999999`, global, action())).status, 403);
     assert.equal((await request("GET", `/customers/${customerB}/actions?company_id=${a.companyId}`, global)).status, 404);
   });
   test("invalid payloads, missing resources, forged status and inactive customer are rejected", async () => {

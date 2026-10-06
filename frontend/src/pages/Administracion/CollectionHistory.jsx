@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "../../auth/useAuth";
 import { formatCurrency } from "../../utils/format";
-import { getAdministrativeHistory, getAdministrativeHistoryActors, getHistoryCompanies } from "../../services/collectionHistory.service";
+import { getAdministrativeHistory, getAdministrativeHistoryActors } from "../../services/collectionHistory.service";
 import "./CollectionHistory.css";
 
 function dayValue(date = new Date()) { return [date.getFullYear(), String(date.getMonth() + 1).padStart(2, "0"), String(date.getDate()).padStart(2, "0")].join("-"); }
@@ -9,29 +9,21 @@ function shownDate(value) { return new Intl.DateTimeFormat("es-CO", { dateStyle:
 const kinds = { action: "Gestión", promise: "Promesa", configuration: "Configuración", import: "Importación" };
 
 export default function CollectionHistory() {
-  const { user, permissions = [] } = useAuth(); const authorized = permissions.includes("history.view") && permissions.includes("settings.manage");
-  const globalAdmin = user?.is_global_admin === true; const today = useMemo(() => dayValue(), []);
-  const [companies, setCompanies] = useState([]); const [companyId, setCompanyId] = useState(""); const [companyError, setCompanyError] = useState("");
+  const { permissions = [] } = useAuth(); const authorized = permissions.includes("history.view") && permissions.includes("settings.manage");
+  const today = useMemo(() => dayValue(), []);
   const [actors, setActors] = useState({ key: null, rows: [] });
   const [filters, setFilters] = useState({ date_from: "", date_to: "", type: "all", actor_id: "", q: "" });
   const [page, setPage] = useState(1); const [result, setResult] = useState({ key: null, error: "", data: null });
-  useEffect(() => {
-    if (!authorized || !globalAdmin) return undefined;
-    const controller = new AbortController();
-    getHistoryCompanies({ signal: controller.signal }).then(rows => { if (!controller.signal.aborted) { setCompanies(rows); setCompanyId(value => rows.some(item => item.id === value) ? value : ""); } })
-      .catch(error => { if (!controller.signal.aborted) setCompanyError(error.message); });
-    return () => controller.abort();
-  }, [authorized, globalAdmin]);
-  const ready = authorized && (!globalAdmin || Boolean(companyId));
+  const ready = authorized;
   useEffect(() => {
     if (!ready) return undefined;
     const controller = new AbortController();
-    getAdministrativeHistoryActors({ companyId: globalAdmin ? companyId : undefined, signal: controller.signal })
-      .then(rows => { if (!controller.signal.aborted) setActors({ key: globalAdmin ? companyId : "tenant", rows }); })
-      .catch(() => { if (!controller.signal.aborted) setActors({ key: globalAdmin ? companyId : "tenant", rows: [] }); });
+    getAdministrativeHistoryActors({ signal: controller.signal })
+      .then(rows => { if (!controller.signal.aborted) setActors({ key: "mertel", rows }); })
+      .catch(() => { if (!controller.signal.aborted) setActors({ key: "mertel", rows: [] }); });
     return () => controller.abort();
-  }, [ready, globalAdmin, companyId]);
-  const params = useMemo(() => ({ ...filters, page, limit: 20, ...(globalAdmin && companyId ? { company_id: companyId } : {}) }), [filters, page, globalAdmin, companyId]);
+  }, [ready]);
+  const params = useMemo(() => ({ ...filters, page, limit: 20 }), [filters, page]);
   const key = ready ? JSON.stringify(params) : null;
   useEffect(() => {
     if (!ready) return undefined;
@@ -43,11 +35,9 @@ export default function CollectionHistory() {
   function update(name, value) { setPage(1); setFilters(current => ({ ...current, [name]: value })); }
   if (!authorized) return <section className="collection-history-page"><div className="history-notice error" role="alert">No tienes permiso para consultar el historial administrativo.</div></section>;
   const current = ready && result.key === key; const loading = ready && !current; const data = current ? result.data : null;
-  const actorRows = actors.key === (globalAdmin ? companyId : "tenant") ? actors.rows : [];
+  const actorRows = actors.key === "mertel" ? actors.rows : [];
   return <section className="collection-history-page">
     <header><div><h2>Historial de cobranza</h2><p>Consulta cronológica de eventos operativos y administrativos.</p></div></header>
-    {globalAdmin && <label>Empresa<select aria-label="Empresa" value={companyId} onChange={event => { setCompanyId(event.target.value); setPage(1); }}><option value="">{companies.length ? "Selecciona una empresa" : "No hay empresas activas"}</option>{companies.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>}
-    {companyError && <div role="alert" className="history-notice error">{companyError}</div>}
     <div className="history-filters">
       <label>Desde<input type="date" max={filters.date_to || today} value={filters.date_from} onChange={event => update("date_from", event.target.value)} /></label>
       <label>Hasta<input type="date" min={filters.date_from || undefined} value={filters.date_to} onChange={event => update("date_to", event.target.value)} /></label>
@@ -55,7 +45,6 @@ export default function CollectionHistory() {
       <label>Usuario<select aria-label="Usuario" value={filters.actor_id} onChange={event => update("actor_id", event.target.value)}><option value="">Todos</option>{actorRows.map(actor => <option key={actor.id} value={actor.id}>{actor.name}</option>)}</select></label>
       <label>Cliente, identificación, factura o archivo<input type="search" maxLength="120" value={filters.q} onChange={event => update("q", event.target.value)} placeholder="Buscar" /></label>
     </div>
-    {globalAdmin && !companyId && <div className="history-notice">{companies.length ? "Selecciona una empresa para consultar el historial." : "No hay empresas activas disponibles."}</div>}
     {loading && <p role="status">Cargando historial…</p>}
     {current && result.error && <div role="alert" className="history-notice error">{result.error}</div>}
     {data && <>

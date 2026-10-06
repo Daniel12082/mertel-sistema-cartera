@@ -38,10 +38,9 @@ test("collector is denied and global admin must select an explicit company", asy
   expect(calls.some(call => call.path === "/api/admin/collection/dashboard")).toBe(false);
 });
 
-test("global admin must select an explicit company", async ({ page }) => {
+test("global admin resolves MERTEL without a company selector", async ({ page }) => {
   const calls = await setup(page, { globalAdmin: true }); await page.goto("/administracion/dashboard-cobranza");
-  const company = page.getByRole("combobox", { name: "Empresa" }); await expect(company).toHaveValue("");
-  expect(calls.some(call => call.path === "/api/admin/collection/dashboard")).toBe(false);
-  await company.selectOption("1"); await expect(page.getByText("Clientes en cobranza")).toBeVisible();
-  expect(calls.filter(call => call.path === "/api/admin/collection/dashboard").every(call => call.params.company_id === "1")).toBe(true);
+  await expect(page.getByText("Clientes en cobranza")).toBeVisible();
+  await expect(page.getByRole("combobox", { name: "Empresa" })).toHaveCount(0);
+  expect(calls.some(call => call.path === "/api/admin/collection/dashboard" && !Object.hasOwn(call.params, "company_id"))).toBe(true);
 });

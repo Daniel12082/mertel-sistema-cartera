@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { getCollectionMessageTemplates, previewCollectionMessage, prepareCollectionMessage } from "../../services/collectionMessages.service";
 import { useAuth } from "../../auth/useAuth";
 
-export default function CollectionMessages({ customer, companyId, referenceDate, autoOpen = false }) {
+export default function CollectionMessages({ customer, referenceDate, autoOpen = false }) {
   const { permissions = [] } = useAuth();
   const allowed = permissions.includes("collection.manage");
   const [opened, setOpened] = useState(autoOpen);
@@ -21,11 +21,11 @@ export default function CollectionMessages({ customer, companyId, referenceDate,
   useEffect(() => {
     if (!opened || !allowed) return;
     const controller = new AbortController();
-    getCollectionMessageTemplates(customer.id, referenceDate, { signal: controller.signal, companyId })
+    getCollectionMessageTemplates(customer.id, referenceDate, { signal: controller.signal })
       .then(rows => { if (!controller.signal.aborted) setTemplates({ loading: false, rows, error: "" }); })
       .catch(failure => { if (!controller.signal.aborted) setTemplates({ loading: false, rows: [], error: failure.message }); });
     return () => controller.abort();
-  }, [opened, allowed, customer.id, referenceDate, reload, companyId]);
+  }, [opened, allowed, customer.id, referenceDate, reload]);
   useEffect(() => { if (opened && !templates.loading) (templates.rows.length ? selector.current : heading.current)?.focus(); }, [opened, templates.loading, templates.rows]);
   function open() {
     version.current++; activeRequest.current?.abort(); busy.current = false;
@@ -39,7 +39,7 @@ export default function CollectionMessages({ customer, companyId, referenceDate,
     const controller = new AbortController(); activeRequest.current = controller; busy.current = true;
     setLoading(true); setError("");
     try {
-      const data = await (prepare ? prepareCollectionMessage : previewCollectionMessage)(customer.id, referenceDate, templateId, { signal: controller.signal, companyId });
+      const data = await (prepare ? prepareCollectionMessage : previewCollectionMessage)(customer.id, referenceDate, templateId, { signal: controller.signal });
       if (version.current === revision && !controller.signal.aborted) setMessage(data);
     } catch (failure) { if (version.current === revision && !controller.signal.aborted) { setMessage(null); setError(failure.message); } }
     finally { if (version.current === revision) { busy.current = false; setLoading(false); } }

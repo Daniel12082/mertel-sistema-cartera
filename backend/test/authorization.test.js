@@ -31,7 +31,7 @@ describe("role authorization and internal admin provisioning HTTP / MySQL", { sk
       await db.query(await readFile(new URL(`../../database/migrations/${file}`, import.meta.url), "utf8"));
     }
     assert.ok((await applyAuthMigrations(db)).every(result => result.applied));
-    const [company] = await db.query("INSERT INTO companies (name) VALUES ('Authorization fixture company')");
+    const [company] = await db.query("INSERT INTO companies (name) VALUES ('MERTEL IMPORTACIONES')");
     companyId = company.insertId;
     process.env.DB_NAME = databaseName;
     ({ default: pool } = await import("../src/config/database.js"));

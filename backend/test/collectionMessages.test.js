@@ -23,7 +23,7 @@ describe("5.1 message preparation HTTP / MySQL", { skip: !(process.env.DB_HOST &
   const schema = `mertel_messages_test_${randomUUID().replaceAll("-", "")}`;
   const original = process.env.DB_NAME;
   const config = loadAuthConfig({ JWT_SECRET: randomBytes(48).toString("base64url"), FRONTEND_URL: "http://localhost:5173", NODE_ENV: "test", AUTH_COOKIE_SAME_SITE: "lax" });
-  let db, pool, server, root, a, b, global, roleless, customer, foreignCustomer, primary, template, foreignTemplate;
+  let db, pool, server, root, a, global, roleless, customer, foreignCustomer = "999999999", primary, template, foreignTemplate = "999999999";
   before(async () => {
     db = await mysql.createConnection({ host: process.env.DB_HOST, port: Number(process.env.DB_PORT), user: process.env.DB_USER, password: process.env.DB_PASSWORD, multipleStatements: true });
     await db.query(`CREATE DATABASE \`${schema}\``); await db.query(`USE \`${schema}\``);
@@ -36,23 +36,20 @@ describe("5.1 message preparation HTTP / MySQL", { skip: !(process.env.DB_HOST &
     const { createApp } = await import("../src/app.js");
     server = await new Promise(resolve => { const listener = createApp(config).listen(0, "127.0.0.1", () => resolve(listener)); });
     root = `http://127.0.0.1:${server.address().port}/api/collection`;
-    const [ca] = await db.query("INSERT INTO companies(name) VALUES ('Messages fixture A')");
-    const [cb] = await db.query("INSERT INTO companies(name) VALUES ('Messages fixture B')");
+    const [ca] = await db.query("INSERT INTO companies(name) VALUES ('MERTEL IMPORTACIONES')");
     async function actor(companyId, role) {
       const [user] = await db.query("INSERT INTO users(company_id,first_name,email,password_hash) VALUES (?,'Fixture',?,'unusable-fixture-hash')", [companyId, `${randomUUID()}@example.test`]);
       if (role) await db.query("INSERT INTO user_roles(user_id,role_id) SELECT ?,id FROM roles WHERE name=?", [user.insertId, role]);
       return { id: user.insertId, companyId, token: issueAccessToken(String(user.insertId), config) };
     }
-    a = await actor(ca.insertId, "collector"); b = await actor(cb.insertId, "collector"); global = await actor(null, "admin"); roleless = await actor(a.companyId, null);
+    a = await actor(ca.insertId, "collector"); global = await actor(null, "admin"); roleless = await actor(a.companyId, null);
     const [client] = await db.query("INSERT INTO customers(company_id,nit,name,phone) VALUES (?,'FIXTURE-A','Fixture cliente','300 000 0000')", [a.companyId]); customer = String(client.insertId);
-    const [other] = await db.query("INSERT INTO customers(company_id,nit,name,phone) VALUES (?,'FIXTURE-B','Fixture ajeno','3010000000')", [b.companyId]); foreignCustomer = String(other.insertId);
     const [invoice] = await db.query("INSERT INTO invoices(company_id,customer_id,invoice_number,issue_date,due_date,document_value,base_value,balance) VALUES (?,?,'OLD-FIXTURE','2026-08-01','2026-09-01',100,100,100)", [a.companyId, customer]); primary = String(invoice.insertId);
     await db.query("INSERT INTO invoices(company_id,customer_id,invoice_number,issue_date,due_date,document_value,base_value,balance) VALUES (?,?,'NEW-FIXTURE','2026-09-01','2026-09-25',50,50,50)", [a.companyId, customer]);
     const rules = await readFile(new URL("../config/mertel-collection-rules.json", import.meta.url), "utf8");
     await db.query("INSERT INTO settings(company_id,setting_key,setting_value,value_type) VALUES (?,'collection_rules',?,'json')", [a.companyId, rules]);
     const [message] = await db.query(`INSERT INTO message_templates(company_id,name,content) VALUES (?,'Plantilla de prueba',
       '{{cliente}} | {{factura}} | {{saldo}} | {{fecha_vencimiento}} | {{dias_mora}} | {{nombre_cliente}} | {{identificacion_cliente}} | {{telefono_cliente}} | {{numero_factura}} | {{fecha_factura}} | {{valor_factura}} | {{saldo_pendiente}} | {{dias_para_vencimiento}} | {{etapa_cobranza}} | {{motivo_cobranza}}')`, [a.companyId]); template = String(message.insertId);
-    const [foreign] = await db.query("INSERT INTO message_templates(company_id,name,content) VALUES (?,'Ajena','Solo fixture')", [b.companyId]); foreignTemplate = String(foreign.insertId);
     await db.query("INSERT INTO message_templates(company_id,name,content,status) VALUES (?,'Inactiva','Solo fixture','inactive')", [a.companyId]);
     await db.query("INSERT INTO message_templates(company_id,name,content,channel) VALUES (?,'Email','Solo fixture','email')", [a.companyId]);
     await db.query("INSERT INTO message_templates(company_id,name,content,stage) VALUES (?,'Otra etapa','Solo fixture','due_today')", [a.companyId]);
@@ -103,13 +100,14 @@ describe("5.1 message preparation HTTP / MySQL", { skip: !(process.env.DB_HOST &
     const before = await snapshot();
     assert.equal((await request("GET", `/customers/${foreignCustomer}/message-templates?reference_date=2026-10-05`)).status, 404);
     assert.equal((await request("POST", `/customers/${customer}/messages/preview`, a, body({ template_id: foreignTemplate }))).status, 404);
-    for (const key of ["company_id", "content", "customer_id", "balance", "invoice_id", "created_by"]) assert.equal((await request("POST", `/customers/${customer}/messages/prepare`, a, body({ [key]: b.companyId }))).status, 400);
-    const spoofed = await request("GET", listPath()+`&company_id=${b.companyId}`); assert.deepEqual(spoofed.body, (await request("GET", listPath())).body);
+    for (const key of ["company_id", "content", "customer_id", "balance", "invoice_id", "created_by"]) assert.equal((await request("POST", `/customers/${customer}/messages/prepare`, a, body({ [key]: 999999999 }))).status, 400);
+    assert.equal((await request("GET", listPath()+`&company_id=${999999999}`)).status, 403);
     assert.deepEqual(await snapshot(), before);
   });
-  test("global admin requires company scope; inactive template is rechecked at preparation", async () => {
-    assert.equal((await request("GET", listPath(), global)).status, 400);
+  test("global admin receives MERTEL automatically; inactive template is rechecked at preparation", async () => {
+    assert.equal((await request("GET", listPath(), global)).status, 200);
     assert.equal((await request("GET", listPath()+`&company_id=${a.companyId}`, global)).status, 200);
+    assert.equal((await request("GET", listPath()+`&company_id=${999999999}`, global)).status, 403);
     await db.query("UPDATE message_templates SET status='inactive' WHERE id=?", [template]);
     try { assert.deepEqual((await request("GET", listPath())).body.data, []); assert.equal((await request("POST", `/customers/${customer}/messages/prepare`, a, body())).status, 404); }
     finally { await db.query("UPDATE message_templates SET status='active' WHERE id=?", [template]); }

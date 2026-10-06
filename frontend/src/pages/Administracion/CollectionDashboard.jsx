@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "../../auth/useAuth";
-import { getCollectionDashboard, getDashboardCompanies } from "../../services/collectionDashboard.service";
+import { getCollectionDashboard } from "../../services/collectionDashboard.service";
 import "./CollectionDashboard.css";
 
 function localDate(date = new Date()) { return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`; }
@@ -12,28 +12,15 @@ function displayDate(value) { return value ? value.split("-").reverse().join("/"
 const cop = new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 2 });
 
 export default function CollectionDashboard() {
-  const { user, permissions = [] } = useAuth();
+  const { permissions = [] } = useAuth();
   const authorized = permissions.includes("collection.view") && permissions.includes("settings.manage");
-  const globalAdmin = user?.is_global_admin === true;
   const today = useMemo(() => localDate(), []);
   const [referenceDate, setReferenceDate] = useState(today); const [period, setPeriod] = useState("7");
-  const [companies, setCompanies] = useState([]); const [companyId, setCompanyId] = useState("");
-  const [companyError, setCompanyError] = useState("");
   const [state, setState] = useState({ key: null, error: "", data: null });
   const activityFrom = period === "today" ? today : shiftDate(today, -(Number(period) - 1));
-  const params = useMemo(() => ({ reference_date: referenceDate, activity_from: activityFrom, activity_to: today,
-    ...(globalAdmin && companyId ? { company_id: companyId } : {}) }), [referenceDate, activityFrom, today, globalAdmin, companyId]);
-  const ready = authorized && (!globalAdmin || Boolean(companyId));
+  const params = useMemo(() => ({ reference_date: referenceDate, activity_from: activityFrom, activity_to: today }), [referenceDate, activityFrom, today]);
+  const ready = authorized;
   const requestKey = ready ? JSON.stringify(params) : null;
-
-  useEffect(() => {
-    if (!authorized || !globalAdmin) return undefined;
-    const controller = new AbortController();
-    getDashboardCompanies({ signal: controller.signal }).then(rows => {
-      if (!controller.signal.aborted) { setCompanies(rows); setCompanyId(current => rows.some(row => row.id === current) ? current : ""); }
-    }).catch(error => { if (!controller.signal.aborted) setCompanyError(error.message); });
-    return () => controller.abort();
-  }, [authorized, globalAdmin]);
 
   useEffect(() => {
     if (!ready) return undefined;
@@ -51,20 +38,15 @@ export default function CollectionDashboard() {
   return <section className="collection-dashboard">
     <header className="dashboard-header"><div><h2>Dashboard de cobranza</h2><p>Resumen operativo de cartera, promesas y actividad.</p></div></header>
     <div className="dashboard-filters">
-      {globalAdmin && <label>Empresa<select aria-label="Empresa" value={companyId} onChange={event => setCompanyId(event.target.value)}>
-        <option value="">{companies.length ? "Selecciona una empresa" : "No hay empresas activas"}</option>{companies.map(company => <option key={company.id} value={company.id}>{company.name}</option>)}
-      </select></label>}
       <label>Fecha de referencia de cartera<input type="date" value={referenceDate} onChange={event => setReferenceDate(event.target.value)} /></label>
       <label>Período de actividad<select aria-label="Período de actividad" value={period} onChange={event => setPeriod(event.target.value)}><option value="today">Hoy</option><option value="7">Últimos 7 días</option><option value="30">Últimos 30 días</option></select></label>
     </div>
-    {globalAdmin && !companyId && !loading && <div className="dashboard-notice">{companies.length ? "Selecciona una empresa para consultar sus datos." : "No hay empresas activas disponibles. No se muestran datos de cartera."}</div>}
-    {companyError && <div className="dashboard-notice error" role="alert">{companyError}</div>}
     {loading && <div className="dashboard-notice" role="status">Cargando dashboard…</div>}
     {current && state.error && <div className="dashboard-notice error" role="alert">{state.error}</div>}
     {data && <>
       <p className="dashboard-reference">Fecha de referencia: <strong>{displayDate(data.reference_date)}</strong> · Actividad: {displayDate(data.activity.activity_from)}–{displayDate(data.activity.activity_to)}</p>
       <div className="dashboard-cards"><article><span>Saldo pendiente total</span><strong>{cop.format(Number(data.portfolio.total_balance))}</strong></article><article><span>Clientes en cobranza</span><strong>{data.portfolio.customers_in_collection}</strong></article><article><span>Promesas pendientes</span><strong>{data.promises.pending_count}</strong><small>{cop.format(Number(data.promises.pending_amount))} prometidos</small></article><article><span>Gestiones en el período</span><strong>{data.activity.actions_period}</strong></article></div>
-      <section className="dashboard-panel"><h3>Distribución por etapa</h3>{!data.stages.some(stage => stage.customers) && <p>Sin datos de cartera para esta empresa en la fecha seleccionada.</p>}<div className="dashboard-stages">{data.stages.map(stage => <article key={stage.key}><h4>{stage.label}</h4><strong>{stage.customers} {stage.customers === 1 ? "cliente" : "clientes"}</strong><span>{cop.format(Number(stage.balance))}</span></article>)}</div></section>
+      <section className="dashboard-panel"><h3>Distribución por etapa</h3>{!data.stages.some(stage => stage.customers) && <p>MERTEL Importaciones no tiene datos de cartera para la fecha seleccionada.</p>}<div className="dashboard-stages">{data.stages.map(stage => <article key={stage.key}><h4>{stage.label}</h4><strong>{stage.customers} {stage.customers === 1 ? "cliente" : "clientes"}</strong><span>{cop.format(Number(stage.balance))}</span></article>)}</div></section>
       <section className="dashboard-panel"><h3>Actividad de cobranza</h3><p><strong>{data.activity.actions_period}</strong> gestiones registradas entre {displayDate(data.activity.activity_from)} y {displayDate(data.activity.activity_to)}.</p></section>
       {data.warnings?.length > 0 && <section className="dashboard-panel dashboard-warnings"><h3>Advertencias de configuración</h3><ul>{data.warnings.map(warning => <li key={warning}>{warning}</li>)}</ul></section>}
       {data.collection_status === "no_rules_configured" && <div className="dashboard-notice">{data.message} El saldo pendiente y las gestiones disponibles continúan visibles.</div>}

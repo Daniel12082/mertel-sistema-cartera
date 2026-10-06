@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AlertCircle, CalendarDays, FileText, LoaderCircle, RefreshCw, Users, X } from "lucide-react";
 import { useAuth } from "../../auth/useAuth";
-import { getCollection, getCollectionAdminCompanies } from "../../services/collection.service";
+import { getCollection } from "../../services/collection.service";
 import { formatCurrency, formatDate } from "../../utils/format";
 import { getStageCatalog, localDateValue, matchesSearch, stageLabel } from "./collection.presentation";
 import "../Cartera/Cartera.css";
@@ -48,7 +48,7 @@ function CustomerCard({ item, catalog, onDetail, onMessage, canManage, pending =
   </article>;
 }
 
-function CustomerDetail({ item, catalog, referenceDate, companyId, onClose, messageFirst, canViewHistory }) {
+function CustomerDetail({ item, catalog, referenceDate, onClose, messageFirst, canViewHistory }) {
   const dialog = useRef(null);
   useEffect(() => {
     const previous = document.activeElement;
@@ -91,21 +91,18 @@ function CustomerDetail({ item, catalog, referenceDate, companyId, onClose, mess
         <div className="cartera-table-wrap"><table className="cartera-table cobranza-table"><thead><tr><th>Número</th><th>Emisión</th><th>Vencimiento</th><th>Valor</th><th>Saldo</th><th>Días desde emisión</th><th>Días para vencimiento</th><th>Etapa</th><th>Motivo</th><th>Prioridad</th><th>Elegible para cobranza</th><th>Candidatos de etapa</th><th>Beneficios</th></tr></thead>
           <tbody>{item.invoices.map((row, index) => <tr key={row.invoice?.invoice_id ?? row.invoice?.id ?? index}><td data-label="Número"><strong>{row.invoice?.invoice_number || "—"}</strong></td><td data-label="Emisión">{formatDate(row.invoice?.issue_date)}</td><td data-label="Vencimiento">{formatDate(row.invoice?.due_date)}</td><td data-label="Valor">{displayMoney(row.invoice?.document_value)}</td><td data-label="Saldo">{displayMoney(row.invoice?.balance)}</td><td data-label="Días desde emisión">{row.days_since_issue ?? "—"}</td><td data-label="Días para vencimiento">{row.days_until_due ?? "—"}</td><td data-label="Etapa"><StageBadge stage={row.stage} catalog={catalog} label={row.stage_label} /></td><td data-label="Motivo">{row.reason || "—"}</td><td data-label="Prioridad">{row.priority ?? "—"}</td><td data-label="Elegible para cobranza">{row.eligible === true ? "Sí" : row.eligible === false ? "No" : "—"}</td><td data-label="Candidatos de etapa"><StageCandidates candidates={row.stage_candidates} /></td><td data-label="Beneficios"><CollectionBenefits row={row} /></td></tr>)}</tbody>
         </table></div>
-        <CollectionOperations key={item.customer.id} customerId={item.customer.id} companyId={companyId} invoices={item.invoices} />
-        {canViewHistory && <CustomerHistory key={`history-${item.customer.id}-${companyId || ""}`} customerId={item.customer.id} companyId={companyId} />}
-        <CollectionMessages key={`${item.customer.id}-${referenceDate}-${companyId || ""}`} customer={item.customer} companyId={companyId} referenceDate={referenceDate} autoOpen={messageFirst} />
+        <CollectionOperations key={item.customer.id} customerId={item.customer.id} invoices={item.invoices} />
+        {canViewHistory && <CustomerHistory key={`history-${item.customer.id}-`} customerId={item.customer.id} />}
+        <CollectionMessages key={`${item.customer.id}-${referenceDate}-`} customer={item.customer} referenceDate={referenceDate} autoOpen={messageFirst} />
       </div><footer className="cartera-modal-footer"><button className="cartera-button-secondary" onClick={onClose}>Cerrar</button></footer>
     </section>
   </div>;
 }
 
 function CollectionView() {
-  const { permissions = [], user } = useAuth();
-  const globalAdmin = user?.is_global_admin === true;
+  const { permissions = [] } = useAuth();
   const canManage = permissions.includes("collection.manage");
   const canViewHistory = permissions.includes("history.view");
-  const [companies, setCompanies] = useState({ loading: globalAdmin, rows: [], error: "" });
-  const [companyId, setCompanyId] = useState("");
   const [referenceDate, setReferenceDate] = useState(localDateValue);
   const [query, setQuery] = useState("");
   const [stage, setStage] = useState("");
@@ -114,26 +111,15 @@ function CollectionView() {
   const [messageFirst, setMessageFirst] = useState(false);
   const [request, setRequest] = useState({ loading: true, data: null, error: "" });
   useEffect(() => {
-    if (!globalAdmin) return;
-    const controller = new AbortController();
-    getCollectionAdminCompanies({ signal: controller.signal }).then(rows => {
-      if (!controller.signal.aborted) setCompanies({ loading: false, rows, error: "" });
-    }).catch(error => {
-      if (!controller.signal.aborted) setCompanies({ loading: false, rows: [], error: error.message });
-    });
-    return () => controller.abort();
-  }, [globalAdmin]);
-  useEffect(() => {
-    if (globalAdmin && !companyId) return;
     if (!referenceDate) return;
     const controller = new AbortController();
-    getCollection(referenceDate, { signal: controller.signal, ...(globalAdmin ? { companyId } : {}) }).then(data => {
+    getCollection(referenceDate, { signal: controller.signal }).then(data => {
       if (!controller.signal.aborted) setRequest({ loading: false, data, error: "" });
     }).catch(error => {
       if (!controller.signal.aborted) setRequest({ loading: false, data: null, error: error.message, status: error.status });
     });
     return () => controller.abort();
-  }, [referenceDate, reload, globalAdmin, companyId]);
+  }, [referenceDate, reload]);
 
   const data = request.data;
   const customers = data?.customers || [];
@@ -144,22 +130,17 @@ function CollectionView() {
   const pendingCustomers = data?.non_overdue_pending?.customers || [];
   const pendingVisible = pendingCustomers.filter(item => !stage && matchesSearch(item, query));
   const selected = [...customers, ...pendingCustomers].find(item => String(item.customer.id) === selectedId);
-  const hasCompanyContext = !globalAdmin || Boolean(companyId);
-  const showCollection = hasCompanyContext && !companies.loading && !companies.error && Boolean(referenceDate) && !request.loading && !request.error && data && data.rules_configured !== false && data.status !== "no_rules_configured";
-  const showMissingRules = hasCompanyContext && !companies.loading && !companies.error && Boolean(referenceDate) && !request.loading && !request.error && data && (data.rules_configured === false || data.status === "no_rules_configured");
+  const showCollection = Boolean(referenceDate) && !request.loading && !request.error && data && data.rules_configured !== false && data.status !== "no_rules_configured";
+  const showMissingRules = Boolean(referenceDate) && !request.loading && !request.error && data && (data.rules_configured === false || data.status === "no_rules_configured");
   // Stable handler keeps the dialog's focus lifecycle independent of filtering.
   const closeDetail = useCallback(() => setSelectedId(null), []);
   function openDetail(item, whatsapp = false) { setMessageFirst(whatsapp); setSelectedId(String(item.customer.id)); }
   function refresh() { setRequest({ loading: true, data: null, error: "" }); setReload(value => value + 1); }
   return <section className="cartera-page cobranza-page">
-    <header className="cartera-header"><div><h1>Cobranza</h1><p>Panel operativo de MERTEL: clientes, facturas, gestiones y preparación de mensajes.</p></div><div className="cobranza-header-controls">{globalAdmin && <label className="cartera-reference"><span>Empresa</span>{companies.loading ? <span role="status">Cargando empresas…</span> : <select aria-label="Empresa" value={companyId} onChange={event => { setCompanyId(event.target.value); setSelectedId(null); setQuery(""); setStage(""); setRequest({ loading: true, data: null, error: "" }); }} disabled={Boolean(companies.error)}><option value="">Selecciona una empresa</option>{companies.rows.map(company => <option key={company.id} value={company.id}>{company.name}</option>)}</select>}{companies.error && <span role="alert">{companies.error}</span>}</label>}<label className="cartera-reference"><CalendarDays size={17} /><span>Fecha de referencia</span><input aria-label="Fecha de referencia" type="date" required value={referenceDate} onChange={event => { setReferenceDate(event.target.value); setRequest({ loading: true, data: null, error: "" }); }} /></label></div></header>
-    {globalAdmin && companies.loading && <State title="Cargando empresas…" loading />}
-    {globalAdmin && !companies.loading && companies.error && <div className="cartera-alert" role="alert">{companies.error}</div>}
-    {globalAdmin && !companies.loading && !companies.error && !companies.rows.length && <State title="No hay empresas activas disponibles para consultar cobranza." />}
-    {globalAdmin && !companies.loading && !companies.error && companies.rows.length > 0 && !companyId && <State title="Selecciona una empresa para consultar su cobranza." />}
-    {hasCompanyContext && !companies.loading && !companies.error && !referenceDate && <State title="Selecciona una fecha de referencia válida." />}
-    {hasCompanyContext && !companies.loading && !companies.error && referenceDate && request.loading && <State title="Cargando cobranza…" loading />}
-    {hasCompanyContext && !companies.loading && !companies.error && referenceDate && !request.loading && request.error && <div className="cartera-panel"><div className="cartera-alert" role="alert"><AlertCircle size={18} />{request.error}</div>{request.status !== 403 && <div className="cartera-state"><button className="cartera-reset" onClick={refresh}><RefreshCw size={16} />Reintentar</button></div>}</div>}
+    <header className="cartera-header"><div><h1>Cobranza</h1><p>Panel operativo de MERTEL: clientes, facturas, gestiones y preparación de mensajes.</p></div><div className="cobranza-header-controls"><label className="cartera-reference"><CalendarDays size={17} /><span>Fecha de referencia</span><input aria-label="Fecha de referencia" type="date" required value={referenceDate} onChange={event => { setReferenceDate(event.target.value); setRequest({ loading: true, data: null, error: "" }); }} /></label></div></header>
+    {!referenceDate && <State title="Selecciona una fecha de referencia válida." />}
+    {referenceDate && request.loading && <State title="Cargando cobranza…" loading />}
+    {referenceDate && !request.loading && request.error && <div className="cartera-panel"><div className="cartera-alert" role="alert"><AlertCircle size={18} />{request.error}</div>{request.status !== 403 && <div className="cartera-state"><button className="cartera-reset" onClick={refresh}><RefreshCw size={16} />Reintentar</button></div>}</div>}
     {showMissingRules && <div className="cartera-state" role="status"><FileText size={27} /><strong>MERTEL no tiene reglas de cobranza configuradas.</strong><span>La clasificación requiere reglas configuradas en el servidor.</span><button className="cartera-reset" onClick={refresh}>Volver a consultar</button></div>}
     {showCollection && <div className="cobranza-results">
       {data?.configuration_warnings?.map((warning, index) => <div className="cartera-alert" role="status" key={index}>{warning}</div>)}
@@ -173,7 +154,7 @@ function CollectionView() {
         <p className="cobranza-note cobranza-panel-note">Las facturas no vencidas de clientes ya clasificados se consultan en su tarjeta principal.</p>
         {!pendingVisible.length ? <State title="No hay clientes con facturas no vencidas fuera de las etapas activas." /> : <div className="cobranza-client-grid">{pendingVisible.map(item => <CustomerCard key={item.customer.id} item={item} catalog={catalog} canManage={canManage} pending onDetail={() => openDetail(item)} onMessage={() => openDetail(item, true)} />)}</div>}
       </section>}
-      {selected && <CustomerDetail item={selected} catalog={catalog} referenceDate={data.reference_date} companyId={globalAdmin ? companyId : undefined} onClose={closeDetail} messageFirst={messageFirst} canViewHistory={canViewHistory} />}
+      {selected && <CustomerDetail item={selected} catalog={catalog} referenceDate={data.reference_date} onClose={closeDetail} messageFirst={messageFirst} canViewHistory={canViewHistory} />}
     </div>}
   </section>;
 }

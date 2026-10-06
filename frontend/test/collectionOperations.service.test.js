@@ -9,11 +9,11 @@ it("uses protected dedicated routes and passes exact invoice/date/amount values"
   const signal = new AbortController().signal; await getCollectionActions("1", { invoiceId: "11", signal });
   expect(api.get).toHaveBeenCalledWith("/collection/customers/1/actions", { params: { invoice_id: "11" }, signal });
 });
-it("passes an explicitly selected company as query context for operations", async () => {
+it("does not send a client-selected company scope", async () => {
   await createCollectionAction("1", { action_type: "Nota", description: "Texto" }, { companyId: "42" });
-  expect(api.post).toHaveBeenCalledWith("/collection/customers/1/actions", { action_type: "Nota", description: "Texto" }, { params: { company_id: "42" } });
+  expect(api.post).toHaveBeenCalledWith("/collection/customers/1/actions", { action_type: "Nota", description: "Texto" });
   await getPaymentPromises("1", { companyId: "42", invoiceId: "11" });
-  expect(api.get).toHaveBeenCalledWith("/collection/customers/1/promises", { params: { invoice_id: "11", company_id: "42" }, signal: undefined });
+  expect(api.get).toHaveBeenCalledWith("/collection/customers/1/promises", { params: { invoice_id: "11" }, signal: undefined });
 });
 it.each([400, 403, 404, 409, 500])("sanitizes API errors without exposing backend internals: %s", async status => {
   api.post.mockRejectedValue({ response: { status, data: { message: "private SQL INSERT" } } });

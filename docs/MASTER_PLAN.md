@@ -10,6 +10,7 @@ Actualizado: 06/10/2026. Producto exclusivo: MERTEL Importaciones — Sistema de
 - Estado actual: **4.9 IMPLEMENTADA Y VALIDADA en su alcance manual**, ver [informe de implementación](architecture/MERTEL_PHASE_4_9.md). Incluye registro/consulta de promesas por autorización expresa; su ciclo de cumplimiento y automatización continúa futuro. No se aprueba un catálogo comercial por usar texto libre.
 - Salvedad de 4.7: consulta autenticada con datos reales de MERTEL no disponible. Inspección local 05/10/2026: cero compañías, settings comerciales legacy NULL y sin collection_rules; no crear datos para aparentar validación real.
 - Archivo protegido: `database/migrations/001_initial_schema.sql` con cambio local previo; nunca editar, revertir ni incluir en commit de estas órdenes. Hash de contenido auditado: `e2f0b2c49c979991914a187dc9531d9c5d2117ce`.
+- Consolidación vigente de empresa única (06/10/2026): MERTEL Importaciones se resuelve automáticamente en backend como contexto único. No hay selector ni `company_id` controlado por el navegador; `companyScope` sigue validando cada identidad y registro. La base local conserva una única compañía activa MERTEL y el usuario admin existente; los registros operativos de prueba sin compañía fueron eliminados con autorización expresa. Ver [arquitectura MERTEL de empresa única](architecture/MERTEL_SINGLE_COMPANY.md). Las descripciones históricas posteriores que exigen selección explícita para admin global ya no reflejan este cambio.
 - Base de 5.1: `75cd3d0a43897d6844ca6c00635ca503752757ba`, reglas comerciales publicadas. Panel, plantillas y preparación: [informe 5.1](architecture/MERTEL_PHASE_5_1.md). La numeración de la orden actual sustituye el antiguo 5.1 de importación; importación y ciclo automático de promesas siguen pendientes, sin activarse.
 
 ## Qué leer antes de continuar
@@ -31,7 +32,7 @@ Documentos de fases anteriores y VALIDACION-4.7.md son evidencia histórica, no 
 | 5.1 | Panel operativo, plantillas, vista previa y preparación sin envío | IMPLEMENTADA Y VALIDADA; empresas/plantillas reales aún no configuradas |
 | 5.1A | Administración de plantillas WhatsApp existente, permisos y previsualización de ejemplos | IMPLEMENTADA Y VALIDADA; sin datos de empresa/plantillas en la base configurada |
 | 5.2 | Configuración administrativa de cobranza | IMPLEMENTADA Y VALIDADA; no hay reglas reales por empresa en la DB configurada |
-| 5.3 | Infraestructura de análisis de importación | CERRADA; aplicación real de cartera pendiente de certificar archivo |
+| 5.3 | Infraestructura de análisis de importación | IMPLEMENTADA; XLSX real MERTEL entendido/validado; aplicación financiera pendiente |
 | 5.4 | Centro operativo del cobrador | IMPLEMENTADA Y VALIDADA en alcance técnico; datos reales pendientes |
 | 5.5 | Dashboard operativo de cobranza | IMPLEMENTADA; métricas basadas en fuentes existentes |
 | 5.6 | Historial y trazabilidad avanzada de cobranza | IMPLEMENTADA; lecturas aisladas y sin duplicar fuentes |
@@ -107,9 +108,9 @@ La numeración específica de esta orden reemplaza la fase 5.2 de motor operativ
 
 ## Fase 5.3 — Infraestructura de importación preliminar — 06/10/2026
 
-La orden específica de Fase 5.3 establece que la siguiente fase es infraestructura de análisis de cartera: se agregan permiso `portfolio.import`, análisis estructural restringido a CSV, preview, lotes/errores/auditoría y aislamiento por empresa. Solo se conserva metadata y hash; los valores de error no se persisten. No existe endpoint de aplicación, mapping, matching o reconciliación. El detalle se registra en [Fase 5.3](architecture/MERTEL_PHASE_5_3.md).
+La Fase 5.3 implementó permiso `portfolio.import`, análisis estructural CSV, preview, lotes/errores/auditoría y aislamiento. La adaptación posterior al Excel real de MERTEL reconoce XLSX, la hoja y encabezados oficiales, clasifica documentos, resúmenes, totales y separadores, y muestra preview. No existe endpoint de aplicación, mapping, matching o reconciliación. Especificación: [formato real de cartera MERTEL](architecture/MERTEL_PORTFOLIO_FILE_SPEC.md); infraestructura original: [Fase 5.3](architecture/MERTEL_PHASE_5_3.md).
 
-**Esta fase NO habilita todavía la importación operativa de cartera MERTEL porque el formato fuente real aún no ha sido certificado.** Permanecen pendientes la identificación de clientes/facturas, columnas y productos reales, tratamiento de facturas ausentes, reconciliación de saldos, pagos posteriores y toda actualización financiera.
+**El archivo fuente real ya fue leído y certificado para análisis y preview. La importación operativa continúa deshabilitada.** Permanecen pendientes la identidad y matching definitivos, el tratamiento de facturas ausentes/reaparecidas, los movimientos no factura y la conciliación de saldos/pagos antes de cualquier actualización financiera.
 
 ## Fase 5.4 — Centro operativo del cobrador — 06/10/2026
 
