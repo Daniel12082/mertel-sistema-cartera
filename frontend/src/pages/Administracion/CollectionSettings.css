@@ -1,0 +1,20 @@
+.collection-settings-page { display: grid; gap: 1rem; }
+.collection-settings-header h2 { margin: 0; }
+.collection-settings-header p, .collection-settings-section > p { color: var(--text-muted, #64748b); margin: .4rem 0 0; }
+.collection-settings-company { display: grid; gap: .4rem; max-width: 28rem; font-weight: 600; }
+.collection-settings-company select { min-height: 2.5rem; padding: .5rem; border: 1px solid #cbd5e1; border-radius: .5rem; background: white; }
+.collection-settings-section { display: grid; gap: .75rem; padding: 1.25rem; background: white; border: 1px solid #e2e8f0; border-radius: .75rem; }
+.collection-settings-section h3 { margin: 0; }
+.collection-settings-list { display: grid; }
+.collection-settings-row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: .9rem 0; border-bottom: 1px solid #e2e8f0; }
+.collection-settings-row:last-child { border-bottom: 0; }
+.collection-settings-row > span:first-child { display: grid; gap: .25rem; }
+.collection-settings-row small { color: #64748b; }
+.collection-settings-toggle, .collection-settings-readonly { display: flex; align-items: center; gap: .5rem; flex: 0 0 auto; }
+.collection-settings-toggle input { width: 1.1rem; height: 1.1rem; }
+.collection-settings-section button { justify-self: start; min-height: 2.5rem; padding: .5rem 1rem; border: 0; border-radius: .5rem; color: white; background: #0f766e; font-weight: 600; cursor: pointer; }
+.collection-settings-section button:disabled { opacity: .6; cursor: wait; }
+.collection-settings-notice { padding: .9rem 1rem; border-radius: .5rem; background: #f1f5f9; }
+.collection-settings-notice.error { color: #991b1b; background: #fef2f2; }
+.collection-settings-notice.success { color: #166534; background: #f0fdf4; }
+@media (max-width: 520px) { .collection-settings-row { align-items: flex-start; flex-direction: column; } .collection-settings-toggle, .collection-settings-readonly { align-self: flex-start; } }

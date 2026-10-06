@@ -2,6 +2,8 @@
 
 Fecha: 05/10/2026. Fase 5 resuelve calendario/límites de Pronto Pago, redondeo al peso entero, exclusiones descriptivas, aviso de cinco días calendario, ventana del 10% y visibilidad de facturas futuras. Las precisiones se registran por ID debajo. Fuente: orden expresa Fase 5 y respuesta posterior del usuario sobre redondeo. Coexistencia temporal, fuente de productos y aplicación financiera siguen pendientes. Responsable comercial: Cartera MERTEL.
 
+Actualización 06/10/2026 — Fase 5.2: el editor permite activar/desactivar etapas existentes de `collection_rules`; los valores comerciales confirmados se presentan bloqueados. Recordatorios legacy, límite diario, horarios y `contact_line` no se exponen porque no tienen consumidores reales. La fase no resuelve decisiones comerciales abiertas ni define aplicación del 10%.
+
 ## Histórico de 4.8 — leer las precisiones posteriores de Fase 5
 
 - D06 y D24: **abiertas**; implementados day_type=pending y límites null, sin elegir días calendario/hábiles ni inclusión. El motor se abstiene de asignar Pronto Pago hasta configuración explícita. Los calendarios parametrizados de tests no son respuestas aprobadas.

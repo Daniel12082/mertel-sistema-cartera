@@ -1,6 +1,6 @@
 # Plan maestro MERTEL
 
-Actualizado: 05/10/2026. Producto exclusivo: MERTEL Importaciones — Sistema de Cobranza. **La orden vigente cierra la Fase 5.1A: administrador de plantillas WhatsApp conectado a 5.1. No autoriza Fase 5.2 ni integración externa**.
+Actualizado: 06/10/2026. Producto exclusivo: MERTEL Importaciones — Sistema de Cobranza. La orden vigente cierra la Fase 5.2 de configuración administrativa acotada. No autoriza Fase 5.3 ni integración externa.
 
 ## Dónde estamos
 
@@ -30,11 +30,11 @@ Documentos de fases anteriores y VALIDACION-4.7.md son evidencia histórica, no 
 | 5.0 | Activación de reglas comerciales reales (orden vigente) | CERRADA en el alcance de Fase 5; ciclo automático de promesas pendiente |
 | 5.1 | Panel operativo, plantillas, vista previa y preparación sin envío | IMPLEMENTADA Y VALIDADA; empresas/plantillas reales aún no configuradas |
 | 5.1A | Administración de plantillas WhatsApp existente, permisos y previsualización de ejemplos | IMPLEMENTADA Y VALIDADA; sin datos de empresa/plantillas en la base configurada |
-| 5.2 | Motor operativo de cobranza | FUTURA |
+| 5.2 | Configuración administrativa de cobranza | IMPLEMENTADA Y VALIDADA; no hay reglas reales por empresa en la DB configurada |
 | 5.3 | Mensajería/WhatsApp | FUTURA |
 | 5.4 | Pagos y reevaluación | FUTURA |
 | 5.5 | Reportes y métricas | FUTURA |
-| 5.6 | Configuración administrativa | FUTURA |
+| 5.6 | Configuración operativa avanzada pendiente de decisiones | FUTURA |
 | 5.7 | Auditoría/endurecimiento | FUTURA |
 | 6.0 | Producción MERTEL | FUTURA |
 
@@ -84,12 +84,22 @@ Tras commit/push autorizado a origin/main, verificar status, log, HEAD, origin/m
 Prioridad de trabajo técnico, no prioridad comercial de clientes:
 
 - 4.8: selección/jerarquía/orden/labels corregidos; evaluador desde emisión y cálculo puro implementados. Quedan decisiones de calendario/límites, datos de productos y redondeo/registro financiero antes de activar beneficio real.
-- 4.9–5.2: historial y registro manual implementados; pausa por promesa, contrato seguro de importación y estado operativo continuo siguen pendientes.
-- 5.3–5.6: falta proveedor, cuotas aprobadas, fuentes de métricas y edición/configuración auditada; evitar políticas dispersas.
+- 4.9–5.2: historial, registro manual y administración acotada de reglas implementados; pausa por promesa, contrato seguro de importación y estado operativo continuo siguen pendientes.
+- 5.3–5.6: falta proveedor, cuotas aprobadas y fuentes de métricas; recordatorios, límites y horarios no se administran porque hoy no tienen consumidor estable.
 - 5.7: revisar precisión monetaria del helper de descuento, conversiones BIGINT, auditoría integral, escala de lectura y efectos de referencias huérfanas.
 - 6.0: falta contexto real autorizado y evidencia de configuración/datos de producción; no confundir push con deploy.
 
-El entregable de la orden actual es la implementación manual acotada de 4.9 y su validación. La autorización incluye commit/push selectivo si todas las pruebas pasan, preservando la migración protegida. No incluye evaluación de promesas, automatización, pagos, importación ni envío.
+El registro previo de entrega 4.9 está cerrado y validado en su alcance manual; su autorización de publicación no amplía fases posteriores.
+
+## Fase 5.2 — Configuración administrativa de cobranza — 06/10/2026
+
+Implementada sobre `settings.collection_rules`, sin tabla ni migración nueva. Administración permite consultar el catálogo autorizado y cambiar únicamente el estado activo de las cuatro etapas ya configuradas. Los porcentajes/ventanas de beneficios, los cinco días previos, el redondeo y el orden de prioridad se presentan como valores confirmados de solo lectura y se validan en backend; el 10% condicionado continúa informativo. El motor usa el JSON empresarial persistido, por lo que las etapas activadas/desactivadas tienen efecto en la siguiente evaluación.
+
+`GET /api/admin/settings` y `PUT /api/admin/settings/collection-rules` requieren `settings.manage`. El permiso se concede al rol existente `admin`; `supervisor` y `collector` no lo reciben. `requireCompanyScope` deriva la empresa de la identidad autenticada, requiere empresa explícita para administrador global y no usa `company_id` del body. Cada cambio efectivo actualiza el JSON y `audit_logs` en una transacción con actor, empresa, valor anterior y nuevo.
+
+Se excluyeron `reminder_days_before_due`, `reminder_days_after_due`, `daily_message_limit` y `contact_line`: solo aparecen como seeds legacy `company_id=NULL` en 001 y ningún proceso actual los consume. No hay configuración de horarios consumida por el motor. No se crea fallback ni se inserta configuración en la DB real, que continúa sin empresas ni reglas empresariales. Tampoco se toca la migración protegida. El informe detallado y validación pertenecen a [Fase 5.2](architecture/MERTEL_PHASE_5_2.md).
+
+La numeración específica de esta orden reemplaza la fase 5.2 de motor operativo descrita en versiones anteriores del roadmap. No se implementó Fase 5.3, envío de mensajes, ni ningún flujo financiero.
 
 ## Histórico: verificación documental previa del 05/10/2026
 

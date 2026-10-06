@@ -8,6 +8,7 @@ import Cartera from "./pages/Cartera/Cartera";
 import Cobranza from "./pages/Cobranza/Cobranza";
 import Configuracion from "./pages/Configuracion/Configuracion";
 import MessageTemplates from "./pages/Administracion/MessageTemplates";
+import CollectionSettings from "./pages/Administracion/CollectionSettings";
 import LoginPage from "./pages/Login/LoginPage";
 import ProtectedRoute from "./auth/ProtectedRoute";
 
@@ -66,6 +67,11 @@ function App() {
         <Route
           path="/administracion/plantillas-whatsapp"
           element={<MessageTemplates />}
+        />
+
+        <Route
+          path="/administracion/configuracion-cobranza"
+          element={<CollectionSettings />}
         />
 
         <Route

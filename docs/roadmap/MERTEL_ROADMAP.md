@@ -1,6 +1,6 @@
 # Roadmap MERTEL posterior a 4.7
 
-Fecha: 05/10/2026. Cerradas: 4.6D, 4.7A, 4.7B, 4.7, 4.8, 4.9, 5.0, 5.1 y 5.1A en sus alcances autorizados. Fase 5.1A añade el administrador de plantillas WhatsApp y conserva la preparación sin envío; no se inicia 5.2 ni una integración externa. Las dependencias son requisitos de diseño/datos, no autorización para implementar fases en paralelo o adelantar operaciones.
+Fecha: 06/10/2026. Cerradas: 4.6D, 4.7A, 4.7B, 4.7, 4.8, 4.9, 5.0, 5.1, 5.1A y 5.2 en sus alcances autorizados. Fase 5.2 implementa administración limitada de la configuración actual; Fase 5.3 y toda integración externa siguen futuras. La orden específica de Fase 5.2 sustituye la numeración anterior del motor operativo.
 
 Fuente: [reglas oficiales](../business/MERTEL_COBRANZA_RULES.md). Decisiones D/T: [registro pendiente](../business/MERTEL_DECISIONS_PENDING.md). Todas las fases exigen diff acotado, aislamiento, pruebas pertinentes y preservación de invariantes financieros; un cierre no implica validación de producción si no se ejecutó.
 
@@ -44,18 +44,16 @@ La orden del 05/10/2026 sustituye el alcance anterior de esta numeración. Imple
 - **Decisiones necesarias:** formato, columnas, identidad, ámbito de snapshot, tratamiento de omisión/reaparición y mecanismos contables autorizados.
 - **Cierre:** validación, preview, idempotencia y errores de lote probados; ninguna factura se declara pagada por mera ausencia. Aplicación solo con conciliación autorizada; allocations existentes preservadas. Sin formato/regla aprobada no habilitar importación irreversible.
 
-## 5.2 — Motor operativo de cobranza
+## 5.2 — Configuración administrativa de cobranza
 
-- **Objetivo:** coordinar reevaluación, antigüedad, promesas y elegibilidad operativa; preparar decisiones de envío sin ejecutar proveedor.
-- **Dependencias:** 4.8–5.1, calendario y D04–D07/D16/D17/D27–D32; propuesta de idempotencia y estados.
-- **Riesgos:** confundir clasificación con elegibilidad de envío/descuento, duplicaciones, pausa errónea por gestión manual y fechas mal interpretadas.
-- **Decisiones necesarias:** frecuencia, unidad de cuotas, horarios/calendario, reingreso a etapa e incumplimiento.
-- **Cierre:** política determinista y auditable, pausa por promesa y límites aprobados en pruebas; no hay envío real ni política inferida para decisiones abiertas.
+Implementada y validada; ver [informe Fase 5.2](../architecture/MERTEL_PHASE_5_2.md). Reutiliza `settings.collection_rules` y su consumidor actual. Administra el estado activo de las cuatro etapas configuradas por empresa, mientras muestra como solo lectura los valores comerciales confirmados y mantiene fija la jerarquía. Usa `settings.manage`, `companyScope` y auditoría transaccional. Las semillas legacy de recordatorios, límites y contacto se excluyen porque no las consume el sistema. Sin empresa real no se crea configuración.
+
+La previsión previa de esta numeración para motor operativo queda pendiente fuera de esta entrega: coordinación de promesas, frecuencia, idempotencia y criterios de reingreso siguen sin implementación ni decisión.
 
 ## 5.3 — Mensajería/WhatsApp
 
 - **Objetivo:** envío manual y automático autorizado con proveedor aprobado, plantillas oficiales y estados trazables.
-- **Dependencias:** 5.2, D16–D21/D30/D31/D35 y cuenta/proveedor autorizado. Elegibilidad operativa y configuración previa aprobadas aunque su editor definitivo sea 5.6.
+- **Dependencias:** motor operativo pendiente, D16–D21/D30/D31/D35 y cuenta/proveedor autorizado. La configuración existente de 5.2 no supone habilitación ni autorización de envío.
 - **Riesgos:** mensajes duplicados, error de destinatario, reintentos fuera de cuota, filtración de secretos y falta de consentimiento/evidencia.
 - **Decisiones necesarias:** proveedor, plantillas, estados, retries, horarios, reglas diaria/semanal y alcance de límites.
 - **Cierre:** pruebas de integración con entorno apropiado, deduplicación y errores inciertos controlados; secretos fuera de Git y cuotas respetadas. Envíos externos requieren autorización específica; no inventar WhatsApp usando el esquema histórico.
@@ -76,13 +74,13 @@ La orden del 05/10/2026 sustituye el alcance anterior de esta numeración. Imple
 - **Decisiones necesarias:** fuente, período, fecha corte, deduplicación y atribución de cada indicador.
 - **Cierre:** métricas conciliables y reproducibles, pruebas de correcciones/reversiones y filtros autorizados; no reportes definitivos con definiciones abiertas.
 
-## 5.6 — Configuración administrativa
+## 5.6 — Configuración operativa avanzada
 
-- **Objetivo:** editor centralizado para reglas, prioridades, días, Pronto Pago/descuentos, horarios, límites y plantillas.
-- **Dependencias:** contratos centrales definidos desde 4.8 y políticas aprobadas de 5.2/5.3; D01/D03/D04/D05/D17/D18/D26/D35.
+- **Objetivo:** resolver necesidades futuras de configuración que dependan de decisiones comerciales pendientes y no estén soportadas por el editor acotado de Fase 5.2.
+- **Dependencias:** motor operativo aún pendiente, mensajería 5.3 y decisiones D01/D03/D04/D05/D17/D18/D26/D35.
 - **Riesgos:** reglas inválidas activas, cambio retroactivo sin versión/evidencia, edición de secrets o eliminación de controles.
 - **Decisiones necesarias:** quién aprueba/edita y vigencia de cambios, validación de configuración y revisión de descuentos.
-- **Cierre:** permisos backend, validación semántica, auditoría y compatibilidad; configuración central consumida sin constantes comerciales dispersas. Sin tenants comerciales ni nuevos sistemas de roles.
+- **Cierre:** ampliar solo después de aprobar reglas y garantizar consumidores reales, validación, auditoría y compatibilidad. Sin tenants comerciales ni nuevos sistemas de roles.
 
 ## 5.7 — Auditoría/endurecimiento
 
