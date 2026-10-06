@@ -13,6 +13,14 @@ it("uses only the protected template/preview/prepare routes and sends no content
     expect(api.post).toHaveBeenLastCalledWith(`/collection/customers/1/messages/${suffix}`, { template_id: "7", reference_date: "2026-10-05" }, expect.any(Object));
   }
 });
+it("passes selected company scope in query parameters for global-admin message flows", async () => {
+  api.get.mockResolvedValue({ data: { success: true, data: [] } });
+  await getCollectionMessageTemplates("1", "2026-10-05", { companyId: "42" });
+  expect(api.get).toHaveBeenCalledWith("/collection/customers/1/message-templates", expect.objectContaining({ params: { reference_date: "2026-10-05", company_id: "42" } }));
+  api.post.mockResolvedValue({ data: { success: true, data: data(false) } });
+  await previewCollectionMessage("1", "2026-10-05", "7", { companyId: "42" });
+  expect(api.post).toHaveBeenCalledWith("/collection/customers/1/messages/preview", { template_id: "7", reference_date: "2026-10-05" }, { params: { company_id: "42" }, signal: undefined });
+});
 it.each([400, 403, 404, 409, 500])("returns a safe API error without exposing server text: %s", async status => {
   api.get.mockRejectedValue({ response: { status, data: { message: "private SQL fixture" } } });
   await expect(getCollectionMessageTemplates("1", "2026-10-05")).rejects.toMatchObject({ status });

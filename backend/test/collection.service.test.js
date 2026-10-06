@@ -61,3 +61,14 @@ test("leaves the source invoice balance unchanged", () => {
   buildCollectionResult({ company, referenceDate, customers, rules, invoices: [source] });
   assert.deepEqual(source, before);
 });
+
+test("attaches only the latest pending promise for its customer to the pipeline card", () => {
+  const result = buildCollectionResult({ company, referenceDate, customers, rules, invoices: [invoice(1, "2026-09-30", "25.00")], pendingPromises: [
+    { id: 10, customer_id: 1, status: "fulfilled", promised_date: "2026-10-09", promised_amount: "99.00" },
+    { id: 9, customer_id: 1, status: "pending", promised_date: "2026-10-08", promised_amount: "10.00" },
+    { id: 8, customer_id: 1, status: "pending", promised_date: "2026-10-07", promised_amount: "5.00" },
+  ] });
+  assert.equal(result.customers.length, 1);
+  assert.equal(result.customers[0].current_promise.id, 9);
+  assert.equal(result.customers[0].current_promise.status, "pending");
+});

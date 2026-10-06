@@ -8,10 +8,11 @@ export function operationErrorMessage(error) {
   if (status === 409) return "El cliente no está disponible para registrar operaciones.";
   return "No fue posible procesar la operación. Intenta nuevamente.";
 }
-async function request(kind, customerId, { body, invoiceId, signal } = {}) {
+async function request(kind, customerId, { body, invoiceId, signal, companyId } = {}) {
   try {
     const path = `/collection/customers/${encodeURIComponent(customerId)}/${kind}`;
-    const response = body ? await api.post(path, body) : await api.get(path, { params: invoiceId ? { invoice_id: invoiceId } : {}, signal });
+    const params = { ...(invoiceId ? { invoice_id: invoiceId } : {}), ...(companyId ? { company_id: companyId } : {}) };
+    const response = body ? (companyId ? await api.post(path, body, { params }) : await api.post(path, body)) : await api.get(path, { params, signal });
     if (response.data?.success !== true || (body ? !response.data.data?.id : !Array.isArray(response.data.data))) throw new Error("operation_contract");
     return response.data.data;
   } catch (error) {
@@ -21,5 +22,5 @@ async function request(kind, customerId, { body, invoiceId, signal } = {}) {
 }
 export const getCollectionActions = (customerId, options) => request("actions", customerId, options);
 export const getPaymentPromises = (customerId, options) => request("promises", customerId, options);
-export const createCollectionAction = (customerId, body) => request("actions", customerId, { body });
-export const createPaymentPromise = (customerId, body) => request("promises", customerId, { body });
+export const createCollectionAction = (customerId, body, options) => request("actions", customerId, { ...options, body });
+export const createPaymentPromise = (customerId, body, options) => request("promises", customerId, { ...options, body });

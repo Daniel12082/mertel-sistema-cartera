@@ -304,6 +304,9 @@ describe("multi-company HTTP / MySQL isolation", { skip: !(process.env.DB_HOST &
       { key: "overdue", active: true, condition: "overdue" },
     ];
     await db.query("INSERT INTO settings (company_id,setting_key,setting_value,value_type) VALUES (?, 'collection_rules', ?, 'json')", [a.companyId, JSON.stringify(rules)]);
+    await db.query("INSERT INTO settings (company_id,setting_key,setting_value,value_type) VALUES (?, 'collection_rules', ?, 'json')", [b.companyId, JSON.stringify(rules)]);
+    const [promiseA] = await db.query("INSERT INTO payment_promises (company_id,customer_id,invoice_id,created_by,promised_date,promised_amount,status) VALUES (?,?,?,?,'2026-10-08',20,'pending')", [a.companyId, a.customer, a.invoice, a.id]);
+    const [promiseB] = await db.query("INSERT INTO payment_promises (company_id,customer_id,invoice_id,created_by,promised_date,promised_amount,status) VALUES (?,?,?,?,'2026-10-09',30,'pending')", [b.companyId, b.customer, b.invoice, b.id]);
     const [noDue] = await db.query("INSERT INTO invoices (company_id,customer_id,invoice_number,document_value,base_value,iva_value,balance,due_date) VALUES (?,?,'no-due',25,25,0,25,NULL)", [a.companyId, a.customer]);
     const [zero] = await db.query("INSERT INTO invoices (company_id,customer_id,invoice_number,document_value,base_value,iva_value,balance,due_date) VALUES (?,?,'zero',0,0,0,0,'2026-09-30')", [a.companyId, a.customer]);
     const untouched = await financialState();
@@ -323,6 +326,7 @@ describe("multi-company HTTP / MySQL isolation", { skip: !(process.env.DB_HOST &
     assert.equal(response.summary.eligible_balance, "100.00");
     assert.equal(response.customers.length, 1);
     assert.equal(response.customers[0].stage, "two_days_before");
+    assert.equal(String(response.customers[0].current_promise.id), String(promiseA.insertId));
     assert.equal(response.customers[0].total_balance, "125.00");
     assert.equal(response.customers[0].eligible_balance, "100.00");
     assert.equal(response.customers[0].invoices.length, 2);
@@ -330,6 +334,8 @@ describe("multi-company HTTP / MySQL isolation", { skip: !(process.env.DB_HOST &
     assert.equal(response.customers[0].invoices.some(item => item.invoice.invoice_id === zero.insertId), false);
     assert.deepEqual(await expect("GET", `/collection?reference_date=2026-10-02&company_id=${b.companyId}`, a, 200), response);
     assert.deepEqual(await expect("GET", `/collection?reference_date=2026-10-02&company_id=${a.companyId}`, global, 200), response);
+    const companyBResponse = await expect("GET", `/collection?reference_date=2026-10-02`, b, 200);
+    assert.equal(String(companyBResponse.customers[0].current_promise.id), String(promiseB.insertId));
     assert.equal((await request("GET", "/collection", { token: a.token })).status, 400);
     assert.equal((await request("GET", "/collection?reference_date=2026-02-30", { token: a.token })).status, 400);
     assert.deepEqual(await financialState(), untouched);

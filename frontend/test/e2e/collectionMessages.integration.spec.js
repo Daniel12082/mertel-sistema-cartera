@@ -12,7 +12,7 @@ const argon2 = requireBackend("argon2");
 let environment = {};
 try { environment = dotenv.parse(await readFile(new URL("../../../backend/.env", import.meta.url))); } catch { /* CI without database skips integration */ }
 
-test.describe("5.1 browser / real API / isolated MySQL", () => {
+test.describe("5.4 browser / real API / isolated MySQL", () => {
   test.skip(!environment.DB_HOST || !environment.DB_USER, "Local MySQL configuration is required for isolated integration.");
   const schema = `mertel_browser_messages_test_${randomUUID().replaceAll("-", "")}`;
   const fixtureEmail = "phase51@example.test";
@@ -30,6 +30,7 @@ test.describe("5.1 browser / real API / isolated MySQL", () => {
     await db.query("INSERT INTO users(id,company_id,first_name,email,password_hash) VALUES (1,1,'Cobrador fixture',?,?)", [fixtureEmail, hash]); await db.query("INSERT INTO user_roles VALUES (1,1)");
     await db.query("INSERT INTO customers(id,company_id,nit,name,phone) VALUES (1,1,'BROWSER-FIXTURE','Cliente de prueba aislada','300 000 0000')");
     await db.query("INSERT INTO invoices(company_id,customer_id,invoice_number,issue_date,due_date,document_value,base_value,balance) VALUES (1,1,'OLD-BROWSER','2026-08-01','2026-09-01',100,100,100),(1,1,'NEW-BROWSER','2026-09-01','2026-09-25',50,50,50)");
+    await db.query("INSERT INTO payment_promises(company_id,customer_id,invoice_id,created_by,promised_date,promised_amount,status,notes) VALUES (1,1,1,1,'2026-10-08',25,'pending','Fixture aislado')");
     const rules = await readFile(new URL("../../../backend/config/mertel-collection-rules.json", import.meta.url), "utf8");
     await db.query("INSERT INTO settings(company_id,setting_key,setting_value,value_type) VALUES (1,'collection_rules',?,'json')", [rules]);
     await db.query("INSERT INTO message_templates(id,company_id,name,content) VALUES (1,1,'Plantilla de prueba aislada','Solo fixture {{cliente}} | {{factura}} | {{saldo}} | {{fecha_vencimiento}} | {{dias_mora}}')");
@@ -49,7 +50,7 @@ test.describe("5.1 browser / real API / isolated MySQL", () => {
   async function checksums() {
     const [rows] = await db.query("CHECKSUM TABLE customers,invoices,payments,payment_allocations,collection_actions,payment_promises,messages"); return rows;
   }
-  test("login, operations, authoritative preview, preparation, reload and logout with real HTTP/database", async ({ page }) => {
+  test("operational center, promise indicator, operations, authoritative preview, preparation and logout", async ({ page }) => {
     const requests = []; const errors = [];
     page.on("pageerror", error => errors.push(error.message));
     // Transparent same-origin test proxy: response body and cookies come from the actual Express API.
@@ -65,6 +66,10 @@ test.describe("5.1 browser / real API / isolated MySQL", () => {
     const cookies = await page.context().cookies(); const refresh = cookies.find(cookie => cookie.name === "mertel_refresh");
     expect(Boolean(refresh?.httpOnly)).toBe(true); expect(refresh?.sameSite).toBe("Lax");
     await page.goto("/cobranza"); await page.getByLabel("Fecha de referencia").fill("2026-10-05");
+    const card = page.getByRole("article", { name: "Cliente Cliente de prueba aislada" });
+    await expect(card).toContainText("Promesa pendiente"); await expect(card).toContainText("34 días de mora");
+    await page.getByLabel("Buscar cliente / NIT / factura").fill("OLD-BROWSER"); await expect(card).toBeVisible();
+    await page.getByLabel("Buscar cliente / NIT / factura").fill("");
     const trigger = page.getByRole("button", { name: "Ver detalle de Cliente de prueba aislada" }); await trigger.click(); const dialog = page.getByRole("dialog");
     await dialog.getByRole("button", { name: "Registrar gestión", exact: true }).click(); await dialog.getByLabel("Tipo de gestión (texto libre)").fill("Nota de prueba aislada");
     await dialog.getByLabel("Observación de gestión").fill("Observación aislada del navegador"); await dialog.getByRole("button", { name: "Guardar registro" }).click();

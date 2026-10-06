@@ -1,6 +1,6 @@
 # Plan maestro MERTEL
 
-Actualizado: 06/10/2026. Producto exclusivo: MERTEL Importaciones — Sistema de Cobranza. La orden vigente cierra la Fase 5.2 de configuración administrativa acotada. No autoriza Fase 5.3 ni integración externa.
+Actualizado: 06/10/2026. Producto exclusivo: MERTEL Importaciones — Sistema de Cobranza. Fase 5.4 consolida el centro operativo del cobrador sobre capacidades existentes. El envío externo y la siguiente fase permanecen futuros.
 
 ## Dónde estamos
 
@@ -31,11 +31,13 @@ Documentos de fases anteriores y VALIDACION-4.7.md son evidencia histórica, no 
 | 5.1 | Panel operativo, plantillas, vista previa y preparación sin envío | IMPLEMENTADA Y VALIDADA; empresas/plantillas reales aún no configuradas |
 | 5.1A | Administración de plantillas WhatsApp existente, permisos y previsualización de ejemplos | IMPLEMENTADA Y VALIDADA; sin datos de empresa/plantillas en la base configurada |
 | 5.2 | Configuración administrativa de cobranza | IMPLEMENTADA Y VALIDADA; no hay reglas reales por empresa en la DB configurada |
-| 5.3 | Mensajería/WhatsApp | FUTURA |
-| 5.4 | Pagos y reevaluación | FUTURA |
-| 5.5 | Reportes y métricas | FUTURA |
-| 5.6 | Configuración operativa avanzada pendiente de decisiones | FUTURA |
-| 5.7 | Auditoría/endurecimiento | FUTURA |
+| 5.3 | Infraestructura de análisis de importación | CERRADA; aplicación real de cartera pendiente de certificar archivo |
+| 5.4 | Centro operativo del cobrador | IMPLEMENTADA Y VALIDADA en alcance técnico; datos reales pendientes |
+| 5.5 | Mensajería/WhatsApp externa | FUTURA; preparación local disponible sin envío |
+| 5.6 | Pagos y reevaluación | FUTURA |
+| 5.7 | Reportes y métricas | FUTURA |
+| 5.8 | Configuración operativa avanzada pendiente de decisiones | FUTURA |
+| 5.9 | Auditoría/endurecimiento | FUTURA |
 | 6.0 | Producción MERTEL | FUTURA |
 
 ## Alcance autorizado de 4.8
@@ -85,8 +87,8 @@ Prioridad de trabajo técnico, no prioridad comercial de clientes:
 
 - 4.8: selección/jerarquía/orden/labels corregidos; evaluador desde emisión y cálculo puro implementados. Quedan decisiones de calendario/límites, datos de productos y redondeo/registro financiero antes de activar beneficio real.
 - 4.9–5.2: historial, registro manual y administración acotada de reglas implementados; pausa por promesa, contrato seguro de importación y estado operativo continuo siguen pendientes.
-- 5.3–5.6: falta proveedor, cuotas aprobadas y fuentes de métricas; recordatorios, límites y horarios no se administran porque hoy no tienen consumidor estable.
-- 5.7: revisar precisión monetaria del helper de descuento, conversiones BIGINT, auditoría integral, escala de lectura y efectos de referencias huérfanas.
+- 5.5–5.8: falta proveedor, cuotas aprobadas y fuentes de métricas; recordatorios, límites y horarios no se administran porque hoy no tienen consumidor estable.
+- 5.9: revisar precisión monetaria del helper de descuento, conversiones BIGINT, auditoría integral, escala de lectura y efectos de referencias huérfanas.
 - 6.0: falta contexto real autorizado y evidencia de configuración/datos de producción; no confundir push con deploy.
 
 El registro previo de entrega 4.9 está cerrado y validado en su alcance manual; su autorización de publicación no amplía fases posteriores.
@@ -99,13 +101,23 @@ Implementada sobre `settings.collection_rules`, sin tabla ni migración nueva. A
 
 Se excluyeron `reminder_days_before_due`, `reminder_days_after_due`, `daily_message_limit` y `contact_line`: solo aparecen como seeds legacy `company_id=NULL` en 001 y ningún proceso actual los consume. No hay configuración de horarios consumida por el motor. No se crea fallback ni se inserta configuración en la DB real, que continúa sin empresas ni reglas empresariales. Tampoco se toca la migración protegida. El informe detallado y validación pertenecen a [Fase 5.2](architecture/MERTEL_PHASE_5_2.md).
 
-La numeración específica de esta orden reemplaza la fase 5.2 de motor operativo descrita en versiones anteriores del roadmap. No se implementó Fase 5.3, envío de mensajes, ni ningún flujo financiero.
+La numeración específica de esta orden reemplaza la fase 5.2 de motor operativo descrita en versiones anteriores del roadmap. Fase 5.3 corresponde a análisis preliminar de importación. El detalle del centro operativo 5.4 está abajo.
 
 ## Fase 5.3 — Infraestructura de importación preliminar — 06/10/2026
 
 La orden específica de Fase 5.3 establece que la siguiente fase es infraestructura de análisis de cartera: se agregan permiso `portfolio.import`, análisis estructural restringido a CSV, preview, lotes/errores/auditoría y aislamiento por empresa. Solo se conserva metadata y hash; los valores de error no se persisten. No existe endpoint de aplicación, mapping, matching o reconciliación. El detalle se registra en [Fase 5.3](architecture/MERTEL_PHASE_5_3.md).
 
-**Esta fase NO habilita todavía la importación operativa de cartera MERTEL porque el formato fuente real aún no ha sido certificado.** Permanecen pendientes la identificación de clientes/facturas, columnas y productos reales, tratamiento de facturas ausentes, reconciliación de saldos, pagos posteriores y toda actualización financiera. Esta numeración específica desplaza el trabajo de mensajería previamente listado como 5.3 a una fase posterior; Fase 5.4 no se inicia como parte del cierre presente.
+**Esta fase NO habilita todavía la importación operativa de cartera MERTEL porque el formato fuente real aún no ha sido certificado.** Permanecen pendientes la identificación de clientes/facturas, columnas y productos reales, tratamiento de facturas ausentes, reconciliación de saldos, pagos posteriores y toda actualización financiera.
+
+## Fase 5.4 — Centro operativo del cobrador — 06/10/2026
+
+Se consolidó la pantalla de cobranza como espacio diario del cobrador. Conserva el pipeline y su orden/calculadora backend, una tarjeta por cliente, búsqueda local sobre el conjunto completo que entrega el endpoint (sin paginación), filtros por etapa, detalle con facturas, gestiones, promesas e integración de vista previa/preparación de mensajes sin envío. Las tarjetas ahora muestran los días relativos de vencimiento que devuelve el backend y la promesa pendiente más reciente.
+
+La consulta de promesas pendientes es agrupada, de solo lectura y filtrada por `companyScope`; no agrega consultas N+1 ni estados comerciales. El administrador global debe seleccionar una empresa activa antes de consultar y ese contexto se propaga a las operaciones/mensajes; el backend continúa validando alcance y ownership. No se alteraron permisos ni el núcleo financiero.
+
+Se reutilizan `/api/collection`, `/api/collection/customers/:customerId/actions`, `/promises`, `/message-templates`, `/messages/preview` y `/messages/prepare`, además de `/api/admin/companies` para selección de contexto global. No hay endpoint nuevo ni migración. Informe: [Fase 5.4](architecture/MERTEL_PHASE_5_4.md). La importación real sigue pendiente de recibir y certificar el archivo fuente MERTEL.
+
+No se avanzó a Fase 5.5, no se enviaron mensajes, no se crearon datos ficticios y no se cambió saldo, factura, pago ni allocation.
 
 ## Histórico: verificación documental previa del 05/10/2026
 

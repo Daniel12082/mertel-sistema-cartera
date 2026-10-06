@@ -28,14 +28,26 @@ export function collectionError(error) {
   return "No fue posible consultar cobranza. Intenta nuevamente.";
 }
 
-export async function getCollection(referenceDate, { signal } = {}) {
+export async function getCollection(referenceDate, { signal, companyId } = {}) {
   try {
-    const { data } = await api.get("/collection", { params: { reference_date: referenceDate }, signal });
+    const { data } = await api.get("/collection", { params: { reference_date: referenceDate, ...(companyId ? { company_id: companyId } : {}) }, signal });
     return readCollectionResponse(data);
   } catch (error) {
     if (signal?.aborted) throw error;
     const safe = new Error(collectionError(error));
     safe.status = error?.response?.status;
     throw safe;
+  }
+}
+
+export async function getCollectionAdminCompanies({ signal } = {}) {
+  try {
+    const { data } = await api.get("/admin/companies", { signal });
+    const rows = data?.data;
+    if (data?.success !== true || !Array.isArray(rows)) throw new Error("companies_contract");
+    return rows.filter(company => company?.status === "active");
+  } catch (error) {
+    if (signal?.aborted) throw error;
+    throw new Error(error?.response?.status === 403 ? "No tienes permiso para consultar las empresas disponibles." : "No fue posible cargar las empresas disponibles.", { cause: error });
   }
 }

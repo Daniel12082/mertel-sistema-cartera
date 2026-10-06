@@ -28,6 +28,10 @@
 .cobranza-draft-preview { margin-top: 12px; padding: 12px; border: 1px solid #cbd5e1; border-radius: 7px; background: #fff; }
 .cobranza-client-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 16px; padding: 18px; }
 .cobranza-client-card { min-width: 0; padding: 18px; border: 1px solid #e2e8f0; border-radius: 10px; background: #fff; display: flex; flex-direction: column; gap: 12px; overflow-wrap: anywhere; }
+.cobranza-promise-indicator { margin: 0; padding: 9px 11px; border-left: 3px solid #b3262d; border-radius: 4px; background: #fff7ed; color: #7c2d12; font-size: 12px; font-weight: 600; }
+.cobranza-header-controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.cobranza-header-controls .cartera-reference select { min-height: 36px; padding: 6px 9px; border: 1px solid #cbd5e1; border-radius: 7px; background: #fff; color: #334155; }
+@media (max-width: 560px) { .cobranza-header-controls { width: 100%; align-items: stretch; flex-direction: column; } .cobranza-header-controls .cartera-reference { box-sizing: border-box; flex-wrap: wrap; padding: 10px; } }
 .cobranza-card-heading { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 10px; }
 .cobranza-card-heading h3 { margin: 0 0 6px; color: #10233f; font-size: 16px; }
 .cobranza-card-heading span, .cobranza-card-balance > span { font-size: 12px; color: #64748b; }

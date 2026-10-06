@@ -101,7 +101,10 @@ describe("4.9 manual collection HTTP / MySQL", { skip: !(process.env.DB_HOST && 
     assert.equal(result.body.data.promised_date, "2026-10-15"); assert.equal(result.body.data.status, "pending");
     assert.equal(result.body.data.user_id, a.id); assert.deepEqual(await state(), before);
     const [rows] = await db.query("SELECT fulfilled_at FROM payment_promises WHERE id=?", [result.body.data.id]); assert.equal(rows[0].fulfilled_at, null);
-    assert.deepEqual(await request("GET", "?reference_date=2026-10-05", a), pipeline);
+    const updatedPipeline = await request("GET", "?reference_date=2026-10-05", a);
+    assert.equal(String(updatedPipeline.body.data.customers[0].current_promise.id), String(result.body.data.id));
+    assert.equal(updatedPipeline.body.data.customers[0].current_promise.status, "pending");
+    assert.equal(pipeline.body.data.customers[0].current_promise, null);
   });
   test("same-company invoices from another customer and malformed historical joins are isolated", async () => {
     const [other] = await db.query("INSERT INTO customers(company_id,nit,name) VALUES (?,'other','Other fixture')", [a.companyId]);

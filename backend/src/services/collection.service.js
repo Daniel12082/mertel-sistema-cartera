@@ -1,5 +1,5 @@
 import pool from "../config/database.js";
-import { getActiveCollectionCustomers, getCollectionOpenInvoices } from "../models/collection.model.js";
+import { getActiveCollectionCustomers, getCollectionOpenInvoices, getPendingCollectionPromises } from "../models/collection.model.js";
 import { loadCompanyCollectionRules, evaluateCompanyCollection } from "./companyCollection.service.js";
 import { compareCollectionCustomers, evaluateCollectionInvoices } from "./collectionEngine.service.js";
 import { collectionStageCatalog, resolveCollectionPolicy } from "./collectionPolicy.js";
@@ -37,7 +37,7 @@ function invoiceView(classification, catalog, referenceDate) {
 }
 
 /** Pure response builder; selection and tie-breaking come from the existing collection engine/adapter. */
-export function buildCollectionResult({ company, referenceDate, customers, invoices, rules, filters = {} }) {
+export function buildCollectionResult({ company, referenceDate, customers, invoices, rules, pendingPromises = [], filters = {} }) {
   evaluateCollectionInvoices({ referenceDate, invoices: [], rules });
   const policy = resolveCollectionPolicy(rules);
   const catalog = collectionStageCatalog(rules);
@@ -47,6 +47,12 @@ export function buildCollectionResult({ company, referenceDate, customers, invoi
   const pendingInvoices = invoices.filter(invoice => amountCents(invoice.balance) > 0n);
   const cases = evaluateCompanyCollection({ company, referenceDate, customers, invoices: pendingInvoices, rules });
   const allInvoicesByCustomer = new Map();
+  const latestPromiseByCustomer = new Map();
+  for (const promise of pendingPromises) {
+    if (promise.status !== "pending") continue;
+    const key = String(promise.customer_id);
+    if (!latestPromiseByCustomer.has(key)) latestPromiseByCustomer.set(key, promise);
+  }
   for (const invoice of pendingInvoices) {
     const key = String(invoice.customer_id);
     if (!allInvoicesByCustomer.has(key)) allInvoicesByCustomer.set(key, []);
@@ -69,7 +75,7 @@ export function buildCollectionResult({ company, referenceDate, customers, invoi
     const nonOverdue = classified.filter(item => !item.eligible && item.invoice.due_date && dateDay(item.invoice.due_date) > dateDay(referenceDate) && item.invoice.deleted_at == null && item.invoice.active !== false);
     nonOverdueInvoices.push(...nonOverdue.map(item => ({ ...invoiceView(item, catalog, referenceDate), customer: result.customer, operational_group: "non_overdue_pending" })));
     if (!eligible.length) {
-      if (nonOverdue.length) pendingOnlyCustomers.push({ customer: result.customer, stage: "no_eligible", stage_label: "Facturas no vencidas", priority: null,
+      if (nonOverdue.length) pendingOnlyCustomers.push({ customer: result.customer, current_promise: latestPromiseByCustomer.get(String(result.customerId)) ?? null, stage: "no_eligible", stage_label: "Facturas no vencidas", priority: null,
         reason: "Saldo pendiente sin una etapa activa de cobranza.", total_balance: money(totalCustomerBalance), eligible_balance: "0.00", main_invoice: null,
         invoices: classified.map(item => invoiceView(item, catalog, referenceDate)) });
       continue;
@@ -87,6 +93,7 @@ export function buildCollectionResult({ company, referenceDate, customers, invoi
 
     eligibleCustomers.push({
       customer: result.customer,
+      current_promise: latestPromiseByCustomer.get(String(result.customerId)) ?? null,
       stage: result.stage,
       stage_label: catalog.find(stage => stage.key === result.stage)?.label ?? result.stage,
       priority: result.priority,
@@ -143,7 +150,8 @@ export async function readCompanyCollection({ referenceDate, scope, filters = {}
   const rules = await loadCompanyCollectionRules(scope.companyId, connection);
   const customers = await getActiveCollectionCustomers(scope, connection);
   const invoices = await getCollectionOpenInvoices(scope, connection);
-  return buildCollectionResult({ company: { id: scope.companyId }, referenceDate, customers, invoices, rules, filters });
+  const pendingPromises = await getPendingCollectionPromises(scope, connection);
+  return buildCollectionResult({ company: { id: scope.companyId }, referenceDate, customers, invoices, rules, pendingPromises, filters });
 }
 
 export async function getCompanyCollection({ referenceDate, scope, filters = {} }) {

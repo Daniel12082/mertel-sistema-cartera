@@ -27,3 +27,17 @@ export async function getCollectionOpenInvoices(scope, db = pool) {
   `, company.values);
   return rows;
 }
+
+export async function getPendingCollectionPromises(scope, db = pool) {
+  const company = companyFilter(scope, "p.company_id", "c.company_id");
+  const [rows] = await db.query(`
+    SELECT p.id, p.company_id, p.customer_id, p.invoice_id, p.promised_date,
+      p.promised_amount, p.status, p.created_at
+    FROM payment_promises p
+    INNER JOIN customers c ON c.id = p.customer_id
+    WHERE p.status = 'pending' AND c.deleted_at IS NULL AND c.status = 'active'
+      ${company.sql}
+    ORDER BY p.created_at DESC, p.id DESC
+  `, company.values);
+  return rows;
+}

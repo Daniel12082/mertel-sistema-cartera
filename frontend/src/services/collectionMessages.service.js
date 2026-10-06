@@ -8,12 +8,13 @@ function messageError(error) {
   if (status === 400) return "Revisa la plantilla y la fecha de referencia.";
   return "No fue posible consultar o preparar el mensaje. Intenta nuevamente.";
 }
-async function request(customerId, referenceDate, { templateId, prepare = false, signal } = {}) {
+async function request(customerId, referenceDate, { templateId, prepare = false, signal, companyId } = {}) {
   try {
     const root = `/collection/customers/${encodeURIComponent(customerId)}`;
-    const response = templateId ? await api.post(`${root}/messages/${prepare ? "prepare" : "preview"}`,
-      { template_id: templateId, reference_date: referenceDate }, { signal }) :
-      await api.get(`${root}/message-templates`, { params: { reference_date: referenceDate }, signal });
+    const response = templateId ? (companyId ? await api.post(`${root}/messages/${prepare ? "prepare" : "preview"}`,
+      { template_id: templateId, reference_date: referenceDate }, { params: { company_id: companyId }, signal }) : await api.post(`${root}/messages/${prepare ? "prepare" : "preview"}`,
+      { template_id: templateId, reference_date: referenceDate }, { signal })) :
+      await api.get(`${root}/message-templates`, { params: { reference_date: referenceDate, ...(companyId ? { company_id: companyId } : {}) }, signal });
     const data = response.data?.data;
     if (response.data?.success !== true || (templateId ? !data?.customer || !data?.template || typeof data.content !== "string" ||
         String(data.customer.id) !== String(customerId) || String(data.template.id) !== String(templateId) ||
