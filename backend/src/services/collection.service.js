@@ -14,8 +14,12 @@ function amountCents(value) {
 function money(cents) {
   return `${cents / 100n}.${String(cents % 100n).padStart(2, "0")}`;
 }
+function calendarDifference(from, to) {
+  if (!from || !to) return null;
+  try { return dateDay(to) - dateDay(from); } catch { return null; }
+}
 
-function invoiceView(classification, catalog) {
+function invoiceView(classification, catalog, referenceDate) {
   return {
     invoice: classification.invoice,
     stage: classification.stage,
@@ -27,6 +31,8 @@ function invoiceView(classification, catalog) {
     prompt_payment: classification.promptPayment,
     conditional_discount: classification.conditionalDiscount,
     benefits: classification.benefits,
+    days_since_issue: calendarDifference(classification.invoice.issue_date, referenceDate),
+    days_until_due: calendarDifference(referenceDate, classification.invoice.due_date),
   };
 }
 
@@ -61,11 +67,11 @@ export function buildCollectionResult({ company, referenceDate, customers, invoi
     const customerInvoices = allInvoicesByCustomer.get(String(result.customerId)) || [];
     const totalCustomerBalance = customerInvoices.reduce((sum, invoice) => sum + amountCents(invoice.balance), 0n);
     const nonOverdue = classified.filter(item => !item.eligible && item.invoice.due_date && dateDay(item.invoice.due_date) > dateDay(referenceDate) && item.invoice.deleted_at == null && item.invoice.active !== false);
-    nonOverdueInvoices.push(...nonOverdue.map(item => ({ ...invoiceView(item, catalog), customer: result.customer, operational_group: "non_overdue_pending" })));
+    nonOverdueInvoices.push(...nonOverdue.map(item => ({ ...invoiceView(item, catalog, referenceDate), customer: result.customer, operational_group: "non_overdue_pending" })));
     if (!eligible.length) {
       if (nonOverdue.length) pendingOnlyCustomers.push({ customer: result.customer, stage: "no_eligible", stage_label: "Facturas no vencidas", priority: null,
         reason: "Saldo pendiente sin una etapa activa de cobranza.", total_balance: money(totalCustomerBalance), eligible_balance: "0.00", main_invoice: null,
-        invoices: classified.map(item => invoiceView(item, catalog)) });
+        invoices: classified.map(item => invoiceView(item, catalog, referenceDate)) });
       continue;
     }
     const customerEligibleBalance = eligible.reduce((sum, item) => sum + amountCents(item.invoice.balance), 0n);
@@ -87,8 +93,8 @@ export function buildCollectionResult({ company, referenceDate, customers, invoi
       reason: result.reason,
       total_balance: money(totalCustomerBalance),
       eligible_balance: money(customerEligibleBalance),
-      main_invoice: primaryClassification ? invoiceView(primaryClassification, catalog) : null,
-      invoices: classified.map(item => invoiceView(item, catalog)),
+      main_invoice: primaryClassification ? invoiceView(primaryClassification, catalog, referenceDate) : null,
+      invoices: classified.map(item => invoiceView(item, catalog, referenceDate)),
     });
   }
 
@@ -132,6 +138,14 @@ export function buildCollectionResult({ company, referenceDate, customers, invoi
 }
 
 /** Reads rules and source data in one consistent, non-mutating transaction. */
+export async function readCompanyCollection({ referenceDate, scope, filters = {} }, connection) {
+  if (!validCompanyId(scope?.companyId)) throw Object.assign(new Error("Debe especificarse una empresa para consultar la cobranza"), { status: 400 });
+  const rules = await loadCompanyCollectionRules(scope.companyId, connection);
+  const customers = await getActiveCollectionCustomers(scope, connection);
+  const invoices = await getCollectionOpenInvoices(scope, connection);
+  return buildCollectionResult({ company: { id: scope.companyId }, referenceDate, customers, invoices, rules, filters });
+}
+
 export async function getCompanyCollection({ referenceDate, scope, filters = {} }) {
   if (!scope || !validCompanyId(scope.companyId)) {
     const error = new TypeError("Debe especificarse una empresa para consultar la cobranza");
@@ -141,12 +155,9 @@ export async function getCompanyCollection({ referenceDate, scope, filters = {} 
   const connection = await pool.getConnection();
   try {
     await connection.query("START TRANSACTION READ ONLY");
-    const company = { id: scope.companyId };
-    const rules = await loadCompanyCollectionRules(scope.companyId, connection);
-    const customers = await getActiveCollectionCustomers(scope, connection);
-    const invoices = await getCollectionOpenInvoices(scope, connection);
+    const result = await readCompanyCollection({ referenceDate, scope, filters }, connection);
     await connection.commit();
-    return buildCollectionResult({ company, referenceDate, customers, invoices, rules, filters });
+    return result;
   } catch (error) {
     try { await connection.rollback(); } catch { /* preserve the original failure */ }
     throw error;

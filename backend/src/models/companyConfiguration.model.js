@@ -12,7 +12,7 @@ export async function getCompanySettings(companyId, db = pool) {
     WHERE company_id=? ORDER BY setting_key,id`, [companyId]);
   return rows;
 }
-export async function getCompanyMessageTemplates(companyId, { channel, stage } = {}, db = pool) {
+export async function getCompanyMessageTemplates(companyId, { channel, stage, stringIds = false } = {}, db = pool) {
   requireCompanyId(companyId);
   const clauses = ["company_id=?", "status='active'"];
   const values = [companyId];
@@ -22,7 +22,7 @@ export async function getCompanyMessageTemplates(companyId, { channel, stage } =
       clauses.push(`${column}=?`); values.push(value);
     }
   }
-  const [rows] = await db.query(`SELECT id,company_id,name,channel,stage,subject,content,status
+  const [rows] = await db.query(`SELECT ${stringIds ? "CAST(id AS CHAR) AS id,CAST(company_id AS CHAR) AS company_id" : "id,company_id"},name,channel,stage,subject,content,status
     FROM message_templates WHERE ${clauses.join(" AND ")} ORDER BY id`, values);
   return rows;
 }

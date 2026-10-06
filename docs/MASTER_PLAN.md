@@ -1,6 +1,6 @@
 # Plan maestro MERTEL
 
-Actualizado: 05/10/2026. Producto exclusivo: MERTEL Importaciones — Sistema de Cobranza. **La orden vigente autoriza Fase 5: reglas comerciales confirmadas y representación operativa. No autoriza Fase 6**.
+Actualizado: 05/10/2026. Producto exclusivo: MERTEL Importaciones — Sistema de Cobranza. **La orden vigente autoriza Fase 5.1: panel operativo y preparación de mensajes WhatsApp sin envío. No autoriza Fase 5.2 ni integración externa**.
 
 ## Dónde estamos
 
@@ -10,6 +10,7 @@ Actualizado: 05/10/2026. Producto exclusivo: MERTEL Importaciones — Sistema de
 - Estado actual: **4.9 IMPLEMENTADA Y VALIDADA en su alcance manual**, ver [informe de implementación](architecture/MERTEL_PHASE_4_9.md). Incluye registro/consulta de promesas por autorización expresa; su ciclo de cumplimiento y automatización continúa futuro. No se aprueba un catálogo comercial por usar texto libre.
 - Salvedad de 4.7: consulta autenticada con datos reales de MERTEL no disponible. Inspección local 05/10/2026: cero compañías, settings comerciales legacy NULL y sin collection_rules; no crear datos para aparentar validación real.
 - Archivo protegido: `database/migrations/001_initial_schema.sql` con cambio local previo; nunca editar, revertir ni incluir en commit de estas órdenes. Hash de contenido auditado: `e2f0b2c49c979991914a187dc9531d9c5d2117ce`.
+- Base de 5.1: `75cd3d0a43897d6844ca6c00635ca503752757ba`, reglas comerciales publicadas. Panel, plantillas y preparación: [informe 5.1](architecture/MERTEL_PHASE_5_1.md). La numeración de la orden actual sustituye el antiguo 5.1 de importación; importación y ciclo automático de promesas siguen pendientes, sin activarse.
 
 ## Qué leer antes de continuar
 
@@ -26,8 +27,8 @@ Documentos de fases anteriores y VALIDACION-4.7.md son evidencia histórica, no 
 | 4.8 | Reglas reales de cobranza | CERRADA; activación de Pronto Pago pendiente |
 | 4.9 | Gestiones, promesas manuales, historial y borrador temporal | IMPLEMENTADA Y VALIDADA; contexto real pendiente |
 | 5 | Reglas comerciales confirmadas, beneficios independientes y facturas no vencidas | Implementación y validación documentadas en el informe específico |
-| 5.0 | Ciclo de cumplimiento, cambios y efectos operativos de promesas | FUTURA |
-| 5.1 | Importación/actualización de cartera | FUTURA |
+| 5.0 | Activación de reglas comerciales reales (orden vigente) | CERRADA en el alcance de Fase 5; ciclo automático de promesas pendiente |
+| 5.1 | Panel operativo, plantillas, vista previa y preparación sin envío | IMPLEMENTADA Y VALIDADA; empresas/plantillas reales aún no configuradas |
 | 5.2 | Motor operativo de cobranza | FUTURA |
 | 5.3 | Mensajería/WhatsApp | FUTURA |
 | 5.4 | Pagos y reevaluación | FUTURA |

@@ -66,10 +66,8 @@ for (const [name, width, height] of [["desktop", 1440, 900], ["mobile", 390, 844
     await dialog.getByLabel("Fecha prometida").fill("2026-10-15"); await dialog.getByLabel("Valor prometido").fill("12.34");
     await dialog.getByRole("button", { name: "Guardar registro" }).click();
     await expect(dialog.getByText("Promesa registrada como pendiente.")).toBeVisible(); await expect(dialog.getByText(/Estado: Pendiente/)).toBeVisible();
-    await dialog.getByRole("button", { name: "Preparar mensaje" }).click();
-    await dialog.getByLabel("Contenido del borrador").fill("Borrador escrito por el usuario; sin envío.");
-    await dialog.getByRole("button", { name: "Ver vista previa" }).click();
-    await expect(dialog.getByLabel("Vista previa del mensaje")).toContainText("sin envío");
+    await dialog.getByRole("button", { name: "Enviar mensaje a WhatsApp" }).click();
+    await expect(dialog.getByText("No hay mensajes configurados")).toBeVisible();
     expect(posts).toEqual(["/api/collection/customers/1/actions", "/api/collection/customers/1/promises"]);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await page.screenshot({ path: `../tmp/collection49-${name}.png`, fullPage: true });

@@ -58,7 +58,7 @@ describe("Cobranza de MERTEL", () => {
     expect(within(summary).getAllByText("1 clientes")).toHaveLength(2);
     expect(screen.getByText("Cliente Águila")).toBeVisible();
     expect(screen.getAllByText("Cliente Águila")).toHaveLength(1);
-    const row = screen.getByText("Cliente Águila").closest("tr");
+    const row = screen.getByText("Cliente Águila").closest("article");
     expect(within(row).getByText("3")).toBeVisible();
     expect(within(row).getByText("FV-001")).toBeVisible();
   });

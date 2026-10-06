@@ -26,6 +26,37 @@
 .cobranza-history span { color: #64748b; font-size: 12px; }
 .cobranza-history p, .cobranza-draft-preview { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; }
 .cobranza-draft-preview { margin-top: 12px; padding: 12px; border: 1px solid #cbd5e1; border-radius: 7px; background: #fff; }
+.cobranza-client-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 16px; padding: 18px; }
+.cobranza-client-card { min-width: 0; padding: 18px; border: 1px solid #e2e8f0; border-radius: 10px; background: #fff; display: flex; flex-direction: column; gap: 12px; overflow-wrap: anywhere; }
+.cobranza-card-heading { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 10px; }
+.cobranza-card-heading h3 { margin: 0 0 6px; color: #10233f; font-size: 16px; }
+.cobranza-card-heading span, .cobranza-card-balance > span { font-size: 12px; color: #64748b; }
+.cobranza-card-balance { margin: 0; display: flex; flex-direction: column; gap: 5px; }
+.cobranza-card-balance strong { color: #10233f; font-size: 23px; }
+.cobranza-client-card dl, .cobranza-message-preview dl { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; margin: 0; }
+.cobranza-client-card dt, .cobranza-message-preview dt { color: #64748b; font-size: 12px; }
+.cobranza-client-card dd, .cobranza-message-preview dd { margin: 4px 0 0; color: #10233f; font-size: 13px; overflow-wrap: anywhere; }
+.cobranza-card-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: auto; }
+.cobranza-whatsapp-button { color: #166534; border-color: #bbd8c5; background: #f0f8f3; white-space: normal; }
+.cobranza-page button:disabled, .cobranza-modal button:disabled { opacity: .6; cursor: not-allowed; }
+.cobranza-detail-navigation { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; }
+.cobranza-detail-navigation a { padding: 9px 12px; border-radius: 7px; background: #f8fafc; color: #a51f26; font-size: 13px; text-decoration: none; }
+.cobranza-detail-navigation a:focus-visible { outline: 2px solid #b3262d; outline-offset: 2px; }
+.cobranza-panel-note { padding: 0 18px; }
+.cobranza-whatsapp { margin-top: 24px; padding-top: 14px; border-top: 1px solid #e2e8f0; }
+.cobranza-message-panel { margin-top: 16px; padding: 16px; border: 1px solid #e2e8f0; border-radius: 8px; background: #f8fafc; }
+.cobranza-message-panel label { display: flex; flex-direction: column; gap: 8px; color: #475569; font-size: 13px; margin-bottom: 12px; }
+.cobranza-message-panel select { width: 100%; min-width: 0; box-sizing: border-box; padding: 10px; border: 1px solid #cbd5e1; border-radius: 7px; background: #fff; }
+.cobranza-message-preview { margin-top: 16px; min-width: 0; overflow-wrap: anywhere; }
+.cobranza-message-preview > button { margin-top: 12px; }
+.cobranza-modal .cartera-table-wrap { overflow-x: visible; }
+.cobranza-modal .cobranza-table, .cobranza-modal .cobranza-table tbody { display: block; width: 100%; }
+.cobranza-modal .cobranza-table thead { display: none; }
+.cobranza-modal .cobranza-table tr { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px 16px; padding: 14px; margin: 12px 0; border: 1px solid #e2e8f0; border-radius: 8px; }
+.cobranza-modal .cobranza-table td { display: block; min-width: 0; padding: 6px 0; border: 0; box-sizing: border-box; }
+.cobranza-modal .cobranza-table td::before { content: attr(data-label); display: block; margin-bottom: 5px; color: #64748b; font-size: 11px; font-weight: 600; }
+@media (max-width: 1024px) { .cobranza-client-grid { grid-template-columns: 1fr; } }
+@media (max-width: 560px) { .cobranza-client-grid { padding: 13px; } .cobranza-client-card { padding: 14px; } .cobranza-card-actions { flex-direction: column; } .cobranza-client-card dl, .cobranza-message-preview dl, .cobranza-modal .cobranza-table tr { grid-template-columns: 1fr; } .cobranza-detail-navigation a { flex: 1 1 80px; text-align: center; } .cobranza-message-panel { padding: 12px; } }
 @media (max-width: 760px) {
   .cobranza-table, .cobranza-table tbody, .cobranza-table tr, .cobranza-table td { display: block; width: 100%; box-sizing: border-box; }
   .cobranza-table thead { display: none; }

@@ -63,10 +63,10 @@ describe("Manual collection operations", () => {
     for (const name of ["Registrar gestión", "Registrar promesa", "Preparar mensaje"]) expect(screen.queryByRole("button", { name })).not.toBeInTheDocument();
     expect(createPaymentPromise).not.toHaveBeenCalled();
   });
-  it("prepares a local preview without any POST or successful sending state", async () => {
-    view(); await screen.findByText("No hay gestiones registradas."); fireEvent.click(screen.getByRole("button", { name: "Preparar mensaje" }));
-    fireEvent.change(screen.getByLabelText("Contenido del borrador"), { target: { value: "Texto manual sin envío" } }); fireEvent.click(screen.getByRole("button", { name: "Ver vista previa" }));
-    expect(screen.getByLabelText("Vista previa del mensaje")).toHaveTextContent("Texto manual sin envío");
-    expect(createCollectionAction).not.toHaveBeenCalled(); expect(createPaymentPromise).not.toHaveBeenCalled(); expect(screen.queryByText("Mensaje enviado")).not.toBeInTheDocument();
-  });
-});
+  it("does not create an operation merely by consulting history or opening the form", async () => {
+    view(); await screen.findByText("No hay gestiones registradas.");
+    fireEvent.click(screen.getByRole("button", { name: "Registrar gestión" }));
+    fireEvent.click(screen.getByRole("button", { name: "Cancelar registro" }));
+    expect(createCollectionAction).not.toHaveBeenCalled(); expect(createPaymentPromise).not.toHaveBeenCalled();
+    expect(screen.queryByLabelText("Contenido del borrador")).not.toBeInTheDocument();
+  });});

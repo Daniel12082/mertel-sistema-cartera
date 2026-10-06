@@ -32,7 +32,11 @@ Implementada y validada por orden posterior: gestiones de tipo libre, promesas p
 - **Decisiones necesarias:** fórmula de prioridad, hora de corte, alcance, modificación/cancelación y acreditación del cumplimiento.
 - **Cierre:** estados y pausa probados con fechas aprobadas; ningún incremento inventado ni escritura de pagos desde promesas. Si falta una decisión, su parte permanece pendiente, no se simula completa.
 
-## 5.1 — Importación/actualización de cartera
+## 5.1 — Panel operativo y preparación de mensajes WhatsApp
+
+La orden del 05/10/2026 sustituye el alcance anterior de esta numeración. Implementada y validada: tarjetas por cliente, detalle operativo, reutilización de gestiones/promesas 4.9 y selección de plantillas reales → vista previa → preparación temporal, sin envío/persistencia de mensajes. Ver [informe 5.1](../architecture/MERTEL_PHASE_5_1.md). Permisos y companyScope siguen obligatorios; no se cambian reglas de Fase 5. No se avanza a 5.2.
+
+## Importación/actualización de cartera — pendiente, fuera de esta orden
 
 - **Objetivo:** archivo semanal validado, preview de diferencias, trazabilidad de lote y actualización conciliada, seguida de reevaluación.
 - **Dependencias:** 4.8–5.0; D10–D15/D33, fuente de SKU si se utiliza; diseño financiero aprobado antes de aplicar diferencias. La coordinación operativa de 5.4 se diseña como dependencia de contrato, no se implementa anticipadamente.
