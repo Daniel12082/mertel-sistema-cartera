@@ -181,6 +181,29 @@ describe("Fase 5.3 portfolio import HTTP / isolated MySQL", { skip: !(process.en
     assert.equal(prompt.main_invoice.prompt_payment.eligibility.status, "manual_review"); assert.equal(prompt.main_invoice.prompt_payment.discount.preview_amount, null);
     assert.equal(data.errors.some(error => error.code === "INVALID_AGING_BALANCE" || error.code === "MISSING_ISSUE_DATE"), true);
     assert.equal(data.metadata.persisted, false); assert.equal(data.metadata.document_value_used_as_balance, false);
+    const contextToken = overdue.source_context;
+    assert.equal(typeof contextToken, "string");
+    const operationUrl = new URL(`${root}/pipeline/actions`);
+    const registered = await fetch(operationUrl, { method: "POST", headers: { Authorization: `Bearer ${adminA.token}`, "Content-Type": "application/json" }, body: JSON.stringify({
+      context_token: contextToken, operation: { document_number: "ME-OVERDUE", action_type: "Llamada", description: "Cliente solicita confirmar fecha de pago." },
+    }) });
+    assert.equal(registered.status, 201);
+    assert.equal(registered.headers.get("cache-control"), "no-store");
+    const operation = (await registered.json()).data;
+    assert.equal(operation.source, "mertel_xlsx_pipeline"); assert.equal(operation.customer_nit, "8000012690");
+    assert.equal(operation.document_number, "ME-OVERDUE"); assert.equal(operation.pipeline_stage, "overdue");
+    const historyUrl = new URL(`${root}/pipeline/actions`); historyUrl.searchParams.set("context_token", contextToken);
+    const history = await fetch(historyUrl, { headers: { Authorization: `Bearer ${adminA.token}` } });
+    assert.equal(history.status, 200); assert.equal(history.headers.get("cache-control"), "no-store");
+    assert.equal((await history.json()).data[0].description, "Cliente solicita confirmar fecha de pago.");
+    const invalidDoc = await fetch(operationUrl, { method: "POST", headers: { Authorization: `Bearer ${adminA.token}`, "Content-Type": "application/json" }, body: JSON.stringify({
+      context_token: contextToken, operation: { document_number: "FACTURA-FICTICIA", action_type: "Llamada", description: "No debe asociarse." },
+    }) });
+    assert.equal(invalidDoc.status, 400);
+    const invalidToken = await fetch(operationUrl, { method: "POST", headers: { Authorization: `Bearer ${adminA.token}`, "Content-Type": "application/json" }, body: JSON.stringify({
+      context_token: `${contextToken.slice(0, -2)}xx`, operation: { action_type: "Llamada", description: "Token alterado." },
+    }) });
+    assert.ok([400, 403].includes(invalidToken.status));
     assert.equal(await snapshot(), before);
     const invalid = await pipelineRequest("06/10/2026");
     assert.equal(invalid.status, 400); assert.equal(await snapshot(), before);

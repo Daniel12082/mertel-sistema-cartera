@@ -1,4 +1,5 @@
 import pool from "../config/database.js";
+import { createHmac, timingSafeEqual, randomUUID, createHash } from "node:crypto";
 import { loadCompanyCollectionRules, evaluateCompanyCollection } from "./companyCollection.service.js";
 import { buildCollectionResult } from "./collection.service.js";
 import { evaluateCollectionInvoices } from "./collectionEngine.service.js";
@@ -16,6 +17,85 @@ const validDate = value => {
 const clean = value => String(value ?? "").trim() || null;
 const cents = amount => Math.round(amount * 100);
 const money = value => `${Math.floor(value / 100)}.${String(value % 100).padStart(2, "0")}`;
+
+function signSourceContext(payload, secret) {
+  const encoded = Buffer.from(JSON.stringify(payload)).toString("base64url");
+  const signature = createHmac("sha256", secret).update(encoded).digest("base64url");
+  return `${encoded}.${signature}`;
+}
+
+function verifySourceContext(token, secret, companyId) {
+  if (typeof token !== "string" || token.length > 12000) throw Object.assign(new Error("Contexto temporal inválido."), { status: 400 });
+  const [encoded, signature, extra] = token.split(".");
+  if (!encoded || !signature || extra) throw Object.assign(new Error("Contexto temporal inválido."), { status: 400 });
+  const expected = createHmac("sha256", secret).update(encoded).digest();
+  let actual;
+  try { actual = Buffer.from(signature, "base64url"); } catch { actual = Buffer.alloc(0); }
+  if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) throw Object.assign(new Error("Contexto temporal inválido."), { status: 403 });
+  let payload;
+  try { payload = JSON.parse(Buffer.from(encoded, "base64url").toString("utf8")); } catch { throw Object.assign(new Error("Contexto temporal inválido."), { status: 400 }); }
+  if (String(payload.company_id) !== String(companyId) || !/^\d{6,15}$/.test(payload.nit || "") || !/^[a-f0-9]{64}$/.test(payload.source_hash || "") || !Array.isArray(payload.documents) || !Number.isSafeInteger(payload.expires_at) || payload.expires_at < Date.now()) {
+    throw Object.assign(new Error("El contexto temporal expiró o no pertenece a esta empresa."), { status: 403 });
+  }
+  return payload;
+}
+
+function operationText(value, maxLength, required = false) {
+  if (typeof value !== "string" || value.trim().length > maxLength || (required && !value.trim())) throw Object.assign(new Error("Revisa el tipo de gestión y la observación."), { status: 400 });
+  return value.trim() || null;
+}
+
+export async function recordImportedPipelineAction({ scope, token, body, ipAddress = null, userAgent = null }) {
+  if (!validCompanyId(scope?.companyId) || !validCompanyId(scope?.actorId)) throw Object.assign(new Error("La gestión manual requiere contexto de empresa autorizado."), { status: 403 });
+  const context = verifySourceContext(token, process.env.JWT_SECRET, scope.companyId);
+  if (!body || typeof body !== "object" || Array.isArray(body) || Object.keys(body).some(key => !["document_number", "action_type", "description"].includes(key))) throw Object.assign(new Error("Campos de gestión no válidos."), { status: 400 });
+  const actionType = operationText(body.action_type, 50, true);
+  const description = operationText(body.description, 4000, true);
+  const documentNumber = body.document_number == null || body.document_number === "" ? null : operationText(body.document_number, 80, true);
+  if (documentNumber && !context.documents.includes(documentNumber)) throw Object.assign(new Error("El documento no pertenece al contexto de cartera firmado."), { status: 400 });
+  const db = await pool.getConnection();
+  try {
+    await db.beginTransaction();
+    const payload = {
+      source: "mertel_xlsx_pipeline", source_hash: context.source_hash, source_file: context.file_name,
+      reference_date: context.reference_date, customer_nit: context.nit, customer_name: context.customer_name,
+      document_number: documentNumber, pipeline_stage: context.stage, pipeline_reason: context.reason,
+      action_type: actionType, description, operation_id: randomUUID(),
+    };
+    const [result] = await db.query(`INSERT INTO audit_logs (company_id,user_id,entity_type,entity_id,action,new_values,ip_address,user_agent)
+      VALUES (?,?, 'portfolio_pipeline_action', NULL, 'create', CAST(? AS JSON), ?, ?)`,
+    [scope.companyId, scope.actorId, JSON.stringify(payload), ipAddress, userAgent]);
+    await db.commit();
+    return { id: String(result.insertId), ...payload, created_at: new Date().toISOString() };
+  } catch (error) { try { await db.rollback(); } catch {} throw error; }
+  finally { db.release(); }
+}
+
+export async function listImportedPipelineActions({ scope, token }) {
+  if (!validCompanyId(scope?.companyId)) throw Object.assign(new Error("Se requiere contexto de empresa autorizado."), { status: 403 });
+  const context = verifySourceContext(token, process.env.JWT_SECRET, scope.companyId);
+  const db = await pool.getConnection();
+  try {
+    await db.query("START TRANSACTION READ ONLY");
+    const [rows] = await db.query(`SELECT CAST(a.id AS CHAR) AS id, CAST(a.user_id AS CHAR) AS user_id,
+      CONCAT_WS(' ',u.first_name,u.last_name) AS user_name, a.new_values,
+      DATE_FORMAT(a.created_at,'%Y-%m-%dT%H:%i:%sZ') AS created_at
+      FROM audit_logs a LEFT JOIN users u ON u.id=a.user_id AND (u.company_id=a.company_id OR u.company_id IS NULL)
+      WHERE a.company_id=? AND a.entity_type='portfolio_pipeline_action'
+        AND JSON_UNQUOTE(JSON_EXTRACT(a.new_values,'$.source_hash'))=?
+        AND JSON_UNQUOTE(JSON_EXTRACT(a.new_values,'$.customer_nit'))=?
+      ORDER BY a.created_at DESC,a.id DESC LIMIT 100`, [scope.companyId, context.source_hash, context.nit]);
+    await db.commit();
+    return rows.map(row => {
+      const value = typeof row.new_values === "string" ? JSON.parse(row.new_values) : row.new_values;
+      return { id: row.id, user_id: row.user_id, user_name: row.user_name, created_at: row.created_at,
+        action_type: value.action_type, description: value.description, document_number: value.document_number,
+        pipeline_stage: value.pipeline_stage, pipeline_reason: value.pipeline_reason, reference_date: value.reference_date,
+        source_file: value.source_file };
+    });
+  } catch (error) { try { await db.rollback(); } catch {} throw error; }
+  finally { db.release(); }
+}
 
 function sourceCustomer(row) {
   const values = row.values;
@@ -39,7 +119,7 @@ function documentView(row, balance = null) {
 }
 
 /** Builds a non-persistent MERTEL pipeline directly from parser rows and the existing collection engine. */
-export function buildPortfolioPipeline({ parsed, referenceDate, fileName, processedAt = new Date().toISOString(), companyId, rules }) {
+export function buildPortfolioPipeline({ parsed, referenceDate, fileName, processedAt = new Date().toISOString(), companyId, rules, sourceHash, secret }) {
   if (!validCompanyId(companyId)) throw Object.assign(new Error("El contexto MERTEL no está disponible"), { status: 403 });
   if (!validDate(referenceDate)) throw Object.assign(new Error("reference_date es obligatoria y debe usar YYYY-MM-DD"), { status: 400, code: "INVALID_REFERENCE_DATE" });
   const identityIssue = parsed.issues?.find(issue => ["SOURCE_COMPANY_MISMATCH", "SOURCE_NIT_MISMATCH"].includes(issue.error_code));
@@ -123,7 +203,13 @@ export function buildPortfolioPipeline({ parsed, referenceDate, fileName, proces
       const classifiedInvoice = invoiceDocs.find(invoice => invoice.source_row === document.source_row);
       return classifiedInvoice ? { ...document, ...classifiedInvoice } : { ...document, stage: "informational", stage_label: "Informativo", eligible: false, reason: "Movimiento informativo; no se trata como factura de cobranza." };
     });
-    return { ...item, source_details: item.customer, documents, invoices: invoiceDocs,
+    const sourceContext = secret && sourceHash ? signSourceContext({
+      version: 1, company_id: String(companyId), source_hash: sourceHash, file_name: String(fileName || "cartera MERTEL.xlsx").slice(0, 255),
+      reference_date: referenceDate, nit: normalizeMertelNit(item.customer.nit).normalized, customer_name: item.customer.name,
+      documents: documents.filter(document => document.movement_type === "invoice").map(document => document.document_number),
+      stage: item.stage, reason: item.reason, expires_at: Date.now() + 30 * 86400000,
+    }, secret) : null;
+    return { ...item, source_details: item.customer, documents, invoices: invoiceDocs, source_context: sourceContext,
       main_document: documents.find(document => document.source_row === item.main_invoice?.invoice?.source_row) || null };
   });
   const categoryByKey = new Map(raw.stage_catalog.map(stage => [stage.key, stage.category]));
@@ -160,7 +246,8 @@ export async function generatePortfolioPipeline({ bytes, scope, referenceDate, f
     if (!companies.length) throw Object.assign(new Error("Empresa no disponible"), { status: 404 });
     const rules = await loadCompanyCollectionRules(scope.companyId, connection);
     await connection.commit();
-    return buildPortfolioPipeline({ parsed, referenceDate, fileName, processedAt, companyId: scope.companyId, rules });
+    return buildPortfolioPipeline({ parsed, referenceDate, fileName, processedAt, companyId: scope.companyId, rules,
+      sourceHash: createHash("sha256").update(bytes).digest("hex"), secret: process.env.JWT_SECRET });
   } catch (error) {
     try { await connection.rollback(); } catch {}
     throw error;

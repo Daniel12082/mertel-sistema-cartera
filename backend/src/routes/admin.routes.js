@@ -7,7 +7,7 @@ import { validCompanyId } from "../utils/companyScope.js";
 import { getCollectionSettings, updateCollectionStageSettings } from "../services/collectionSettingsAdmin.service.js";
 import { analyzePortfolioFile, listPortfolioImports, MAX_IMPORT_BYTES } from "../services/portfolioImport.service.js";
 import { reconcilePortfolio } from "../services/portfolioReconciliation.service.js";
-import { generatePortfolioPipeline } from "../services/portfolioPipeline.service.js";
+import { generatePortfolioPipeline, listImportedPipelineActions, recordImportedPipelineAction } from "../services/portfolioPipeline.service.js";
 import { getCollectionDashboardController } from "../controllers/collectionDashboard.controller.js";
 import { administrativeCollectionHistory, administrativeHistoryActors } from "../controllers/collectionHistory.controller.js";
 const router = express.Router();
@@ -51,6 +51,26 @@ router.post("/portfolio/imports/pipeline", requirePermission("portfolio.import")
       return next(error);
     }
   });
+router.get("/portfolio/imports/pipeline/actions", requirePermission("collection.view"), requireCompanyScope, async (req, res, next) => {
+  try {
+    res.set("Cache-Control", "no-store");
+    return res.json({ success: true, data: await listImportedPipelineActions({ scope: req.companyScope, token: req.query.context_token }) });
+  } catch (error) {
+    if ([400, 403].includes(error.status)) return res.status(error.status).json({ success: false, message: error.message });
+    return next(error);
+  }
+});
+router.post("/portfolio/imports/pipeline/actions", requirePermission("collection.manage"), requireCompanyScope, async (req, res, next) => {
+  try {
+    res.set("Cache-Control", "no-store");
+    const data = await recordImportedPipelineAction({ scope: req.companyScope, token: req.body?.context_token,
+      body: req.body?.operation, ipAddress: req.ip, userAgent: req.get("user-agent") });
+    return res.status(201).json({ success: true, data });
+  } catch (error) {
+    if ([400, 403].includes(error.status)) return res.status(error.status).json({ success: false, message: error.message });
+    return next(error);
+  }
+});
 router.get("/portfolio/imports", requirePermission("portfolio.import"), requireCompanyScope, async (req, res, next) => {
   try { res.set("Cache-Control", "no-store"); return res.json({ success: true, data: await listPortfolioImports(req.companyScope) }); }
   catch (error) {

@@ -3,8 +3,9 @@ import { Buffer } from "node:buffer";
 
 async function setup(page, { admin = true, globalAdmin = false } = {}) {
   const user = { id: "1", name: "Fixture", company_id: globalAdmin ? null : "1", is_global_admin: globalAdmin,
-    roles: [admin ? "admin" : "collector"], permissions: admin ? ["portfolio.import"] : ["collection.view"] };
+    roles: [admin ? "admin" : "collector"], permissions: admin ? ["portfolio.import", "collection.view", "collection.manage"] : ["collection.view"] };
   const calls = [];
+  const importedActions = [];
   await page.route("**/api/**", async route => {
     const request = route.request(); const url = new URL(request.url()); calls.push({ method: request.method(), path: url.pathname, params: Object.fromEntries(url.searchParams), contentType: request.headers()["content-type"] });
     if (url.pathname === "/api/auth/refresh") return route.fulfill({ json: { data: { access_token: "fixture-memory", user } } });
@@ -39,9 +40,14 @@ async function setup(page, { admin = true, globalAdmin = false } = {}) {
       source: { file_name: "cartera al 06-10.xlsx", reference_date: url.searchParams.get("reference_date"), processed_at: "2026-10-06T12:00:00Z" },
       summary: { customers: 1, documents: 1, overdue: 1, due_today: 0, due_in_five_days: 0, prompt_payment: 0, unclassified: 0, errors: 0 },
       stage_catalog: [{ key: "overdue", label: "En mora", category: "overdue" }], configuration_warnings: [], errors: [],
-      pipeline: [{ customer: { id: "xlsx:8000012690", nit: "800.001.269-0", name: "CLIENTE MERTEL", phone: "6011234567" }, source_details: { nit: "800.001.269-0", name: "CLIENTE MERTEL", collector: "COBRADOR", seller: "VENDEDOR", city: "BOGOTÁ", zone: "NORTE", mobile: "3000000000" }, stage: "overdue", stage_label: "En mora", priority: 4, reason: "Factura vencida con saldo pendiente.", total_balance: "250.00", main_invoice: { invoice: { invoice_number: "ME-74743", issue_date: "2026-09-01", due_date: "2026-10-01", source_row: 8 }, days_until_due: -5 }, invoices: [], documents: [{ source_row: 8, document_number: "ME-74743", movement: "012 Factura de venta credito", movement_type: "invoice", issue_date: "2026-09-01", due_date: "2026-10-01", document_value: 300, iva: 50, balance: "250.00", stage_label: "En mora", eligible: true, observations: "Nota de prueba" }] }],
+      pipeline: [{ customer: { id: "xlsx:8000012690", nit: "800.001.269-0", name: "CLIENTE MERTEL", phone: "6011234567" }, source_details: { nit: "800.001.269-0", name: "CLIENTE MERTEL", collector: "COBRADOR", seller: "VENDEDOR", city: "BOGOTÁ", zone: "NORTE", mobile: "3000000000" }, source_context: "signed-context-fixture", stage: "overdue", stage_label: "En mora", priority: 4, reason: "Factura vencida con saldo pendiente.", total_balance: "250.00", main_invoice: { invoice: { invoice_number: "ME-74743", issue_date: "2026-09-01", due_date: "2026-10-01", source_row: 8 }, days_until_due: -5 }, invoices: [], documents: [{ source_row: 8, document_number: "ME-74743", movement: "012 Factura de venta credito", movement_type: "invoice", issue_date: "2026-09-01", due_date: "2026-10-01", document_value: 300, iva: 50, balance: "250.00", stage_label: "En mora", eligible: true, observations: "Nota de prueba" }] }],
       metadata: { read_only: true, persisted: false, balance_source: "Suma de buckets de antigüedad por factura" },
     } } });
+    if (url.pathname === "/api/admin/portfolio/imports/pipeline/actions" && request.method() === "GET") return route.fulfill({ json: { success: true, data: importedActions } });
+    if (url.pathname === "/api/admin/portfolio/imports/pipeline/actions" && request.method() === "POST") {
+      const operation = request.postDataJSON().operation; const action = { id: "action-1", action_type: operation.action_type, description: operation.description, document_number: operation.document_number, user_name: "Cobrador fixture", created_at: "2026-10-07T15:30:00Z" };
+      importedActions.unshift(action); return route.fulfill({ status: 201, json: { success: true, data: action } });
+    }
     return route.fulfill({ status: 404, json: { success: false } });
   });
   return calls;
@@ -118,6 +124,15 @@ test("E2E XLSX to temporary collection pipeline, filters and customer documents"
   await page.getByRole("button", { name: /Ver cliente y documentos/ }).click();
   await expect(page.getByRole("dialog")).toContainText("ME-74743");
   await expect(page.getByRole("dialog")).toContainText("CLIENTE MERTEL");
+  await expect(page.getByRole("dialog")).toContainText("En mora");
+  await page.getByRole("button", { name: "Registrar gestión" }).click();
+  await page.getByLabel("Documento relacionado").selectOption("ME-74743");
+  await page.getByLabel("Tipo de gestión (texto libre)").fill("Llamada");
+  await page.getByLabel("Observación de gestión").fill("Cliente contactado; confirma pago esta semana.");
+  await page.getByRole("button", { name: "Guardar registro" }).click();
+  await expect(page.getByText("Gestión registrada.")).toBeVisible();
+  await expect(page.getByText("Cliente contactado; confirma pago esta semana.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Registrar promesa" })).toHaveCount(0);
   expect(calls.some(call => call.method === "POST" && call.path.endsWith("/pipeline") && call.params.reference_date === "2026-10-06")).toBe(true);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });

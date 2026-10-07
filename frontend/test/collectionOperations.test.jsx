@@ -2,8 +2,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { AuthContext } from "../src/auth/auth.context";
 import CollectionOperations from "../src/pages/Cobranza/CollectionOperations";
-import { createCollectionAction, createPaymentPromise, getCollectionActions, getPaymentPromises } from "../src/services/collectionOperations.service";
-vi.mock("../src/services/collectionOperations.service", () => ({ getCollectionActions: vi.fn(), getPaymentPromises: vi.fn(), createCollectionAction: vi.fn(), createPaymentPromise: vi.fn() }));
+import { createCollectionAction, createImportedPipelineAction, createPaymentPromise, getCollectionActions, getImportedPipelineActions, getPaymentPromises } from "../src/services/collectionOperations.service";
+vi.mock("../src/services/collectionOperations.service", () => ({ getCollectionActions: vi.fn(), getPaymentPromises: vi.fn(), createCollectionAction: vi.fn(), createPaymentPromise: vi.fn(), getImportedPipelineActions: vi.fn(), createImportedPipelineAction: vi.fn() }));
 const invoices = [{ invoice: { invoice_id: 11, invoice_number: "FV-001" } }];
 function view(permissions = ["collection.view", "collection.manage"]) {
   return render(<AuthContext.Provider value={{ user: { id: 1 }, permissions }}><CollectionOperations customerId="1" invoices={invoices} /></AuthContext.Provider>);
@@ -70,3 +70,24 @@ describe("Manual collection operations", () => {
     expect(createCollectionAction).not.toHaveBeenCalled(); expect(createPaymentPromise).not.toHaveBeenCalled();
     expect(screen.queryByLabelText("Contenido del borrador")).not.toBeInTheDocument();
   });});
+
+describe("gestiones desde el pipeline temporal", () => {
+  it("registra gestión con token de contexto y documento del XLSX; no habilita promesas", async () => {
+    getImportedPipelineActions.mockResolvedValueOnce([]).mockResolvedValue([{ id: "42", action_type: "Llamada", description: "Cliente contactado", action_date: "2026-10-07T15:30:00Z", document_number: "ME-123", user_name: "Cobrador" }]); createImportedPipelineAction.mockResolvedValue({ id: "42" });
+    render(<AuthContext.Provider value={{ user: { id: 1 }, permissions: ["collection.view", "collection.manage"] }}><CollectionOperations importedContext={{ contextToken: "firmado", documents: [{ movement_type: "invoice", document_number: "ME-123" }] }} /></AuthContext.Provider>);
+    await screen.findByText("No hay gestiones registradas.");
+    expect(getImportedPipelineActions).toHaveBeenCalledWith("firmado", expect.objectContaining({ signal: expect.any(AbortSignal) }));
+    fireEvent.click(screen.getByRole("button", { name: "Registrar gestión" }));
+    expect(screen.getByLabelText("Documento relacionado")).toHaveTextContent("ME-123");
+    fireEvent.change(screen.getByLabelText("Documento relacionado"), { target: { value: "ME-123" } });
+    fireEvent.change(screen.getByLabelText("Tipo de gestión (texto libre)"), { target: { value: "Llamada" } });
+    fireEvent.change(screen.getByLabelText("Observación de gestión"), { target: { value: "Cliente contactado" } });
+    fireEvent.click(screen.getByRole("button", { name: "Guardar registro" }));
+    expect(await screen.findByText("Gestión registrada.")).toBeVisible();
+    expect(createImportedPipelineAction).toHaveBeenCalledWith("firmado", { document_number: "ME-123", action_type: "Llamada", description: "Cliente contactado" });
+    expect(await screen.findByText("Cliente contactado")).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Registrar promesa" })).not.toBeInTheDocument();
+    expect(screen.getByText(/Promesas deshabilitadas/)).toBeVisible();
+    expect(createPaymentPromise).not.toHaveBeenCalled();
+  });
+});

@@ -24,3 +24,24 @@ export const getCollectionActions = (customerId, options) => request("actions", 
 export const getPaymentPromises = (customerId, options) => request("promises", customerId, options);
 export const createCollectionAction = (customerId, body, options) => request("actions", customerId, { ...options, body });
 export const createPaymentPromise = (customerId, body, options) => request("promises", customerId, { ...options, body });
+
+export async function getImportedPipelineActions(contextToken, { signal } = {}) {
+  try {
+    const response = await api.get("/admin/portfolio/imports/pipeline/actions", { params: { context_token: contextToken }, signal });
+    if (response.data?.success !== true || !Array.isArray(response.data.data)) throw new Error("operation_contract");
+    return response.data.data;
+  } catch (error) {
+    if (signal?.aborted) throw error;
+    throw Object.assign(new Error(error?.response?.data?.message || operationErrorMessage(error)), { status: error?.response?.status });
+  }
+}
+
+export async function createImportedPipelineAction(contextToken, body) {
+  try {
+    const response = await api.post("/admin/portfolio/imports/pipeline/actions", { context_token: contextToken, operation: body });
+    if (response.data?.success !== true || !response.data.data?.id) throw new Error("operation_contract");
+    return response.data.data;
+  } catch (error) {
+    throw Object.assign(new Error(error?.response?.data?.message || operationErrorMessage(error)), { status: error?.response?.status });
+  }
+}
