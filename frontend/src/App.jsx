@@ -14,6 +14,7 @@ import PortfolioImport from "./pages/Administracion/PortfolioImport";
 import CollectionDashboard from "./pages/Administracion/CollectionDashboard";
 import CollectionHistory from "./pages/Administracion/CollectionHistory";
 import WhatsAppCenter from "./pages/Administracion/WhatsAppCenter";
+import ReportedPayments from "./pages/Administracion/ReportedPayments";
 import CustomerResolution from "./pages/Administracion/CustomerResolution";
 import LoginPage from "./pages/Login/LoginPage";
 import ProtectedRoute from "./auth/ProtectedRoute";
@@ -78,6 +79,7 @@ function App() {
         <Route path="/administracion/dashboard-cobranza" element={<CollectionDashboard />} />
         <Route path="/administracion/historial-cobranza" element={<CollectionHistory />} />
         <Route path="/administracion/whatsapp" element={<WhatsAppCenter />} />
+        <Route path="/administracion/pagos-reportados" element={<ReportedPayments />} />
         <Route path="/administracion/resolucion-clientes" element={<CustomerResolution />} />
 
         <Route

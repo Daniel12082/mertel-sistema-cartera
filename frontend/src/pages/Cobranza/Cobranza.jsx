@@ -10,6 +10,7 @@ import CollectionOperations from "./CollectionOperations";
 import CollectionBenefits from "./CollectionBenefits";
 import CollectionMessages from "./CollectionMessages";
 import CustomerHistory from "./CustomerHistory";
+import ManagementResults from './ManagementResults';
 
 function StageBadge({ stage, catalog = [], label }) {
   const category = catalog.find(item => item.key === stage)?.category;
@@ -32,7 +33,7 @@ function StageCandidates({ candidates }) {
   return <ul className="cobranza-candidates">{candidates.map((candidate, index) => <li key={index}><strong>{candidate.stage ?? "—"}</strong><span>Prioridad: {candidate.priority ?? "—"}</span>{candidate.reason && <span>{candidate.reason}</span>}</li>)}</ul>;
 }
 
-function CustomerCard({ item, catalog, onDetail, onMessage, canManage, pending = false }) {
+function CustomerCard({ item, catalog, onDetail, onMessage, onManage, canManage, pending = false }) {
   const daysUntilDue = item.main_invoice?.days_until_due;
   const dueTiming = daysUntilDue == null ? "Días para vencimiento no disponibles" : daysUntilDue < 0 ? `${Math.abs(daysUntilDue)} días de mora` : daysUntilDue === 0 ? "Vence hoy" : `${daysUntilDue} días para vencimiento`;
   return <article className="cobranza-client-card" aria-label={`Cliente ${item.customer.name || "No registrado"}`}>
@@ -44,11 +45,12 @@ function CustomerCard({ item, catalog, onDetail, onMessage, canManage, pending =
     <p className="cobranza-note">{item.reason || "Motivo no registrado"}</p>
     <div className="cobranza-card-actions"><button className="cartera-link-button" aria-label={pending ? `Ver factura no vencida ${item.invoices[0]?.invoice?.invoice_number || "cliente"}` : `Ver detalle de ${item.customer.name || "cliente"}`} onClick={onDetail}>Ver cliente</button>
       <button className="cartera-reset cobranza-whatsapp-button" disabled={!canManage} onClick={onMessage}>Enviar mensaje a WhatsApp</button>
+      {canManage && <button className="cartera-reset" onClick={onManage}>Gestionar</button>}
     </div>{!canManage && <span className="cobranza-note">No tienes permiso para preparar mensajes.</span>}
   </article>;
 }
 
-function CustomerDetail({ item, catalog, referenceDate, onClose, messageFirst, canViewHistory }) {
+function CustomerDetail({ item, catalog, referenceDate, onClose, messageFirst, canViewHistory, manageFirst, onChanged, revision }) {
   const dialog = useRef(null);
   useEffect(() => {
     const previous = document.activeElement;
@@ -91,8 +93,9 @@ function CustomerDetail({ item, catalog, referenceDate, onClose, messageFirst, c
         <div className="cartera-table-wrap"><table className="cartera-table cobranza-table"><thead><tr><th>Número</th><th>Emisión</th><th>Vencimiento</th><th>Valor</th><th>Saldo</th><th>Días desde emisión</th><th>Días para vencimiento</th><th>Etapa</th><th>Motivo</th><th>Prioridad</th><th>Elegible para cobranza</th><th>Candidatos de etapa</th><th>Beneficios</th></tr></thead>
           <tbody>{item.invoices.map((row, index) => <tr key={row.invoice?.invoice_id ?? row.invoice?.id ?? index}><td data-label="Número"><strong>{row.invoice?.invoice_number || "—"}</strong></td><td data-label="Emisión">{formatDate(row.invoice?.issue_date)}</td><td data-label="Vencimiento">{formatDate(row.invoice?.due_date)}</td><td data-label="Valor">{displayMoney(row.invoice?.document_value)}</td><td data-label="Saldo">{displayMoney(row.invoice?.balance)}</td><td data-label="Días desde emisión">{row.days_since_issue ?? "—"}</td><td data-label="Días para vencimiento">{row.days_until_due ?? "—"}</td><td data-label="Etapa"><StageBadge stage={row.stage} catalog={catalog} label={row.stage_label} /></td><td data-label="Motivo">{row.reason || "—"}</td><td data-label="Prioridad">{row.priority ?? "—"}</td><td data-label="Elegible para cobranza">{row.eligible === true ? "Sí" : row.eligible === false ? "No" : "—"}</td><td data-label="Candidatos de etapa"><StageCandidates candidates={row.stage_candidates} /></td><td data-label="Beneficios"><CollectionBenefits row={row} /></td></tr>)}</tbody>
         </table></div>
-        <CollectionOperations key={item.customer.id} customerId={item.customer.id} invoices={item.invoices} />
-        {canViewHistory && <CustomerHistory key={`history-${item.customer.id}-`} customerId={item.customer.id} />}
+        <ManagementResults key={`result-${item.customer.id}`} customerId={item.customer.id} referenceDate={referenceDate} startOpen={manageFirst} onChanged={onChanged} />
+        <CollectionOperations key={`${item.customer.id}-${revision}`} customerId={item.customer.id} invoices={item.invoices} />
+        {canViewHistory && <CustomerHistory key={`history-${item.customer.id}-${revision}`} customerId={item.customer.id} />}
         <CollectionMessages key={`${item.customer.id}-${referenceDate}-`} customer={item.customer} referenceDate={referenceDate} autoOpen={messageFirst} />
       </div><footer className="cartera-modal-footer"><button className="cartera-button-secondary" onClick={onClose}>Cerrar</button></footer>
     </section>
@@ -114,6 +117,8 @@ function PersistentCollectionView() {
   const [reload, setReload] = useState(0);
   const [selectedId, setSelectedId] = useState(null);
   const [messageFirst, setMessageFirst] = useState(false);
+  const [manageFirst, setManageFirst] = useState(false);
+  const [managementNotice, setManagementNotice] = useState('');
   const [request, setRequest] = useState({ loading: true, data: null, error: "" });
   useEffect(() => {
     if (!referenceDate) return;
@@ -139,11 +144,13 @@ function PersistentCollectionView() {
   const showMissingRules = Boolean(referenceDate) && !request.loading && !request.error && data && (data.rules_configured === false || data.status === "no_rules_configured");
   // Stable handler keeps the dialog's focus lifecycle independent of filtering.
   const closeDetail = useCallback(() => setSelectedId(null), []);
-  function openDetail(item, whatsapp = false) { setMessageFirst(whatsapp); setSelectedId(String(item.customer.id)); }
+  function openDetail(item, whatsapp = false, managing = false) { setMessageFirst(whatsapp); setManageFirst(managing); setSelectedId(String(item.customer.id)); }
+  function managementChanged(result) { setManagementNotice(result.payment ? `Pago registrado. Saldo pendiente: ${formatCurrency(result.total_balance)}. El motor ha reevaluado la cobranza.` : 'Gestión registrada. Los reportes permanecen pendientes de conciliación hasta su revisión.'); setReload(value => value + 1); }
   function refresh() { setRequest({ loading: true, data: null, error: "" }); setReload(value => value + 1); }
   return <section className="cartera-page cobranza-page">
     <header className="cartera-header"><div><h1>Cobranza</h1><p>Panel operativo de MERTEL: clientes, facturas, gestiones y preparación de mensajes.</p></div><div className="cobranza-header-controls"><label className="cartera-reference"><CalendarDays size={17} /><span>Fecha de referencia</span><input aria-label="Fecha de referencia" type="date" required value={referenceDate} onChange={event => { setReferenceDate(event.target.value); setRequest({ loading: true, data: null, error: "" }); }} /></label></div></header>
     {!referenceDate && <State title="Selecciona una fecha de referencia válida." />}
+    {managementNotice && <p role="status" className="cartera-alert management-success">{managementNotice}</p>}
     {referenceDate && request.loading && <State title="Cargando cobranza…" loading />}
     {referenceDate && !request.loading && request.error && <div className="cartera-panel"><div className="cartera-alert" role="alert"><AlertCircle size={18} />{request.error}</div>{request.status !== 403 && <div className="cartera-state"><button className="cartera-reset" onClick={refresh}><RefreshCw size={16} />Reintentar</button></div>}</div>}
     {showMissingRules && <div className="cartera-state" role="status"><FileText size={27} /><strong>MERTEL no tiene reglas de cobranza configuradas.</strong><span>La clasificación requiere reglas configuradas en el servidor.</span><button className="cartera-reset" onClick={refresh}>Volver a consultar</button></div>}
@@ -152,14 +159,14 @@ function PersistentCollectionView() {
       <section className="cartera-summary-grid" aria-label="Resumen de cobranza">{stages.map(item => <article key={item.key} className={`cartera-summary-card cartera-summary-${item.category === "overdue" ? "overdue" : item.category === "prompt_payment" ? "current" : "nodue"}`}><div className="cartera-summary-icon"><Users size={19} /></div><div><span>{stageLabel(item.key, catalog)}</span><strong>{data?.summary?.stages[item.key]?.customers ?? 0} clientes</strong></div></article>)}</section>
       <section className="cartera-panel"><div className="cartera-panel-heading"><div><h2>Clientes en cobranza</h2><p>Los contadores incluyen todos los clientes de la fecha, antes de búsqueda y filtros.</p></div><span className="cartera-count">{filtered.length} de {customers.length} clientes</span></div>
         <div className="cartera-filters"><label><span>Buscar cliente / NIT / factura</span><input type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="Nombre, NIT o número de factura" /></label><label><span>Etapa</span><select value={stage} onChange={event => setStage(event.target.value)}><option value="">Todas</option>{stages.map(item => <option key={item.key} value={item.key}>{stageLabel(item.key, catalog)}</option>)}</select></label><button className="cartera-reset" onClick={() => { setQuery(""); setStage(""); }}>Limpiar filtros</button><button className="cartera-reset" onClick={refresh}><RefreshCw size={15} />Actualizar</button></div>
-        {!customers.length ? <State title="No hay clientes en cobranza para la fecha seleccionada." /> : !filtered.length ? <State title="No hay clientes que coincidan con la búsqueda o los filtros." /> : <div className="cobranza-client-grid">{filtered.map(item => <CustomerCard key={item.customer.id} item={item} catalog={catalog} canManage={canManage} onDetail={() => openDetail(item)} onMessage={() => openDetail(item, true)} />)}</div>}
+        {!customers.length ? <State title="No hay clientes en cobranza para la fecha seleccionada." /> : !filtered.length ? <State title="No hay clientes que coincidan con la búsqueda o los filtros." /> : <div className="cobranza-client-grid">{filtered.map(item => <CustomerCard key={item.customer.id} item={item} catalog={catalog} canManage={canManage} onDetail={() => openDetail(item)} onMessage={() => openDetail(item, true)} onManage={() => openDetail(item,false,true)} />)}</div>}
       </section>
       {data?.non_overdue_pending && !stage && <section className="cartera-panel" aria-label="Facturas no vencidas">
         <div className="cartera-panel-heading"><div><h2>{data.non_overdue_pending.label}</h2><p>Facturas con saldo pendiente fuera de las etapas activas. Los beneficios se evalúan en el servidor.</p></div><span className="cartera-count">{data.non_overdue_pending.total_invoices} facturas · {formatCurrency(data.non_overdue_pending.total_balance)}</span></div>
         <p className="cobranza-note cobranza-panel-note">Las facturas no vencidas de clientes ya clasificados se consultan en su tarjeta principal.</p>
-        {!pendingVisible.length ? <State title="No hay clientes con facturas no vencidas fuera de las etapas activas." /> : <div className="cobranza-client-grid">{pendingVisible.map(item => <CustomerCard key={item.customer.id} item={item} catalog={catalog} canManage={canManage} pending onDetail={() => openDetail(item)} onMessage={() => openDetail(item, true)} />)}</div>}
+        {!pendingVisible.length ? <State title="No hay clientes con facturas no vencidas fuera de las etapas activas." /> : <div className="cobranza-client-grid">{pendingVisible.map(item => <CustomerCard key={item.customer.id} item={item} catalog={catalog} canManage={canManage} pending onDetail={() => openDetail(item)} onMessage={() => openDetail(item, true)} onManage={() => openDetail(item,false,true)} />)}</div>}
       </section>}
-      {selected && <CustomerDetail item={selected} catalog={catalog} referenceDate={data.reference_date} onClose={closeDetail} messageFirst={messageFirst} canViewHistory={canViewHistory} />}
+      {selected && <CustomerDetail item={selected} catalog={catalog} referenceDate={data.reference_date} onClose={closeDetail} messageFirst={messageFirst} manageFirst={manageFirst} onChanged={managementChanged} revision={reload} canViewHistory={canViewHistory} />}
     </div>}
   </section>;
 }

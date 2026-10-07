@@ -1,0 +1,18 @@
+.management-results { border:1px solid #dbe3ec; border-radius:12px; padding:20px; margin:20px 0; background:#f8fbff; }
+.management-choices { display:flex; flex-wrap:wrap; gap:10px; margin:16px 0; }
+.management-choices [aria-pressed=true] { background:#184878; color:#fff; }
+.management-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; }
+.management-results label,.management-payment label,.reported-payments label { display:flex; flex-direction:column; gap:7px; margin:12px 0; }
+.management-results input,.management-results select,.management-results textarea,.management-payment input,.management-payment select,.management-payment textarea,.reported-payments input,.reported-payments select,.reported-payments textarea { font:inherit; padding:10px; border:1px solid #cbd5e1; border-radius:7px; width:100%; min-width:0; box-sizing:border-box; }
+.management-payment fieldset { border:1px solid #dbe3ec; border-radius:8px; margin:16px 0; }
+.management-invoice { display:flex; flex-direction:column; gap:7px; border-bottom:1px solid #e3e8ef; padding:14px 0; }
+.management-invoice > label { flex-direction:row; align-items:center; }
+.management-invoice input[type=radio],.management-invoice input[type=checkbox] { width:auto; }
+.management-confirmation,.management-report { padding:16px; background:#fff; border:1px solid #dbe3ec; border-radius:9px; margin:14px 0; }
+.management-confirmation dl { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+.management-confirmation dd { margin:0; }
+.management-report { border-left:4px solid #d19c35; }
+.management-success { background:#edf8f2; color:#176246; border-color:#c7e5d5; }
+.management-payment button { margin:8px 8px 8px 0; }
+.reported-payments table { min-width:700px; }
+@media(max-width:650px){.management-grid { grid-template-columns:1fr; }.management-results { padding:12px; }.management-confirmation dl { grid-template-columns:1fr; }}

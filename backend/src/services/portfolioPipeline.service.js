@@ -24,7 +24,7 @@ function signSourceContext(payload, secret) {
   return `${encoded}.${signature}`;
 }
 
-function verifySourceContext(token, secret, companyId) {
+export function verifySourceContext(token, secret, companyId) {
   if (typeof token !== "string" || token.length > 12000) throw Object.assign(new Error("Contexto temporal inválido."), { status: 400 });
   const [encoded, signature, extra] = token.split(".");
   if (!encoded || !signature || extra) throw Object.assign(new Error("Contexto temporal inválido."), { status: 400 });

@@ -22,4 +22,10 @@ describe("customer history timeline", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("Historial inaccesible");
     expect(screen.queryByRole("button", { name: /editar|eliminar|enviar/i })).not.toBeInTheDocument();
   });
+  it('shows system financial events distinctly and exposes the financial timeline filter',async()=>{
+    getCustomerHistory.mockResolvedValueOnce({...data,events:[{id:'financial:1',type:'financial',occurred_at:'2026-10-07T15:30:00Z',actor:'SYSTEM',title:'Saldo actualizado',description:'Saldo anterior: 119.00 COP. Saldo nuevo: 0.00 COP.',metadata:{actor_type:'SYSTEM',payment_id:'8',allocation_id:'9',old_balance:'119.00',new_balance:'0.00'}}]});
+    render(<CustomerHistory customerId="8"/>);expect(await screen.findByText('Saldo actualizado')).toBeVisible();expect(screen.getByText(/Sistema/)).toBeVisible();expect(screen.getByText('Pago #8 · Asignación #9')).toBeVisible();
+    fireEvent.change(screen.getByRole('combobox',{name:'Tipo de evento'}),{target:{value:'financial'}});
+    await waitFor(()=>expect(getCustomerHistory).toHaveBeenLastCalledWith('8',expect.objectContaining({type:'financial'}),expect.anything()));
+  });
 });

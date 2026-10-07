@@ -14,6 +14,7 @@ import portfolioRoutes from "./routes/portfolio.routes.js";
 import adminRoutes from "./routes/admin.routes.js";
 import collectionRoutes from "./routes/collection.routes.js";
 import { adminWhatsAppRoutes, collectorWhatsAppRoutes } from "./routes/whatsapp.routes.js";
+import collectionResultsRoutes from "./routes/collectionResults.routes.js";
 export function createApp(config = loadAuthConfig()) {
   const app = express();
   app.set("trust proxy", config.trustProxyHops);
@@ -39,6 +40,7 @@ export function createApp(config = loadAuthConfig()) {
   app.use("/api/payments", authenticate, requireCompanyScope, paymentRoutes);
   app.use("/api/portfolio", authenticate, requireCompanyScope, portfolioRoutes);
   app.use("/api/collection", authenticate, requireCompanyScope, collectionRoutes);
+  app.use("/api/collection/results", authenticate, collectionResultsRoutes);
   app.use("/api/whatsapp", authenticate, collectorWhatsAppRoutes);
   app.use("/api/admin/whatsapp", authenticate, adminWhatsAppRoutes);
   app.use("/api/admin", authenticate, adminRoutes);

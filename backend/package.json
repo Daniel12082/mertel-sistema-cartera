@@ -4,6 +4,8 @@
   "description": "",
   "main": "index.js",
   "scripts": {
+    "migrate:collection-results": "node scripts/migrate-collection-results.js",
+    "test:collection-results": "node --test test/collectionResults*.test.js",
     "migrate:whatsapp": "node scripts/migrate-whatsapp.js",
     "test:whatsapp": "node --test test/whatsapp*.test.js",
     "test": "node --test",

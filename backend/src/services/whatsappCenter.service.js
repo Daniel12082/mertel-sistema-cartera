@@ -175,7 +175,11 @@ export async function enqueueWhatsApp({ scope, actorId, body, now = new Date() }
     const rule = settings.rules.find(item => item.stage === preview.stage && item.enabled && item.mode === body.mode && item.template_id === String(templateId));
     if (!rule || !stages.some(stage => stage.key === preview.stage)) throw operationError(409, 'Configura una regla activa para esta etapa, plantilla y modo.');
     let phone; try { phone = normalizePhone(preview.customer.phone); } catch { throw operationError(409, 'El cliente no tiene un teléfono válido.'); }
-    const scheduledAt = nextWindow(rule, now); const day = bogotaDate(scheduledAt);
+    const scheduledAt = nextWindow(rule, now);
+    // DATETIME has second precision. Avoid MySQL rounding an immediate queue entry
+    // into the future, which could postpone its first MOCK/worker attempt.
+    scheduledAt.setUTCMilliseconds(0);
+    const day = bogotaDate(scheduledAt);
     const key = idempotencyKey({ companyId: scope.companyId, customerId, stage: preview.stage, templateId, day, mode: body.mode });
     const [[duplicate]] = await db.query('SELECT CAST(id AS CHAR) AS id FROM messages WHERE company_id=? AND idempotency_key=?', [scope.companyId, key]);
     if (duplicate) return { message: await messageById(db, scope, duplicate.id), duplicate: true };

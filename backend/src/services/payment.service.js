@@ -26,7 +26,8 @@ import {
   softDeleteAllocation,
 } from "../models/paymentAllocation.model.js";
 import { financialError, isApplicablePayment, lockActiveCustomer, validateCompanyCustomer } from "../utils/financialIntegrity.js";
-import { companyFilter, documentCompany, sameCompany } from "../utils/companyScope.js";
+import { companyFilter, documentCompany, sameCompany, validCompanyId } from "../utils/companyScope.js";
+import { moneyCents } from './collectionMoney.js';
 
 function paymentError(code, message) {
   const error = new Error(message);
@@ -66,6 +67,50 @@ export async function addPayment(payment, scope) {
     await connection.rollback();
     throw error;
   } finally { connection.release(); }
+}
+
+// Atomic composition of the existing ledger operations, usable by report review too.
+export async function addPaymentWithAllocations({ payment, allocations, operationKey, payloadHash, expectedBalances, scope, transactionDb }, dbPool = pool) {
+  companyFilter(scope, 'company_id');
+  try {
+    if (!/^[a-f\d]{64}$/.test(operationKey || '') || !/^[a-f\d]{64}$/.test(payloadHash || '') || !Array.isArray(allocations) || !allocations.length || allocations.length > 50 || moneyCents(payment.amount) <= 0n ||
+      new Set(allocations.map(allocation => String(allocation.invoice_id))).size !== allocations.length || allocations.some(allocation => !validCompanyId(allocation.invoice_id) || moneyCents(allocation.amount) <= 0n) ||
+      allocations.reduce((sum,allocation) => sum + moneyCents(allocation.amount),0n) > moneyCents(payment.amount)) throw new Error();
+  } catch { throw financialError('INVALID_ATOMIC_PAYMENT','Pago o asignaciones inválidos.',400); }
+  allocations = [...allocations].sort((a,b) => BigInt(a.invoice_id) < BigInt(b.invoice_id) ? -1 : 1);
+  const connection = transactionDb || await dbPool.getConnection();
+  try {
+    if (!transactionDb) await connection.beginTransaction();
+    payment = { ...payment, status: 'confirmed', created_by: scope.actorId };
+    await validateReferences(payment, connection, scope);
+    const [[prior]] = await connection.query('SELECT CAST(id AS CHAR) AS id,operation_payload_hash FROM payments WHERE company_id=? AND operation_key=? FOR UPDATE', [scope.companyId, operationKey]);
+    if (prior) {
+      if (prior.operation_payload_hash !== payloadHash) throw financialError('IDEMPOTENCY_CONFLICT', 'La clave ya se usó con otros datos.');
+      const existing = await getPaymentById(prior.id, scope, connection);
+      const existingAllocations = await getAllocationsByPayment(prior.id, scope, connection);
+      if (!transactionDb) await connection.commit();
+      return { payment: existing, allocations: existingAllocations, duplicate: true };
+    }
+    // Stable invoice order plus authoritative balance comparisons protects stale previews.
+    for (const allocation of allocations) {
+      const invoice = await getInvoiceForUpdate(allocation.invoice_id, connection, scope);
+      if (!invoice) throw financialError('INVOICE_NOT_FOUND', 'Factura no encontrada.', 404);
+      if (String(invoice.customer_id) !== String(payment.customer_id)) throw financialError('CUSTOMER_MISMATCH', 'La factura no pertenece al cliente.');
+      if (['cancelled','inactive','void','paid'].includes(invoice.status) || !(await hasEnoughInvoiceBalance(invoice.balance, allocation.amount, connection))) throw financialError('INVOICE_OVERALLOCATION', 'La factura no está activa o el monto supera su saldo.');
+      if (expectedBalances && String(invoice.balance) !== expectedBalances[String(allocation.invoice_id)]) throw financialError('STALE_PAYMENT_PREVIEW', 'El saldo cambió desde la vista previa. Genera nuevamente el resumen.');
+    }
+    const paymentId = await createPayment(payment, connection);
+    await connection.query('UPDATE payments SET operation_key=?,operation_payload_hash=? WHERE id=?', [operationKey, payloadHash, paymentId]);
+    const createdAllocations = [];
+    for (const allocation of allocations) {
+      const id = await applyPaymentAllocationInTransaction(paymentId, allocation, scope, connection);
+      createdAllocations.push(await getAllocationById(id, scope, connection));
+    }
+    const created = await getPaymentById(paymentId, scope, connection);
+    if (!transactionDb) await connection.commit();
+    return { payment: created, allocations: createdAllocations, duplicate: false };
+  } catch (error) { if (!transactionDb) await connection.rollback(); throw error; }
+  finally { if (!transactionDb) connection.release(); }
 }
 
 export async function editPayment(id, payment, scope) {
@@ -130,12 +175,7 @@ export async function listPaymentAllocations(paymentId, scope) {
   return getAllocationsByPayment(paymentId, scope);
 }
 
-export async function addPaymentAllocation(paymentId, allocation, scope) {
-  companyFilter(scope, "company_id");
-  const connection = await pool.getConnection();
-  try {
-    await connection.beginTransaction();
-
+export async function applyPaymentAllocationInTransaction(paymentId, allocation, scope, connection) {
     // Preserve parent lock order: payment -> customer -> invoice -> allocation.
     // Customer locks also serialize document creation with customer deletion.
     const payment = await getPaymentForUpdate(paymentId, connection, scope);
@@ -174,6 +214,17 @@ export async function addPaymentAllocation(paymentId, allocation, scope) {
     if (!(await reduceInvoiceBalance(allocation.invoice_id, allocation.amount, connection))) {
       throw paymentError("INVOICE_BALANCE_CONFLICT", "No fue posible actualizar el saldo de la factura");
     }
+
+    return allocationId;
+}
+
+export async function addPaymentAllocation(paymentId, allocation, scope) {
+  companyFilter(scope, "company_id");
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+
+    const allocationId = await applyPaymentAllocationInTransaction(paymentId, allocation, scope, connection);
 
     await connection.commit();
     const [created, updatedPayment, invoiceBalance] = await Promise.all([

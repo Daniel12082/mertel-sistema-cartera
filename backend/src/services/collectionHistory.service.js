@@ -20,13 +20,13 @@ function normalizeType(type, allowed) {
   return type;
 }
 function toIso(value) { return value == null ? null : new Date(Number(value)).toISOString(); }
-function actionSelect({ company, customerId, type, dateFrom, dateTo, actorId, query }) {
+function actionSelect({ company, customerId, type, dateFrom, dateTo, actorId, query, includeFinancialEvents = false }) {
   const values = [customerId, ...company.values];
   let where = `a.customer_id=? ${company.sql} AND (a.invoice_id IS NULL OR i.id IS NOT NULL)`;
   if (type && type !== "action") return null;
   if (dateFrom) { where += " AND DATE(a.action_date)>=?"; values.push(dateFrom); }
   if (dateTo) { where += " AND DATE(a.action_date)<=?"; values.push(dateTo); }
-  if (actorId) { where += " AND a.user_id=?"; values.push(actorId); }
+  if (actorId) { where += includeFinancialEvents ? " AND (a.user_id=? OR a.action_type IN ('PAYMENT_REPORTED','PAYMENT_REGISTERED','PARTIAL_PAYMENT','PAYMENT_CONFIRMED','PAYMENT_REJECTED'))" : " AND a.user_id=?"; values.push(actorId); }
   if (query) { where += " AND (c.name LIKE ? OR c.nit LIKE ? OR i.invoice_number LIKE ? OR CONCAT_WS(' ',u.first_name,u.last_name) LIKE ? OR a.action_type LIKE ?)"; values.push(...Array(5).fill(`%${query}%`)); }
   return { sql: `SELECT CONCAT('action:',a.id) AS id,'action' AS type,UNIX_TIMESTAMP(a.action_date)*1000 AS occurred_ms,CONCAT(DATE_FORMAT(a.action_date,'%Y-%m-%dT%H:%i:%s'),'Z') AS occurred_at,
     CONCAT_WS(' ',u.first_name,u.last_name) AS actor,c.name AS customer_name,c.nit AS customer_nit,i.invoice_number,
@@ -55,13 +55,20 @@ function promiseSelect({ company, customerId, type, dateFrom, dateTo, actorId, q
 }
 
 function eventView(row) {
+  const resultTitles = { CONTACTED:'Cliente contactado',WHATSAPP:'WhatsApp informado por el cobrador',PROMISE:'Promesa de pago',NO_RESPONSE:'Cliente no responde',INCONSISTENCY:'Inconsistencia reportada',WRONG_NUMBER:'Número incorrecto',OTHER:'Otra gestión',PAYMENT_REPORTED:'Pago reportado',PAYMENT_REGISTERED:'Pago registrado',PARTIAL_PAYMENT:'Pago parcial registrado',PAYMENT_CONFIRMED:'Pago confirmado',PAYMENT_REJECTED:'Pago reportado rechazado' };
   const base = { id: String(row.id), type: row.type, occurred_at: row.occurred_at || toIso(row.occurred_ms), actor: row.actor || null,
     customer: row.customer_name ? { name: row.customer_name, identification: row.customer_nit || null } : null,
-    invoice: row.invoice_number || null, title: row.title };
+    invoice: row.invoice_number || null, title: row.type === 'action' ? resultTitles[row.title] || row.title : row.title };
   if (row.type === "action") return { ...base, description: row.description || null, status: row.status || null, metadata: { action_type: row.title } };
   if (row.type === "promise") return { ...base, description: row.notes || null, status: row.status || null,
     metadata: { promised_date: row.promised_date, amount: row.amount } };
   if (row.type === 'message') return { ...base, description: row.description, status: row.status, metadata: {} };
+  if (row.type === 'financial') {
+    const value=typeof row.new_values==='string'?JSON.parse(row.new_values):row.new_values;
+    const metadata={};
+    for(const key of ['actor_type','triggered_by','correlation_id','payment_id','allocation_id','amount','old_balance','new_balance','total_balance_before','total_balance_after','stage_before','stage_after']) if(value?.[key]!==undefined)metadata[key]=value[key];
+    return {...base,description:value?.description||null,status:null,metadata};
+  }
   if (row.type === "configuration") return { ...base, description: row.description, status: row.status,
     metadata: { before: safeStages(row.old_values), after: safeStages(row.new_values) } };
   return { ...base, description: row.description, status: row.status,
@@ -71,7 +78,7 @@ function eventView(row) {
 function messageSelect({ companyId, customerId, type }) {
   if (type && type !== 'message') return null;
   return { sql: `SELECT CONCAT('message:',a.id) AS id,'message' AS type,UNIX_TIMESTAMP(a.created_at)*1000 AS occurred_ms,NULL AS occurred_at,
-    CONCAT_WS(' ',u.first_name,u.last_name) AS actor,c.name AS customer_name,c.nit AS customer_nit,i.invoice_number,
+    CASE WHEN JSON_UNQUOTE(JSON_EXTRACT(a.new_values,'$.actor_type'))='SYSTEM' THEN 'SYSTEM' ELSE CONCAT_WS(' ',u.first_name,u.last_name) END AS actor,c.name AS customer_name,c.nit AS customer_nit,i.invoice_number,
     CASE a.action WHEN 'sent' THEN 'Mensaje enviado' WHEN 'delivered' THEN 'Mensaje entregado' WHEN 'read' THEN 'Mensaje leído'
       WHEN 'incoming' THEN 'Respuesta recibida' WHEN 'failed' THEN 'Mensaje fallido' WHEN 'cancelled' THEN 'Mensaje cancelado' ELSE 'Mensaje en cola' END AS title,
     m.content AS description,a.action AS status,NULL AS promised_date,NULL AS amount,NULL AS notes,
@@ -81,6 +88,21 @@ function messageSelect({ companyId, customerId, type }) {
     LEFT JOIN invoices i ON i.id=m.invoice_id AND i.company_id=m.company_id AND i.customer_id=m.customer_id
     LEFT JOIN users u ON u.id=a.user_id WHERE a.company_id=? AND m.customer_id=? AND a.entity_type='whatsapp_message'`,
     values: [companyId, customerId] };
+}
+
+function financialSelect({companyId,customerId,type}){
+  if(type&&type!=='financial')return null;
+  return {sql:`SELECT CONCAT('financial:',LPAD(a.id,20,'0')) AS id,'financial' AS type,UNIX_TIMESTAMP(a.created_at)*1000 AS occurred_ms,NULL AS occurred_at,
+    CASE WHEN JSON_UNQUOTE(JSON_EXTRACT(a.new_values,'$.actor_type'))='SYSTEM' THEN 'SYSTEM' ELSE CONCAT_WS(' ',u.first_name,u.last_name) END AS actor,
+    c.name AS customer_name,c.nit AS customer_nit,i.invoice_number,
+    CASE a.action WHEN 'allocation_created' THEN 'Pago asignado a factura' WHEN 'balance_updated' THEN 'Saldo actualizado' WHEN 'invoice_settled' THEN 'Factura saldada'
+      WHEN 'pipeline_recalculated' THEN 'Cobranza recalculada' WHEN 'pipeline_exited' THEN 'Cliente fuera del pipeline' WHEN 'automatic_collection_blocked' THEN 'Cobranza automática bloqueada' END AS title,
+    NULL AS description,NULL AS status,NULL AS promised_date,NULL AS amount,NULL AS notes,NULL AS old_values,a.new_values,NULL AS file_name,NULL AS total_rows,NULL AS failed_rows
+    FROM audit_logs a JOIN customers c ON c.company_id=a.company_id AND CAST(c.id AS CHAR)=JSON_UNQUOTE(JSON_EXTRACT(a.new_values,'$.customer_id'))
+    LEFT JOIN invoices i ON CAST(i.id AS CHAR)=JSON_UNQUOTE(JSON_EXTRACT(a.new_values,'$.invoice_id')) AND i.customer_id=c.id AND i.company_id=a.company_id
+    LEFT JOIN users u ON u.id=a.user_id AND (u.company_id=a.company_id OR u.company_id IS NULL)
+    WHERE a.company_id=? AND c.id=? AND a.entity_type IN ('payment_allocation','invoice','collection_pipeline')
+      AND a.action IN ('allocation_created','balance_updated','invoice_settled','pipeline_recalculated','pipeline_exited','automatic_collection_blocked')`,values:[companyId,customerId]};
 }
 
 function safeStages(value) {
@@ -97,7 +119,7 @@ function pagination(page, limit, total) { return { page, limit, total, pages: Ma
 export async function getCustomerCollectionHistory({ customerId, scope, page, limit, type, ownUserOnly = false }, dbPool = pool) {
   customerId = operationId(customerId, "customer_id");
   if (!validCompanyId(scope?.companyId)) throw operationError(scope?.globalAdmin ? 400 : 403, "Se requiere empresa para consultar el historial.");
-  const paging = normalizePage(page, limit); const selectedType = normalizeType(type, new Set(["action", "promise", "message"]));
+  const paging = normalizePage(page, limit); const selectedType = normalizeType(type, new Set(["action", "promise", "message", "financial"]));
   const db = await dbPool.getConnection();
   try {
     await db.query("START TRANSACTION READ ONLY");
@@ -105,11 +127,12 @@ export async function getCustomerCollectionHistory({ customerId, scope, page, li
     const [customers] = await db.query(`SELECT c.id FROM customers c WHERE c.id=? AND c.deleted_at IS NULL ${company.sql}`, [customerId, ...company.values]);
     if (!customers.length) throw operationError(404, "Cliente no encontrado.");
     const action = actionSelect({ company: companyFilter(scope, "a.company_id", "c.company_id"), customerId, type: selectedType,
-      ...(ownUserOnly ? { actorId: scope.actorId } : {}) });
+      ...(ownUserOnly ? { actorId: scope.actorId, includeFinancialEvents: true } : {}) });
     const promise = promiseSelect({ company: companyFilter(scope, "p.company_id", "c.company_id"), customerId, type: selectedType,
       ...(ownUserOnly ? { actorId: scope.actorId } : {}) });
     const message = messageSelect({ companyId: scope.companyId, customerId, type: selectedType });
-    const sources = [action, promise, message].filter(Boolean);
+    const financial = financialSelect({companyId:scope.companyId,customerId,type:selectedType});
+    const sources = [action, promise, message, financial].filter(Boolean);
     const union = sources.map(source => source.sql).join(" UNION ALL ");
     const [rows] = await db.query(`SELECT * FROM (${union}) events ORDER BY occurred_ms DESC,id DESC LIMIT ? OFFSET ?`, [...sources.flatMap(source => source.values), paging.limit + 1, paging.offset]);
     const hasNext = rows.length > paging.limit; const events = rows.slice(0, paging.limit).map(eventView);

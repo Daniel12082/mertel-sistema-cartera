@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../auth/useAuth';
 import { whatsappRequest } from '../../services/whatsappCenter.service';
@@ -40,6 +40,7 @@ export default function WhatsAppCenter() {
   const [previewForm, setPreviewForm] = useState({ customer_id: '', template_id: '' }); const [preview, setPreview] = useState(null);
   const [incoming, setIncoming] = useState({ phone: '', content: '', provider_message_id: '' });
   const [revision, setRevision] = useState(0);
+  const operationPending = useRef(false);
   useEffect(() => {
     if (!authorized) return;
     const controller = new AbortController();
@@ -56,11 +57,16 @@ export default function WhatsAppCenter() {
     return () => controller.abort();
   }, [authorized, tab, filters, revision]);
   async function act(work, success) {
-    if (busy) return;
+    if (operationPending.current) return;
+    operationPending.current = true;
     setBusy(true); setError(''); setNotice('');
-    try { const result = await work(); setNotice(success); setRevision(value => value + 1); return result; }
+    try {
+      const result = await work();
+      if (tab === 'Mensajes') setMessages(await whatsappRequest('/messages', { params: filters }));
+      setNotice(success); setRevision(value => value + 1); return result;
+    }
     catch (failure) { setError(failure.message); }
-    finally { setBusy(false); }
+    finally { operationPending.current = false; setBusy(false); }
   }
   const settings = data?.settings; const connected = settings?.connection_status === 'CONNECTED';
   const stages = data?.stage_catalog || [];
