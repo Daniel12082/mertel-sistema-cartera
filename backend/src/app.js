@@ -13,6 +13,7 @@ import paymentRoutes from "./routes/payment.routes.js";
 import portfolioRoutes from "./routes/portfolio.routes.js";
 import adminRoutes from "./routes/admin.routes.js";
 import collectionRoutes from "./routes/collection.routes.js";
+import { adminWhatsAppRoutes, collectorWhatsAppRoutes } from "./routes/whatsapp.routes.js";
 export function createApp(config = loadAuthConfig()) {
   const app = express();
   app.set("trust proxy", config.trustProxyHops);
@@ -38,6 +39,8 @@ export function createApp(config = loadAuthConfig()) {
   app.use("/api/payments", authenticate, requireCompanyScope, paymentRoutes);
   app.use("/api/portfolio", authenticate, requireCompanyScope, portfolioRoutes);
   app.use("/api/collection", authenticate, requireCompanyScope, collectionRoutes);
+  app.use("/api/whatsapp", authenticate, collectorWhatsAppRoutes);
+  app.use("/api/admin/whatsapp", authenticate, adminWhatsAppRoutes);
   app.use("/api/admin", authenticate, adminRoutes);
   app.use((req, res) => res.status(404).json({ success: false, message: "Ruta no encontrada" }));
   app.use((error, req, res, next) => {

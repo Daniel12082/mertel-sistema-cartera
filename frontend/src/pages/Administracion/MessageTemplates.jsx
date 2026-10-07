@@ -4,7 +4,7 @@ import { useAuth } from "../../auth/useAuth";
 import { createMessageTemplate, getMessageTemplateAdminData, setMessageTemplateActive, updateMessageTemplate } from "../../services/messageTemplatesAdmin.service";
 import "./MessageTemplates.css";
 
-const blankForm = () => ({ name: "", channel: "whatsapp", content: "", stage: "", status: "inactive" });
+const blankForm = () => ({ name: "", description: "", channel: "whatsapp", content: "", stage: "", status: "inactive" });
 const formatDate = value => value ? new Intl.DateTimeFormat("es-CO", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value)) : "—";
 function previewTemplate(content, variables) {
   const examples = new Map(variables.map(item => [item.name, item.example]));
@@ -61,7 +61,7 @@ export default function MessageTemplates() {
 
   function beginCreate() { setEditing(null); setForm(blankForm()); setFormError(""); }
   function beginEdit(template) {
-    setEditing(template); setForm({ name: template.name, channel: template.channel, content: template.content, stage: template.stage ?? "", status: template.status }); setFormError("");
+    setEditing(template); setForm({ name: template.name, description: template.description || "", channel: template.channel, content: template.content, stage: template.stage ?? "", status: template.status }); setFormError("");
   }
   function cancelEdit() { setForm(null); setEditing(null); setFormError(""); }
   function insertVariable(variable) {
@@ -84,7 +84,7 @@ export default function MessageTemplates() {
     const error = validateForm(form, variables);
     if (error) { setFormError(error); return; }
     setState(current => ({ ...current, saving: true })); setFormError("");
-    const payload = { name: form.name, channel: form.channel, content: form.content, stage: form.stage || null };
+    const payload = { name: form.name, channel: form.channel, content: form.content, stage: form.stage || null, ...(form.description || editing?.description ? { description: form.description } : {}) };
     try {
       if (editing) await updateMessageTemplate(editing.id, payload);
       else await createMessageTemplate({ ...payload, status: form.status });
@@ -113,6 +113,7 @@ export default function MessageTemplates() {
         <label>Etapa de cobranza<select aria-label="Etapa de cobranza" value={form.stage} onChange={event => setForm({ ...form, stage: event.target.value })}><option value="">General · cualquier etapa</option>{stages.map(stage => <option key={stage.key} value={stage.key}>{stage.label}</option>)}{editing?.stage && !stages.some(stage => stage.key === editing.stage) && <option value={editing.stage}>{editing.stage} · etapa no activa</option>}</select></label>
         {!editing && <label>Estado inicial<select aria-label="Estado inicial" value={form.status} onChange={event => setForm({ ...form, status: event.target.value })}><option value="inactive">Inactiva</option><option value="active">Activa</option></select></label>}
       </div>
+      <label>Descripción (opcional)<input maxLength={200} value={form.description} onChange={event => setForm({ ...form, description: event.target.value })} /></label>
       <label className="template-content-label">Contenido<textarea ref={textarea} aria-label="Contenido de plantilla" rows={6} maxLength={65535} value={form.content} onChange={event => setForm({ ...form, content: event.target.value })} placeholder="Hola {{nombre_cliente}}, le recordamos que su factura {{numero_factura}} presenta un saldo pendiente de {{saldo_pendiente}}." /></label>
       <fieldset className="template-variable-catalog"><legend>Variables disponibles · selecciona para insertarla</legend><div>{variables.map(variable => <button type="button" key={variable.name} aria-label={`Insertar {{${variable.name}}}`} title={`${variable.label} · Fuente: ${variable.source}`} onClick={() => insertVariable(variable)}><span>{variable.label}</span><code>{`{{${variable.name}}}`}</code>{variable.legacy && <small>Compatibilidad</small>}</button>)}</div><p>Las variables se reemplazan como texto literal usando datos disponibles en Cobranza. El mensaje no ejecuta código.</p></fieldset>
       <section className="template-preview" aria-label="Vista previa con ejemplos"><div><span>VISTA PREVIA</span><small>Datos de ejemplo ficticios · no se guardan ni se envían</small></div><p>{form.content ? previewTemplate(form.content, variables) : "El contenido de la plantilla aparecerá aquí."}</p></section>

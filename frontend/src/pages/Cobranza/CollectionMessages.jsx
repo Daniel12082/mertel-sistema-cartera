@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { getCollectionMessageTemplates, previewCollectionMessage, prepareCollectionMessage } from "../../services/collectionMessages.service";
 import { useAuth } from "../../auth/useAuth";
+import { queueCustomerWhatsApp } from "../../services/whatsappCenter.service";
 
 export default function CollectionMessages({ customer, referenceDate, autoOpen = false }) {
   const { permissions = [] } = useAuth();
@@ -12,6 +13,7 @@ export default function CollectionMessages({ customer, referenceDate, autoOpen =
   const [message, setMessage] = useState(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [queued, setQueued] = useState("");
   const selector = useRef(null);
   const heading = useRef(null);
   const version = useRef(0);
@@ -29,10 +31,17 @@ export default function CollectionMessages({ customer, referenceDate, autoOpen =
   useEffect(() => { if (opened && !templates.loading) (templates.rows.length ? selector.current : heading.current)?.focus(); }, [opened, templates.loading, templates.rows]);
   function open() {
     version.current++; activeRequest.current?.abort(); busy.current = false;
-    setLoading(false); setTemplateId(""); setMessage(null); setError("");
+    setLoading(false); setTemplateId(""); setMessage(null); setError(""); setQueued("");
     setTemplates({ loading: true, rows: [], error: "" }); setOpened(true); setReload(value => value + 1);
   }
-  function choose(event) { version.current++; activeRequest.current?.abort(); busy.current = false; setLoading(false); setTemplateId(event.target.value); setMessage(null); setError(""); }
+  function choose(event) { version.current++; activeRequest.current?.abort(); busy.current = false; setLoading(false); setTemplateId(event.target.value); setMessage(null); setError(""); setQueued(""); }
+  async function queue() {
+    if (busy.current) return;
+    const revision = version.current; busy.current = true; setLoading(true); setError("");
+    try { const result = await queueCustomerWhatsApp(customer.id, templateId); if (version.current === revision) setQueued(`Mensaje ${result.message.id} en cola ${result.message.status}. No se ha enviado.`); }
+    catch (failure) { if (version.current === revision) setError(failure.message); }
+    finally { if (version.current === revision) { busy.current = false; setLoading(false); } }
+  }
   async function generate(prepare = false) {
     if (!allowed || !templateId || busy.current) return;
     const revision = ++version.current;
@@ -66,6 +75,8 @@ export default function CollectionMessages({ customer, referenceDate, autoOpen =
           {message.empty_content && <p role="alert">La plantilla no tiene contenido.</p>}
           <p role="status">{message.notice}</p>
           <button className="cartera-reset" disabled={!message.can_prepare || !phoneAvailable || loading || message.prepared} onClick={() => generate(true)}>Preparar mensaje</button>
+          <button className="cartera-reset" disabled={!message.can_prepare || loading || Boolean(queued)} onClick={queue}>Guardar en cola WhatsApp</button>
+          {queued && <p role="status">{queued}</p>}
         </div>}
       </>}
       {error && !templates.rows.length && <p role="alert">{error}</p>}

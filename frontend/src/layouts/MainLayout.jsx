@@ -57,6 +57,8 @@ function MainLayout() {
           ))}
           {(permissions.includes("message_templates.manage") || permissions.includes("settings.manage") || permissions.includes("portfolio.import")) && <div className="mertel-navigation-group">
             <span>Administración</span>
+            {permissions.includes("settings.manage") && <NavLink to="/administracion/whatsapp" className={({ isActive }) =>
+              `mertel-nav-item ${isActive ? "active" : ""}`}><MessageSquareText size={19} strokeWidth={2} /><span>WhatsApp</span></NavLink>}
             {permissions.includes("collection.view") && permissions.includes("settings.manage") && <NavLink to="/administracion/dashboard-cobranza" className={({ isActive }) =>
               `mertel-nav-item ${isActive ? "active" : ""}`}><Gauge size={19} strokeWidth={2} /><span>Dashboard de cobranza</span></NavLink>}
             {permissions.includes("history.view") && permissions.includes("settings.manage") && <NavLink to="/administracion/historial-cobranza" className={({ isActive }) =>

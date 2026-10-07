@@ -1,4 +1,12 @@
 const VARIABLE_DEFINITIONS = Object.freeze([
+  { name: "cliente_nombre", label: "Nombre del cliente", source: "customers.name", example: "Cliente DEMO", legacy: true },
+  { name: "nit", label: "NIT", source: "customers.nit", example: "900123456-1", legacy: true },
+  { name: "fecha_emision", label: "Emisión", source: "main_invoice.issue_date", example: "2026-09-01", legacy: true },
+  { name: "dias_restantes", label: "Días restantes", source: "main_invoice.days_until_due", example: "5", legacy: true },
+  { name: "etapa", label: "Etapa", source: "collection_customer.stage_label", example: "En mora", legacy: true },
+  { name: "vendedor", label: "Vendedor (requiere dato disponible)", source: "customer.seller", example: "Vendedor DEMO", legacy: true },
+  { name: "cobrador", label: "Cobrador (requiere dato disponible)", source: "customer.collector", example: "Cobrador DEMO", legacy: true },
+  { name: "empresa", label: "Empresa", source: "company.name", example: "MERTEL IMPORTACIONES S.A.S.", legacy: true },
   { name: "nombre_cliente", label: "Nombre del cliente", source: "customers.name", example: "Juan Pérez" },
   { name: "identificacion_cliente", label: "Identificación del cliente", source: "customers.nit", example: "900123456-1" },
   { name: "telefono_cliente", label: "Teléfono del cliente", source: "customers.phone", example: "3001234567" },

@@ -1,0 +1,29 @@
+.wa-center { max-width: 1280px; margin: auto; color: #20354c; }
+.wa-center header h1 { font-size: 30px; margin: 8px 0; }
+.wa-center nav,.wa-actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin: 16px 0; }
+.wa-center button { border: 1px solid #c6d5dd; border-radius: 8px; padding: 10px 15px; background: #fff; color: #16443a; cursor: pointer; font: inherit; }
+.wa-center button[aria-pressed=true],.wa-center form > button:first-of-type { background: #136853; color: white; }
+.wa-center button:disabled { opacity: .5; cursor: default; }
+.wa-card { background: white; border: 1px solid #dce5e9; border-radius: 14px; padding: 24px; margin: 18px 0; box-shadow: 0 4px 16px #20354c05; }
+.wa-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 16px; }
+.wa-center label { display: flex; flex-direction: column; gap: 7px; font-size: 14px; margin: 10px 0; }
+.wa-center input,.wa-center select,.wa-center textarea { padding: 11px; border: 1px solid #c6d5dd; border-radius: 7px; font: inherit; background: white; min-width: 0; width: 100%; box-sizing: border-box; }
+.wa-center input[type=checkbox] { width: auto; }
+.wa-center .wa-check,.wa-days label { flex-direction: row; align-items: center; }
+.wa-days { display: flex; gap: 16px; flex-wrap: wrap; }
+.wa-center fieldset { margin: 18px 0; border: 1px solid #dce5e9; border-radius: 8px; }
+.wa-center dl { display: grid; grid-template-columns: 150px 1fr; gap: 8px; }
+.wa-center dd { margin: 0; overflow-wrap: anywhere; }
+.wa-banner { background: #f0f6fa; padding: 13px; border-radius: 8px; }
+.wa-error { background: #fff0ee; color: #9c302d; padding: 10px; border-radius: 6px; overflow-wrap: anywhere; }
+.wa-success { background: #ecf9f2; color: #176045; padding: 12px; }
+.wa-state { font-weight: 700; color: #a33e3e; }
+.wa-state.connected { color: #176045; }
+.wa-center pre,.wa-content { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; }
+.wa-center pre { background: #eff9f4; padding: 20px; border-radius: 10px; }
+.wa-table { overflow-x: auto; }
+.wa-center table { border-collapse: collapse; width: 100%; min-width: 720px; text-align: left; }
+.wa-center th,.wa-center td { padding: 14px; border-bottom: 1px solid #dce5e9; vertical-align: top; max-width: 360px; }
+.wa-center td p { margin: 8px 0; }
+.wa-center a { margin: 10px; color: #136853; }
+@media(max-width: 700px) { .wa-grid { grid-template-columns: 1fr; } .wa-card { padding: 16px; } .wa-center dl { grid-template-columns: 1fr; } .wa-center header h1 { font-size: 25px; } }

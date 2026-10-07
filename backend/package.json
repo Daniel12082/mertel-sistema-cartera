@@ -4,6 +4,8 @@
   "description": "",
   "main": "index.js",
   "scripts": {
+    "migrate:whatsapp": "node scripts/migrate-whatsapp.js",
+    "test:whatsapp": "node --test test/whatsapp*.test.js",
     "test": "node --test",
     "test:financial": "node --test test/financialIntegrity.test.js",
     "test:auth": "node --test test/auth.test.js test/auth.unit.test.js",

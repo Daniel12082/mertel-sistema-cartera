@@ -15,6 +15,6 @@ function respond(operation, status = 200) {
 
 export const listTemplates = respond(req => listMessageTemplates({ scope: req.companyScope }));
 export const createTemplate = respond(req => createMessageTemplate({ scope: req.companyScope, actorId: req.user.id, body: req.body }), 201);
-export const updateTemplate = respond(req => updateMessageTemplate({ scope: req.companyScope, templateId: req.params.templateId, body: req.body }));
-export const activateTemplate = respond(req => setMessageTemplateStatus({ scope: req.companyScope, templateId: req.params.templateId, status: "active" }));
-export const deactivateTemplate = respond(req => setMessageTemplateStatus({ scope: req.companyScope, templateId: req.params.templateId, status: "inactive" }));
+export const updateTemplate = respond(req => updateMessageTemplate({ scope: req.companyScope, actorId: req.user.id, templateId: req.params.templateId, body: req.body }));
+export const activateTemplate = respond(req => setMessageTemplateStatus({ scope: req.companyScope, actorId: req.user.id, templateId: req.params.templateId, status: "active" }));
+export const deactivateTemplate = respond(req => setMessageTemplateStatus({ scope: req.companyScope, actorId: req.user.id, templateId: req.params.templateId, status: "inactive" }));

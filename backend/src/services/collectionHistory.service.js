@@ -61,10 +61,26 @@ function eventView(row) {
   if (row.type === "action") return { ...base, description: row.description || null, status: row.status || null, metadata: { action_type: row.title } };
   if (row.type === "promise") return { ...base, description: row.notes || null, status: row.status || null,
     metadata: { promised_date: row.promised_date, amount: row.amount } };
+  if (row.type === 'message') return { ...base, description: row.description, status: row.status, metadata: {} };
   if (row.type === "configuration") return { ...base, description: row.description, status: row.status,
     metadata: { before: safeStages(row.old_values), after: safeStages(row.new_values) } };
   return { ...base, description: row.description, status: row.status,
     metadata: { file_name: row.file_name, total_rows: row.total_rows, failed_rows: row.failed_rows } };
+}
+
+function messageSelect({ companyId, customerId, type }) {
+  if (type && type !== 'message') return null;
+  return { sql: `SELECT CONCAT('message:',a.id) AS id,'message' AS type,UNIX_TIMESTAMP(a.created_at)*1000 AS occurred_ms,NULL AS occurred_at,
+    CONCAT_WS(' ',u.first_name,u.last_name) AS actor,c.name AS customer_name,c.nit AS customer_nit,i.invoice_number,
+    CASE a.action WHEN 'sent' THEN 'Mensaje enviado' WHEN 'delivered' THEN 'Mensaje entregado' WHEN 'read' THEN 'Mensaje leído'
+      WHEN 'incoming' THEN 'Respuesta recibida' WHEN 'failed' THEN 'Mensaje fallido' WHEN 'cancelled' THEN 'Mensaje cancelado' ELSE 'Mensaje en cola' END AS title,
+    m.content AS description,a.action AS status,NULL AS promised_date,NULL AS amount,NULL AS notes,
+    NULL AS old_values,NULL AS new_values,NULL AS file_name,NULL AS total_rows,NULL AS failed_rows
+    FROM audit_logs a JOIN messages m ON m.id=a.entity_id AND m.company_id=a.company_id
+    JOIN customers c ON c.id=m.customer_id AND c.company_id=m.company_id
+    LEFT JOIN invoices i ON i.id=m.invoice_id AND i.company_id=m.company_id AND i.customer_id=m.customer_id
+    LEFT JOIN users u ON u.id=a.user_id WHERE a.company_id=? AND m.customer_id=? AND a.entity_type='whatsapp_message'`,
+    values: [companyId, customerId] };
 }
 
 function safeStages(value) {
@@ -81,7 +97,7 @@ function pagination(page, limit, total) { return { page, limit, total, pages: Ma
 export async function getCustomerCollectionHistory({ customerId, scope, page, limit, type, ownUserOnly = false }, dbPool = pool) {
   customerId = operationId(customerId, "customer_id");
   if (!validCompanyId(scope?.companyId)) throw operationError(scope?.globalAdmin ? 400 : 403, "Se requiere empresa para consultar el historial.");
-  const paging = normalizePage(page, limit); const selectedType = normalizeType(type, new Set(["action", "promise"]));
+  const paging = normalizePage(page, limit); const selectedType = normalizeType(type, new Set(["action", "promise", "message"]));
   const db = await dbPool.getConnection();
   try {
     await db.query("START TRANSACTION READ ONLY");
@@ -92,7 +108,8 @@ export async function getCustomerCollectionHistory({ customerId, scope, page, li
       ...(ownUserOnly ? { actorId: scope.actorId } : {}) });
     const promise = promiseSelect({ company: companyFilter(scope, "p.company_id", "c.company_id"), customerId, type: selectedType,
       ...(ownUserOnly ? { actorId: scope.actorId } : {}) });
-    const sources = [action, promise].filter(Boolean);
+    const message = messageSelect({ companyId: scope.companyId, customerId, type: selectedType });
+    const sources = [action, promise, message].filter(Boolean);
     const union = sources.map(source => source.sql).join(" UNION ALL ");
     const [rows] = await db.query(`SELECT * FROM (${union}) events ORDER BY occurred_ms DESC,id DESC LIMIT ? OFFSET ?`, [...sources.flatMap(source => source.values), paging.limit + 1, paging.offset]);
     const hasNext = rows.length > paging.limit; const events = rows.slice(0, paging.limit).map(eventView);

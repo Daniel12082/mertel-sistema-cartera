@@ -3,11 +3,11 @@ import { validCompanyId } from "../utils/companyScope.js";
 import { loadCompanyCollectionRules } from "./companyCollection.service.js";
 import { collectionStageCatalog } from "./collectionPolicy.js";
 import { operationError, operationId } from "./collectionOperations.validation.js";
-import { messageTemplateVariableCatalog, renderMessageTemplate } from "../utils/messageTemplate.js";
+import { messageTemplateVariableCatalog, renderMessageTemplate, templateVariables } from "../utils/messageTemplate.js";
 
-const templateFields = new Set(["name", "channel", "content", "stage"]);
+const templateFields = new Set(["name", "channel", "content", "stage", "description"]);
 const createFields = new Set([...templateFields, "status"]);
-const templateColumns = `CAST(id AS CHAR) AS id, name, channel, stage, status, content,
+const templateColumns = `CAST(id AS CHAR) AS id, name, channel, stage, status, content,subject AS description,'text' AS type,
   CAST(created_by AS CHAR) AS created_by, created_at, updated_at`;
 
 function parseTemplate(body, { creating = false } = {}) {
@@ -29,8 +29,9 @@ function parseTemplate(body, { creating = false } = {}) {
   const stage = body.stage == null || body.stage === "" ? null : typeof body.stage === "string" ? body.stage.trim() : null;
   if (body.stage != null && body.stage !== "" && (!stage || stage.length > 50)) throw operationError(400, "La etapa de cobranza no es válida.");
   const status = creating ? (body.status ?? "inactive") : undefined;
+  if (body.description !== undefined && (typeof body.description !== 'string' || body.description.length > 200)) throw operationError(400, 'Descripción inválida: máximo 200 caracteres.');
   if (creating && !["active", "inactive"].includes(status)) throw operationError(400, "El estado debe ser active o inactive.");
-  return { name, channel: "whatsapp", content, stage, ...(creating ? { status } : {}) };
+  return { name, channel: "whatsapp", content, stage, description: body.description ?? null, ...(creating ? { status } : {}) };
 }
 
 function authorizedCompany(scope) {
@@ -45,7 +46,7 @@ async function beginCompanyTransaction(scope, { readOnly = false } = {}) {
   const db = await pool.getConnection();
   try {
     if (readOnly) await db.query("START TRANSACTION READ ONLY"); else await db.beginTransaction();
-    const [[company]] = await db.query("SELECT id FROM companies WHERE id=? AND status='active' AND deleted_at IS NULL", [companyId]);
+    const [[company]] = await db.query(`SELECT id FROM companies WHERE id=? AND status='active' AND deleted_at IS NULL${readOnly ? '' : ' FOR UPDATE'}`, [companyId]);
     if (!company) throw operationError(403, "Empresa no disponible.");
     const rules = await loadCompanyCollectionRules(companyId, db);
     return { db, companyId, rules, stages: collectionStageCatalog(rules) };
@@ -54,6 +55,11 @@ async function beginCompanyTransaction(scope, { readOnly = false } = {}) {
     db.release();
     throw error;
   }
+}
+
+async function templateAudit(db, companyId, actorId, id, action) {
+  await db.query('INSERT INTO audit_logs (company_id,user_id,entity_type,entity_id,action,new_values) VALUES (?,?,\'message_template\',?,?,?)',
+    [companyId, actorId ?? null, id, action, JSON.stringify({ channel: 'whatsapp' })]);
 }
 
 function validateStage(stage, stages) {
@@ -67,7 +73,7 @@ export async function listMessageTemplates({ scope }) {
   try {
     const [templates] = await db.query(`SELECT ${templateColumns} FROM message_templates WHERE company_id=? AND channel='whatsapp' ORDER BY updated_at DESC,id DESC`, [companyId]);
     await db.commit();
-    return { templates, stage_catalog: stages, variables: messageTemplateVariableCatalog() };
+    return { templates: templates.map(template => ({ ...template, allowed_variables: templateVariables(template.content), required_variables: templateVariables(template.content) })), stage_catalog: stages, variables: messageTemplateVariableCatalog() };
   } catch (error) { try { await db.rollback(); } catch { /* preserve original */ } throw error; }
   finally { db.release(); }
 }
@@ -77,8 +83,9 @@ export async function createMessageTemplate({ scope, actorId, body }) {
   const { db, companyId, stages } = await beginCompanyTransaction(scope);
   try {
     validateStage(template.stage, stages);
-    const [inserted] = await db.query(`INSERT INTO message_templates (company_id,name,channel,content,stage,status,created_by)
-      VALUES (?,?,?,?,?,?,?)`, [companyId, template.name, template.channel, template.content, template.stage, template.status, actorId]);
+    const [inserted] = await db.query(`INSERT INTO message_templates (company_id,name,channel,content,stage,status,created_by,subject)
+      VALUES (?,?,?,?,?,?,?,?)`, [companyId, template.name, template.channel, template.content, template.stage, template.status, actorId, template.description]);
+    await templateAudit(db, companyId, actorId, inserted.insertId, 'created');
     const [[created]] = await db.query(`SELECT ${templateColumns} FROM message_templates WHERE id=? AND company_id=?`, [inserted.insertId, companyId]);
     await db.commit();
     return created;
@@ -86,7 +93,7 @@ export async function createMessageTemplate({ scope, actorId, body }) {
   finally { db.release(); }
 }
 
-export async function updateMessageTemplate({ scope, templateId, body }) {
+export async function updateMessageTemplate({ scope, actorId, templateId, body }) {
   const id = operationId(templateId, "template_id");
   const template = parseTemplate(body);
   const { db, companyId, stages } = await beginCompanyTransaction(scope);
@@ -94,8 +101,9 @@ export async function updateMessageTemplate({ scope, templateId, body }) {
     validateStage(template.stage, stages);
     const [[existing]] = await db.query("SELECT id FROM message_templates WHERE id=? AND company_id=? FOR UPDATE", [id, companyId]);
     if (!existing) throw operationError(404, "Plantilla no encontrada.");
-    await db.query(`UPDATE message_templates SET name=?,channel=?,content=?,stage=? WHERE id=? AND company_id=?`,
-      [template.name, template.channel, template.content, template.stage, id, companyId]);
+    await db.query(`UPDATE message_templates SET name=?,channel=?,content=?,stage=?,subject=COALESCE(?,subject) WHERE id=? AND company_id=?`,
+      [template.name, template.channel, template.content, template.stage, template.description, id, companyId]);
+    await templateAudit(db, companyId, actorId, id, 'updated');
     const [[result]] = await db.query(`SELECT ${templateColumns} FROM message_templates WHERE id=? AND company_id=?`, [id, companyId]);
     await db.commit();
     return result;
@@ -103,14 +111,16 @@ export async function updateMessageTemplate({ scope, templateId, body }) {
   finally { db.release(); }
 }
 
-export async function setMessageTemplateStatus({ scope, templateId, status }) {
+export async function setMessageTemplateStatus({ scope, actorId, templateId, status }) {
   const id = operationId(templateId, "template_id");
   if (!new Set(["active", "inactive"]).has(status)) throw operationError(400, "Estado no válido.");
-  const { db, companyId } = await beginCompanyTransaction(scope);
+  const { db, companyId, stages } = await beginCompanyTransaction(scope);
   try {
-    const [[existing]] = await db.query("SELECT id FROM message_templates WHERE id=? AND company_id=? FOR UPDATE", [id, companyId]);
+    const [[existing]] = await db.query("SELECT id,name,channel,content,stage FROM message_templates WHERE id=? AND company_id=? FOR UPDATE", [id, companyId]);
     if (!existing) throw operationError(404, "Plantilla no encontrada.");
+    if (status === 'active') { const { id: ignoredId, ...fields } = existing; void ignoredId; const parsed = parseTemplate(fields); validateStage(parsed.stage, stages); }
     await db.query("UPDATE message_templates SET status=? WHERE id=? AND company_id=?", [status, id, companyId]);
+    await templateAudit(db, companyId, actorId, id, status === 'active' ? 'activated' : 'deactivated');
     const [[result]] = await db.query(`SELECT ${templateColumns} FROM message_templates WHERE id=? AND company_id=?`, [id, companyId]);
     await db.commit();
     return result;
