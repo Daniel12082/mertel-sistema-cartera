@@ -58,31 +58,32 @@ function MainLayout() {
           ))}
           {(permissions.includes("message_templates.manage") || permissions.includes("settings.manage") || permissions.includes("portfolio.import")) && <div className="mertel-navigation-group">
             <span>Administración</span>
+            {permissions.includes("settings.manage") && <NavLink end to="/administracion" className={({isActive})=>`mertel-nav-item ${isActive?'active':''}`}><LayoutDashboard size={19}/><span>Centro Administrativo</span></NavLink>}
+            {permissions.includes("portfolio.import") && <NavLink to="/administracion/resolucion-clientes" className={({ isActive }) =>
+              `mertel-nav-item ${isActive ? "active" : ""}`}><SearchCheck size={19} strokeWidth={2} /><span>Clientes por resolver</span></NavLink>}
             {permissions.includes("settings.manage") && <NavLink to="/administracion/pagos-reportados" className={({ isActive }) =>
               `mertel-nav-item ${isActive ? "active" : ""}`}><CreditCard size={19} strokeWidth={2} /><span>Pagos reportados</span></NavLink>}
+            {permissions.includes("history.view") && permissions.includes("settings.manage") && <NavLink to="/administracion/historial-cobranza" className={({ isActive }) =>
+              `mertel-nav-item ${isActive ? "active" : ""}`}><ClipboardCheck size={19} strokeWidth={2} /><span>Auditoría</span></NavLink>}
             {permissions.includes("settings.manage") && <NavLink to="/administracion/whatsapp" className={({ isActive }) =>
               `mertel-nav-item ${isActive ? "active" : ""}`}><MessageSquareText size={19} strokeWidth={2} /><span>WhatsApp</span></NavLink>}
-            {permissions.includes("collection.view") && permissions.includes("settings.manage") && <NavLink to="/administracion/dashboard-cobranza" className={({ isActive }) =>
-              `mertel-nav-item ${isActive ? "active" : ""}`}><Gauge size={19} strokeWidth={2} /><span>Dashboard de cobranza</span></NavLink>}
-            {permissions.includes("history.view") && permissions.includes("settings.manage") && <NavLink to="/administracion/historial-cobranza" className={({ isActive }) =>
-              `mertel-nav-item ${isActive ? "active" : ""}`}><ClipboardCheck size={19} strokeWidth={2} /><span>Historial de cobranza</span></NavLink>}
+            {permissions.includes("message_templates.manage") && <NavLink to="/administracion/plantillas-whatsapp" className={({ isActive }) =>
+              `mertel-nav-item ${isActive ? "active" : ""}`}>
+              <MessageSquareText size={19} strokeWidth={2} />
+              <span>Plantillas WhatsApp</span>
+            </NavLink>}
             {permissions.includes("settings.manage") && <NavLink to="/administracion/configuracion-cobranza" className={({ isActive }) =>
               `mertel-nav-item ${isActive ? "active" : ""}`}>
               <SlidersHorizontal size={19} strokeWidth={2} />
-              <span>Configuración de cobranza</span>
+              <span>Configuración</span>
             </NavLink>}
             {permissions.includes("portfolio.import") && <NavLink to="/administracion/importar-cartera" className={({ isActive }) =>
               `mertel-nav-item ${isActive ? "active" : ""}`}>
               <FileSpreadsheet size={19} strokeWidth={2} />
               <span>Importar cartera</span>
             </NavLink>}
-            {permissions.includes("portfolio.import") && <NavLink to="/administracion/resolucion-clientes" className={({ isActive }) =>
-              `mertel-nav-item ${isActive ? "active" : ""}`}><SearchCheck size={19} strokeWidth={2} /><span>Resolución de clientes</span></NavLink>}
-            {permissions.includes("message_templates.manage") && <NavLink to="/administracion/plantillas-whatsapp" className={({ isActive }) =>
-              `mertel-nav-item ${isActive ? "active" : ""}`}>
-              <MessageSquareText size={19} strokeWidth={2} />
-              <span>Plantillas WhatsApp</span>
-            </NavLink>}
+            {permissions.includes("collection.view") && permissions.includes("settings.manage") && <NavLink to="/administracion/dashboard-cobranza" className={({ isActive }) =>
+              `mertel-nav-item ${isActive ? "active" : ""}`}><Gauge size={19} strokeWidth={2} /><span>Dashboard de cobranza</span></NavLink>}
           </div>}
         </nav>
 

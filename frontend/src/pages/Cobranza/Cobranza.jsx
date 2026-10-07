@@ -102,20 +102,20 @@ function CustomerDetail({ item, catalog, referenceDate, onClose, messageFirst, c
   </div>;
 }
 
-function CollectionView({ imported = null }) {
+function CollectionView({ imported = null, navigationState }) {
   if (imported) return <ImportedCollectionView data={imported} />;
-  return <PersistentCollectionView />;
+  return <PersistentCollectionView navigationState={navigationState} />;
 }
 
-function PersistentCollectionView() {
+function PersistentCollectionView({navigationState}) {
   const { permissions = [] } = useAuth();
   const canManage = permissions.includes("collection.manage");
   const canViewHistory = permissions.includes("history.view");
-  const [referenceDate, setReferenceDate] = useState(localDateValue);
+  const [referenceDate, setReferenceDate] = useState(()=>navigationState?.referenceDate||localDateValue());
   const [query, setQuery] = useState("");
   const [stage, setStage] = useState("");
   const [reload, setReload] = useState(0);
-  const [selectedId, setSelectedId] = useState(null);
+  const [selectedId, setSelectedId] = useState(()=>navigationState?.customerId||null);
   const [messageFirst, setMessageFirst] = useState(false);
   const [manageFirst, setManageFirst] = useState(false);
   const [managementNotice, setManagementNotice] = useState('');
@@ -218,8 +218,8 @@ function ImportedCollectionView({ data }) {
   </section>;
 }
 
-export default function Cobranza() {
+export default function Cobranza({navigationState}) {
   const { user, permissions = [] } = useAuth();
   if (!user || !permissions.includes("collection.view")) return <section className="cartera-page"><h1>Cobranza</h1><div className="cartera-alert" role="alert">No tienes permiso para consultar cobranza.</div></section>;
-  return <CollectionView />;
+  return <CollectionView navigationState={navigationState} />;
 }

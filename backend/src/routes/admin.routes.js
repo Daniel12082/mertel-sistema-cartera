@@ -11,7 +11,12 @@ import { generatePortfolioPipeline, listImportedPipelineActions, recordImportedP
 import { getCollectionDashboardController } from "../controllers/collectionDashboard.controller.js";
 import { analyzeCustomerResolution, decideCustomerResolution, getCustomerResolution, getCustomerResolutionDashboard } from "../services/customerResolution.service.js";
 import { administrativeCollectionHistory, administrativeHistoryActors } from "../controllers/collectionHistory.controller.js";
+import { getAdminDashboard } from "../services/adminDashboard.service.js";
 const router = express.Router();
+router.get('/dashboard', requirePermission('settings.manage'), requireCompanyScope, async(req,res,next)=>{
+  try { res.set('Cache-Control','no-store');return res.json({success:true,data:await getAdminDashboard({scope:req.companyScope,query:req.query})}); }
+  catch(error) { if([400,403].includes(error.status))return res.status(error.status).json({success:false,message:error.message});return next(error); }
+});
 router.post("/portfolio/imports/resolution/analyze", requirePermission("portfolio.import"), requireCompanyScope,
   express.raw({ type: ["application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"], limit: MAX_IMPORT_BYTES }), async (req, res, next) => {
     try {

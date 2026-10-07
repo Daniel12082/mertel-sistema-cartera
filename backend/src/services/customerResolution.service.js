@@ -118,11 +118,11 @@ export async function getCustomerResolution({ scope, batchId, status, search = "
       candidates: row.nit_normalized ? companyCustomers.filter(customer => normalizeMertelNit(customer.nit).normalized === row.nit_normalized) : [] })) };
 }
 
-export async function getCustomerResolutionDashboard(scope) {
+export async function getCustomerResolutionDashboard(scope, db = pool) {
   if (!validCompanyId(scope?.companyId)) throw fail("El contexto MERTEL no está disponible.", 403);
-  const [rows] = await pool.query(`SELECT status,COUNT(*) count FROM mertel_customer_resolution_rows WHERE company_id=? GROUP BY status`, [scope.companyId]);
+  const [rows] = await db.query(`SELECT status,COUNT(*) count FROM mertel_customer_resolution_rows WHERE company_id=? GROUP BY status`, [scope.companyId]);
   const counts = Object.fromEntries(["SEARCHING","FOUND","NEW","AMBIGUOUS","INVALID","PERSISTENT","RESOLVED"].map(key => [key, Number(rows.find(item => item.status === key)?.count || 0)]));
-  const [batches] = await pool.query(`SELECT DISTINCT b.id,b.file_name FROM import_batches b JOIN mertel_customer_resolution_rows r ON r.import_batch_id=b.id
+  const [batches] = await db.query(`SELECT DISTINCT b.id,b.file_name FROM import_batches b JOIN mertel_customer_resolution_rows r ON r.import_batch_id=b.id
     WHERE b.company_id=? AND r.status IN ('SEARCHING','NEW','AMBIGUOUS','INVALID') ORDER BY b.id DESC LIMIT 10`, [scope.companyId]);
   return { counts, pending: counts.SEARCHING + counts.NEW + counts.AMBIGUOUS + counts.INVALID, batches: batches.map(row => ({ id:String(row.id), file_name:row.file_name })) };
 }

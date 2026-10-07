@@ -8,11 +8,11 @@ function dayValue(date = new Date()) { return [date.getFullYear(), String(date.g
 function shownDate(value) { return new Intl.DateTimeFormat("es-CO", { dateStyle: "short", timeStyle: "short", timeZone: "America/Bogota" }).format(new Date(value)); }
 const kinds = { action: "Gestión", promise: "Promesa", configuration: "Configuración", import: "Importación" };
 
-export default function CollectionHistory() {
+export default function CollectionHistory({navigationState}) {
   const { permissions = [] } = useAuth(); const authorized = permissions.includes("history.view") && permissions.includes("settings.manage");
   const today = useMemo(() => dayValue(), []);
   const [actors, setActors] = useState({ key: null, rows: [] });
-  const [filters, setFilters] = useState({ date_from: "", date_to: "", type: "all", actor_id: "", q: "" });
+  const [filters, setFilters] = useState(()=>({ date_from: "", date_to: "", type: navigationState?.type==='promise'?'promise':'all', actor_id: "", q: typeof navigationState?.q==='string'?navigationState.q.slice(0,120):"" }));
   const [page, setPage] = useState(1); const [result, setResult] = useState({ key: null, error: "", data: null });
   const ready = authorized;
   useEffect(() => {

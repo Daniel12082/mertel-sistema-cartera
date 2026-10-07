@@ -16,6 +16,7 @@ import CollectionHistory from "./pages/Administracion/CollectionHistory";
 import WhatsAppCenter from "./pages/Administracion/WhatsAppCenter";
 import ReportedPayments from "./pages/Administracion/ReportedPayments";
 import CustomerResolution from "./pages/Administracion/CustomerResolution";
+import AdminDashboard from "./pages/Administracion/AdminDashboard";
 import LoginPage from "./pages/Login/LoginPage";
 import ProtectedRoute from "./auth/ProtectedRoute";
 
@@ -76,8 +77,9 @@ function App() {
           element={<MessageTemplates />}
         />
 
+        <Route path="/administracion" element={<AdminDashboard />} />
         <Route path="/administracion/dashboard-cobranza" element={<CollectionDashboard />} />
-        <Route path="/administracion/historial-cobranza" element={<CollectionHistory />} />
+        <Route path="/administracion/historial-cobranza" element={<CollectionHistoryRoute />} />
         <Route path="/administracion/whatsapp" element={<WhatsAppCenter />} />
         <Route path="/administracion/pagos-reportados" element={<ReportedPayments />} />
         <Route path="/administracion/resolucion-clientes" element={<CustomerResolution />} />
@@ -106,5 +108,10 @@ export default App;
 
 function CobranzaRoute() {
   const location = useLocation();
-  return location.state?.portfolioPipeline ? <PortfolioPipelineView data={location.state.portfolioPipeline} /> : <Cobranza />;
+  return location.state?.portfolioPipeline ? <PortfolioPipelineView data={location.state.portfolioPipeline} /> : <Cobranza navigationState={location.state} />;
+}
+
+function CollectionHistoryRoute() {
+  const location=useLocation();
+  return <CollectionHistory navigationState={location.state} />;
 }
