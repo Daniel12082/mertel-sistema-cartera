@@ -97,11 +97,11 @@ export async function listImportedPipelineActions({ scope, token }) {
   finally { db.release(); }
 }
 
-function sourceCustomer(row) {
+function sourceCustomer(row, resolutionByNit = null) {
   const values = row.values;
   const cupo = parseMertelAmount(values.Cupo);
   return {
-    id: `xlsx:${row.customer_nit_normalized}`, company_id: null,
+    id: resolutionByNit?.get(row.customer_nit_normalized) || `xlsx:${row.customer_nit_normalized}`, company_id: null,
     nit: row.customer_nit_original, name: clean(values["Nombre cliente"]),
     representative: clean(values["Rep Legal"]), address: clean(values.Direccion), city: clean(values.Ciudad),
     department: clean(values.Departamento), phone: clean(values.Telefono), mobile: clean(values.Celular),
@@ -119,7 +119,7 @@ function documentView(row, balance = null) {
 }
 
 /** Builds a non-persistent MERTEL pipeline directly from parser rows and the existing collection engine. */
-export function buildPortfolioPipeline({ parsed, referenceDate, fileName, processedAt = new Date().toISOString(), companyId, rules, sourceHash, secret }) {
+export function buildPortfolioPipeline({ parsed, referenceDate, fileName, processedAt = new Date().toISOString(), companyId, rules, sourceHash, secret, resolutionByNit = null }) {
   if (!validCompanyId(companyId)) throw Object.assign(new Error("El contexto MERTEL no está disponible"), { status: 403 });
   if (!validDate(referenceDate)) throw Object.assign(new Error("reference_date es obligatoria y debe usar YYYY-MM-DD"), { status: 400, code: "INVALID_REFERENCE_DATE" });
   const identityIssue = parsed.issues?.find(issue => ["SOURCE_COMPANY_MISMATCH", "SOURCE_NIT_MISMATCH"].includes(issue.error_code));
@@ -145,7 +145,7 @@ export function buildPortfolioPipeline({ parsed, referenceDate, fileName, proces
 
   const customersById = new Map(); const customerDocuments = new Map(); const invoices = []; const invoiceByRow = new Map();
   for (const row of parsed.documents || []) {
-    const customer = sourceCustomer(row);
+    const customer = sourceCustomer(row, resolutionByNit);
     if (row.customer_nit_normalized) {
       if (!customersById.has(customer.id)) customersById.set(customer.id, customer);
       if (!customerDocuments.has(customer.id)) customerDocuments.set(customer.id, []);
@@ -239,15 +239,29 @@ export async function generatePortfolioPipeline({ bytes, scope, referenceDate, f
   if (!validCompanyId(scope?.companyId)) throw Object.assign(new Error("El contexto MERTEL no está disponible"), { status: 403 });
   if (!validDate(referenceDate)) throw Object.assign(new Error("reference_date es obligatoria y debe usar YYYY-MM-DD"), { status: 400, code: "INVALID_REFERENCE_DATE" });
   const parsed = await parseMertelPortfolioXlsx(bytes);
+  const sourceHash = createHash("sha256").update(bytes).digest("hex");
   const connection = await pool.getConnection();
   try {
     await connection.query("START TRANSACTION READ ONLY");
     const [companies] = await connection.query("SELECT id FROM companies WHERE id=? AND status='active' AND deleted_at IS NULL", [scope.companyId]);
     if (!companies.length) throw Object.assign(new Error("Empresa no disponible"), { status: 404 });
+    const [resolutionRows] = await connection.query(`SELECT nit_normalized,CAST(customer_id AS CHAR) customer_id,status
+      FROM mertel_customer_resolution_rows WHERE company_id=? AND import_batch_id=(
+        SELECT id FROM import_batches WHERE company_id=? AND file_sha256=? AND file_type='xlsx' ORDER BY id DESC LIMIT 1
+      )`, [scope.companyId, scope.companyId, sourceHash]);
+    const expected = new Set((parsed.customer_records || []).map(row => row.customer_nit_normalized).filter(Boolean));
+    const resolved = new Map(resolutionRows.filter(row => ["PERSISTENT","RESOLVED"].includes(row.status) && row.customer_id).map(row => [row.nit_normalized, row.customer_id]));
+    if (!resolutionRows.length || resolutionRows.some(row => !["PERSISTENT","RESOLVED"].includes(row.status)) || [...expected].some(nit => !resolved.has(nit))) {
+      throw Object.assign(new Error("Hay clientes pendientes de resolución. Completa la revisión antes de generar el pipeline."), { status: 409, code: "CUSTOMER_RESOLUTION_PENDING" });
+    }
+    for (const customerId of resolved.values()) {
+      const [customers] = await connection.query("SELECT id FROM customers WHERE id=? AND company_id=? AND deleted_at IS NULL", [customerId, scope.companyId]);
+      if (!customers.length) throw Object.assign(new Error("Un cliente resuelto ya no está disponible. Revisa la importación."), { status: 409, code: "CUSTOMER_RESOLUTION_STALE" });
+    }
     const rules = await loadCompanyCollectionRules(scope.companyId, connection);
     await connection.commit();
     return buildPortfolioPipeline({ parsed, referenceDate, fileName, processedAt, companyId: scope.companyId, rules,
-      sourceHash: createHash("sha256").update(bytes).digest("hex"), secret: process.env.JWT_SECRET });
+      sourceHash, secret: process.env.JWT_SECRET, resolutionByNit: resolved });
   } catch (error) {
     try { await connection.rollback(); } catch {}
     throw error;

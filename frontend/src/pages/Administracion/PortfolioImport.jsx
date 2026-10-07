@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../auth/useAuth";
-import { analyzePortfolioFile, generatePortfolioPipeline, getPortfolioImports, reconcilePortfolioFile } from "../../services/portfolioImport.service";
-import { localDateValue } from "../Cobranza/collection.presentation";
+import { analyzePortfolioFile, getPortfolioImports, reconcilePortfolioFile } from "../../services/portfolioImport.service";
 import "./PortfolioImport.css";
 
 const MAX_BYTES = 2 * 1024 * 1024;
@@ -16,7 +15,6 @@ export default function PortfolioImport() {
   const [history, setHistory] = useState([]); const [loading, setLoading] = useState(false);
   const [error, setError] = useState(""); const [historyError, setHistoryError] = useState("");
   const [reconciliation, setReconciliation] = useState(null); const [reconciling, setReconciling] = useState(false);
-  const [referenceDate, setReferenceDate] = useState(localDateValue); const [generatingPipeline, setGeneratingPipeline] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState("ALL"); const [search, setSearch] = useState(""); const [selected, setSelected] = useState(null);
   const ready = authorized;
 
@@ -56,16 +54,6 @@ export default function PortfolioImport() {
     finally { setReconciling(false); }
   }
 
-  async function generatePipeline() {
-    if (!file || analysis?.format !== "mertel_xlsx" || !referenceDate) return;
-    setError(""); setGeneratingPipeline(true);
-    try {
-      const result = await generatePortfolioPipeline(file, referenceDate);
-      navigate("/cobranza", { state: { portfolioPipeline: result } });
-    } catch (reason) { setError(reason.message); }
-    finally { setGeneratingPipeline(false); }
-  }
-
   if (!authorized) return <section className="portfolio-import-page"><div className="portfolio-import-notice error" role="alert">No tienes permiso para analizar archivos de cartera.</div></section>;
   const mertelXlsx = analysis?.format === "mertel_xlsx";
   return <section className="portfolio-import-page">
@@ -91,13 +79,14 @@ export default function PortfolioImport() {
       {analysis.persistence?.saved === false && <div className="portfolio-import-notice error" role="alert">{analysis.persistence.message} Puedes revisar la previsualización; no se creó lote ni se guardó el archivo.</div>}
       <div className="portfolio-import-notice">Análisis y previsualización solamente. No se crearon ni modificaron clientes, facturas, pagos, asignaciones o saldos.</div>
       {mertelXlsx && <button type="button" disabled={reconciling || loading} onClick={reconcile}>{reconciling ? "Conciliando…" : "Conciliar contra la base de datos"}</button>}
-      {mertelXlsx && <div className="portfolio-pipeline-action"><label>Fecha de referencia<input aria-label="Fecha de referencia del pipeline" type="date" required value={referenceDate} onChange={event => setReferenceDate(event.target.value)} /></label><button type="button" disabled={generatingPipeline || reconciling || loading || !referenceDate} onClick={generatePipeline}>{generatingPipeline ? "Generando pipeline…" : "Generar Pipeline"}</button><p>La fecha se enviará explícitamente al motor MERTEL. El resultado es temporal y de solo lectura.</p></div>}
+      {mertelXlsx && analysis.persistence?.saved !== false && analysis.batch_id && <div className="portfolio-import-notice"><strong>Siguiente paso obligatorio:</strong> identifica o crea los clientes de esta importación antes de abrir la conciliación operativa o el pipeline.<br/><button type="button" onClick={()=>navigate(`/administracion/resolucion-clientes?batch_id=${encodeURIComponent(analysis.batch_id)}`,{state:{file,batchId:analysis.batch_id}})}>Ver resolución de clientes</button></div>}
       {analysis.preview.length > 0 && <div className="portfolio-import-table-wrap"><table><thead>{mertelXlsx ? <tr>{["Fila", "Tipo", "NIT cliente", "Documento", "Movimiento", "Emitida", "Vence", "Valor doc.", "IVA", "Cupo", "Condición cupo"].map(label => <th key={label}>{label}</th>)}</tr> : <tr>{analysis.headers.map((header, index) => <th key={`${header}-${index}`}>{header || `(columna ${index + 1})`}</th>)}</tr>}</thead><tbody>{analysis.preview.map((row, index) => <tr key={mertelXlsx ? row.row_number : index}>{mertelXlsx ? <>{[row.row_number, row.type, row.customer_nit_original, row.document_number || "—", row.movement || "—", row.issue_date || "—", row.due_date || "—", row.document_value ?? "—", row.iva ?? "—", row.cupo_amount ?? "—", row.cupo_condition || "—"].map((value, cell) => <td key={cell}>{value}</td>)}</> : analysis.headers.map((_, cell) => <td key={cell}>{row[cell] ?? ""}</td>)}</tr>)}</tbody></table></div>}
       {analysis.issues.length > 0 && <div className="portfolio-import-issues"><h4>Errores y advertencias ({analysis.issues.length})</h4><ul>{analysis.issues.map((issue, index) => <li key={`${issue.error_code}-${index}`}><strong>{issue.severity === "warning" ? "Advertencia" : "Error"} · {issue.error_code}</strong>{issue.row_number ? ` · fila ${issue.row_number}` : ""}{issue.field_name ? ` · ${issue.field_name}` : ""}: {issue.message}</li>)}</ul></div>}
     </section>}
     {reconciliation && <section className="portfolio-import-card" aria-live="polite">
       <h3>Conciliación de cartera</h3>
       <p>Previsualización temporal de solo lectura. Ningún cambio financiero fue aplicado.</p>
+      {reconciliation.metadata?.customerResolution?.pending>0&&<div className="portfolio-import-notice error">Hay {reconciliation.metadata.customerResolution.pending} clientes pendientes de identidad. Completa su resolución antes del pipeline.</div>}
       <div className="portfolio-import-summary portfolio-reconcile-summary">{[["Total", reconciliation.summary.total], ["Nuevos", reconciliation.summary.new], ["Actualizados", reconciliation.summary.updated], ["Sin cambios", reconciliation.summary.unchanged], ["Desaparecidos", reconciliation.summary.disappeared], ["Devoluciones", reconciliation.summary.returns], ["Notas débito", reconciliation.summary.debitNotes], ["Duplicados", reconciliation.summary.duplicates], ["Errores", reconciliation.summary.errors]].map(([label, count]) => <span key={label}><strong>{label}</strong>{count}</span>)}</div>
       <div className="portfolio-reconcile-filters"><label>Categoría<select aria-label="Filtrar por categoría" value={categoryFilter} onChange={event => setCategoryFilter(event.target.value)}>{[["ALL", "Todas"], ["NEW", "Nuevos"], ["UPDATED", "Actualizados"], ["UNCHANGED", "Sin cambios"], ["DISAPPEARED", "Desaparecidos"], ["RETURN", "Devoluciones"], ["DEBIT_NOTE", "Notas débito"], ["DUPLICATE", "Duplicados"], ["ERROR", "Errores"]].map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><label>Buscar NIT, cliente, documento o movimiento<input aria-label="Buscar conciliación" value={search} onChange={event => setSearch(event.target.value)} /></label></div>
       <div className="portfolio-reconcile-results">{reconciliation.results.filter(item => (categoryFilter === "ALL" || item.category === categoryFilter) && `${item.customer?.nit || ""} ${item.customer?.name || ""} ${item.document?.number || ""} ${item.document?.movement || ""}`.toLowerCase().includes(search.toLowerCase())).map((item, index) => <button className="portfolio-reconcile-row" type="button" key={`${item.category}-${item.sourceRow ?? "db"}-${index}`} onClick={() => setSelected(item)}><span><strong>{item.categoryLabel}</strong><small>{item.customer?.name || "Cliente sin identificar"} · NIT {item.customer?.nit || "—"}</small></span><span>{item.document?.number || "—"}<small>{item.document?.movement || "Factura existente"}</small></span><span>{item.sourceRow ? `Fila ${item.sourceRow}` : "Solo en BD"}</span></button>)}</div>
@@ -106,7 +95,7 @@ export default function PortfolioImport() {
     {ready && <section className="portfolio-import-card"><h3>Historial de análisis</h3>
       {historyError && <div className="portfolio-import-notice error" role="alert">{historyError}</div>}
       {!historyError && history.length === 0 && <p>MERTEL Importaciones todavía no tiene análisis de cartera.</p>}
-      {history.length > 0 && <div className="portfolio-import-table-wrap"><table><thead><tr><th>Archivo</th><th>Fecha</th><th>Usuario</th><th>Estado</th><th>Filas</th><th>Incidencias</th></tr></thead><tbody>{history.map(row => <tr key={row.id}><td>{row.file_name}</td><td>{formatDate(row.created_at)}</td><td>{row.first_name || "—"}</td><td>{row.status}</td><td>{row.total_rows}</td><td>{row.error_count}</td></tr>)}</tbody></table></div>}
+      {history.length > 0 && <div className="portfolio-import-table-wrap"><table><thead><tr><th>Archivo</th><th>Fecha</th><th>Usuario</th><th>Estado</th><th>Filas</th><th>Incidencias</th><th>Resolución</th></tr></thead><tbody>{history.map(row => <tr key={row.id}><td>{row.file_name}</td><td>{formatDate(row.created_at)}</td><td>{row.first_name || "—"}</td><td>{row.status}</td><td>{row.total_rows}</td><td>{row.error_count}</td><td>{row.file_type === "xlsx" && <button type="button" onClick={()=>navigate(`/administracion/resolucion-clientes?batch_id=${encodeURIComponent(row.id)}`)}>Ver resolución</button>}</td></tr>)}</tbody></table></div>}
     </section>}
   </section>;
 }

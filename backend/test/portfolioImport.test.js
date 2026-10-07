@@ -6,7 +6,7 @@ import dotenv from "dotenv";
 import mysql from "mysql2/promise";
 import { loadAuthConfig } from "../src/config/auth.js";
 import { applyAuthMigrations } from "../src/services/authMigrations.service.js";
-import { applyPortfolioImportMigration } from "../src/services/portfolioImportMigration.service.js";
+import { applyCustomerResolutionMigration, applyPortfolioImportMigration } from "../src/services/portfolioImportMigration.service.js";
 import { makeMertelWorkbook, mertelRow } from "./fixtures/mertelPortfolioWorkbook.js";
 dotenv.config({ path: new URL("../.env", import.meta.url), quiet: true });
 
@@ -26,6 +26,7 @@ describe("Fase 5.3 portfolio import HTTP / isolated MySQL", { skip: !(process.en
     }
     await db.query("INSERT INTO roles(name) VALUES ('admin'),('supervisor'),('collector')");
     await applyAuthMigrations(db); assert.equal((await applyPortfolioImportMigration(db)).applied, true); assert.equal((await applyPortfolioImportMigration(db)).applied, false);
+    assert.equal((await applyCustomerResolutionMigration(db)).applied,true); assert.equal((await applyCustomerResolutionMigration(db)).applied,false);
     const [a] = await db.query("INSERT INTO companies(name) VALUES ('MERTEL IMPORTACIONES')"); companyA = String(a.insertId);
     const [customer] = await db.query("INSERT INTO customers(company_id,nit,name,phone) VALUES (?,'F-IMPORT','Fixture','3000000000')", [companyA]);
     await db.query("INSERT INTO invoices(company_id,customer_id,invoice_number,issue_date,due_date,document_value,base_value,balance) VALUES (?,?,'F-IMPORT','2026-09-01','2026-10-01',100,100,73)", [companyA, customer.insertId]);
@@ -46,9 +47,9 @@ describe("Fase 5.3 portfolio import HTTP / isolated MySQL", { skip: !(process.en
     if (db) { assert.match(schema, /^mertel_portfolio_import_test_[a-f0-9]{32}$/); assert.notEqual(schema, originalDatabase); await db.query(`DROP DATABASE IF EXISTS \`${schema}\``); await db.end(); }
     if (originalDatabase === undefined) delete process.env.DB_NAME; else process.env.DB_NAME = originalDatabase;
   });
-  async function request(method, user = adminA, { companyId, body = "", fileName = "fixture.csv", mime = "text/csv", endpoint = "analyze" } = {}) {
+  async function request(method, user = adminA, { companyId, body = "", fileName = "fixture.csv", mime = "text/csv", endpoint = "analyze", batchId, referenceDate } = {}) {
     const url = new URL(`${root}${method === "POST" ? `/${endpoint}` : ""}`);
-    if (companyId) url.searchParams.set("company_id", companyId); if (method === "POST") url.searchParams.set("file_name", fileName);
+    if (companyId) url.searchParams.set("company_id", companyId); if (method === "POST") url.searchParams.set("file_name", fileName); if (batchId) url.searchParams.set("batch_id",batchId); if(referenceDate)url.searchParams.set("reference_date",referenceDate);
     const response = await fetch(url, { method, headers: { ...(user ? { Authorization: `Bearer ${user.token}` } : {}), ...(method === "POST" ? { "Content-Type": mime } : {}) }, ...(method === "POST" ? { body } : {}) });
     return { status: response.status, cache: response.headers.get("cache-control"), body: await response.json() };
   }
@@ -138,8 +139,51 @@ describe("Fase 5.3 portfolio import HTTP / isolated MySQL", { skip: !(process.en
     const response = await request("POST", adminA, { body: bytes, fileName: "cartera al 06-10.xlsx", mime: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", endpoint: "reconcile" });
     assert.equal(response.status, 200); assert.equal(response.cache, "no-store");
     assert.equal(response.body.data.summary.updated, 0); assert.equal(response.body.data.summary.unchanged, 1);
+    assert.equal(response.body.data.metadata.customerResolution.pending,1);
     assert.equal(response.body.data.results[0].category, "UNCHANGED"); assert.equal(response.body.data.metadata.readOnly, true);
     assert.equal(await snapshot(), before);
+  });
+  test("customer identity resolution is scoped, auditable, idempotent and isolated from financial records", async () => {
+    const [[existing]]=await db.query("SELECT id FROM customers WHERE company_id=? AND nit='800.001.269-0'",[companyA]);
+    await db.query("UPDATE customers SET name='CLIENTE DEMOSTRACIÓN',address='DIRECCIÓN',city='BOGOTÁ',phone='6011234567',credit_limit=10000000,available_credit=2000000 WHERE id=?",[existing.id]);
+    await db.query("INSERT INTO customers(company_id,nit,name,address,city,phone,credit_limit,available_credit) VALUES (?,'800009993','CLIENTE DEMOSTRACIÓN','DIRECCIÓN','BOGOTÁ','6011234567',10000000,0)",[companyA]);
+    const bytes=await makeMertelWorkbook({rows:[
+      mertelRow({"Nit Cliente":"8000012690",Telefono:"3009999999",Numero:"RES-FOUND"}),
+      mertelRow({"Nit Cliente":"800009991",Numero:"RES-NEW-1"}),
+      mertelRow({"Nit Cliente":"800009991",Numero:"RES-NEW-2"}),
+      mertelRow({"Nit Cliente":"800009993",Numero:"RES-EXACT"}),
+      mertelRow({"Nit Cliente":"",Numero:"RES-INVALID"}),
+    ]});
+    const financial=async()=>{const [[invoices]]=await db.query("SELECT COUNT(*) n,COALESCE(SUM(balance),0) balance FROM invoices");const [[payments]]=await db.query("SELECT COUNT(*) n,COALESCE(SUM(amount),0) amount FROM payments");const [[allocations]]=await db.query("SELECT COUNT(*) n,COALESCE(SUM(amount),0) amount FROM payment_allocations");return JSON.stringify({invoices,payments,allocations});};
+    const before=await financial();
+    const imported=await request("POST",adminA,{body:bytes,fileName:"identity-resolution.xlsx",mime:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"});
+    const batchId=imported.body.data.batch_id;
+    const analyzed=await request("POST",adminA,{body:bytes,fileName:"identity-resolution.xlsx",mime:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",endpoint:"resolution/analyze",batchId});
+    assert.equal(analyzed.status,200); const resolution=analyzed.body.data;
+    assert.equal(resolution.counts.AMBIGUOUS,1); assert.equal(resolution.counts.NEW,1); assert.equal(resolution.counts.INVALID,1);assert.equal(resolution.counts.PERSISTENT,1);
+    const same=resolution.rows.find(row=>row.status==="AMBIGUOUS"); const fresh=resolution.rows.find(row=>row.status==="NEW"); const invalid=resolution.rows.find(row=>row.status==="INVALID");const automatic=resolution.rows.find(row=>row.status==="PERSISTENT");
+    const [[autoCustomer]]=await db.query("SELECT id FROM customers WHERE company_id=? AND nit='800009993'",[companyA]);assert.equal(automatic.customer_id,String(autoCustomer.id));
+    assert.equal(same.nit_normalized,"8000012690"); assert.equal(same.candidates.length,1); assert.deepEqual(fresh.source_rows.length,2);
+    const noPermission=await request("GET",collectorA); const forbidden=await fetch(`${root}/resolution?batch_id=${batchId}`,{headers:{Authorization:`Bearer ${collectorA.token}`}}); assert.equal(forbidden.status,403);
+    const crossImport=await fetch(`${root}/resolution/${same.id}/decision`,{method:"POST",headers:{Authorization:`Bearer ${adminA.token}`,"Content-Type":"application/json"},body:JSON.stringify({batch_id:"999999999",decision:"confirm_same",customer_id:String(existing.id)})}); assert.equal(crossImport.status,404);
+    const forged=await fetch(`${root}/resolution/${same.id}/decision`,{method:"POST",headers:{Authorization:`Bearer ${adminA.token}`,"Content-Type":"application/json"},body:JSON.stringify({batch_id:batchId,decision:"confirm_same",customer_id:"999999999"})}); assert.equal(forged.status,409);
+    const confirmed=await fetch(`${root}/resolution/${same.id}/decision`,{method:"POST",headers:{Authorization:`Bearer ${adminA.token}`,"Content-Type":"application/json"},body:JSON.stringify({batch_id:batchId,decision:"confirm_same",customer_id:String(existing.id),reason:"NIT coincide"})}); assert.equal(confirmed.status,200);
+    const update=await fetch(`${root}/resolution/${same.id}/decision`,{method:"POST",headers:{Authorization:`Bearer ${adminA.token}`,"Content-Type":"application/json"},body:JSON.stringify({batch_id:batchId,decision:"update",customer_id:String(existing.id),fields:{name:{mode:"keep"},phone:{mode:"source"},address:{mode:"manual",value:"AVENIDA CORREGIDA"},city:{mode:"keep"},credit_limit:{mode:"keep"}}})}); assert.equal(update.status,200);
+    const [updated]=await db.query("SELECT name,phone,address,city,credit_limit,available_credit FROM customers WHERE id=?",[existing.id]);
+    assert.equal(updated[0].name,"CLIENTE DEMOSTRACIÓN");assert.equal(updated[0].phone,"3009999999");assert.equal(updated[0].address,"AVENIDA CORREGIDA");assert.equal(updated[0].city,"BOGOTÁ");assert.equal(Number(updated[0].credit_limit),10000000);assert.equal(Number(updated[0].available_credit),2000000);
+    const create=()=>fetch(`${root}/resolution/${fresh.id}/decision`,{method:"POST",headers:{Authorization:`Bearer ${adminA.token}`,"Content-Type":"application/json"},body:JSON.stringify({batch_id:batchId,decision:"create"})});
+    const createdResponses=await Promise.all([create(),create()]);assert.ok(createdResponses.every(response=>response.status===200));
+    const [createdRows]=await db.query("SELECT id FROM customers WHERE company_id=? AND nit='800009991'",[companyA]);assert.equal(createdRows.length,1);
+    const correction=await fetch(`${root}/resolution/${invalid.id}/decision`,{method:"POST",headers:{Authorization:`Bearer ${adminA.token}`,"Content-Type":"application/json"},body:JSON.stringify({batch_id:batchId,decision:"correct",corrections:{nit:"800009992",name:"CLIENTE CORREGIDO"},reason:"Corrección validada"})});assert.equal(correction.status,200);
+    const corrected=(await correction.json()).data.rows.find(row=>row.id===invalid.id);assert.equal(corrected.status,"NEW");assert.equal(corrected.nit_normalized,"800009992");
+    const createCorrected=await fetch(`${root}/resolution/${invalid.id}/decision`,{method:"POST",headers:{Authorization:`Bearer ${adminA.token}`,"Content-Type":"application/json"},body:JSON.stringify({batch_id:batchId,decision:"create"})});assert.equal(createCorrected.status,200);
+    assert.equal((await db.query("SELECT id FROM customers WHERE company_id=? AND nit='800009992'",[companyA]))[0].length,1);
+    const repeated=await request("POST",adminA,{body:bytes,fileName:"identity-resolution.xlsx",mime:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",endpoint:"resolution/analyze",batchId});assert.equal(repeated.status,200);assert.equal(repeated.body.data.counts.RESOLVED,1);assert.equal(repeated.body.data.counts.PERSISTENT,3);
+    const [audit]=await db.query("SELECT action,new_values FROM audit_logs WHERE company_id=? AND entity_type='customer_resolution' AND entity_id=? ORDER BY id",[companyA,same.id]);assert.ok(audit.length>=2);assert.ok(audit.some(row=>row.action==="CLIENT_MANUAL_RESOLUTION"));assert.ok(audit.some(row=>row.action==="CLIENT_UPDATED"));
+    const [[matchedAudit]]=await db.query("SELECT id FROM audit_logs WHERE company_id=? AND entity_type='customer_resolution' AND entity_id=? AND action='CLIENT_MATCHED'",[companyA,automatic.id]);assert.ok(matchedAudit);
+    assert.equal(await financial(),before);
+    const badFields=await fetch(`${root}/resolution/${same.id}/decision`,{method:"POST",headers:{Authorization:`Bearer ${adminA.token}`,"Content-Type":"application/json"},body:JSON.stringify({batch_id:batchId,decision:"update",customer_id:String(existing.id),fields:{available_credit:{mode:"manual",value:"0"}}})});assert.equal(badFields.status,400);
+    assert.equal(noPermission.status,403);
   });
   test("XLSX pipeline reuses MERTEL rules in read-only mode, groups customers, and preserves financial snapshots", async () => {
     const rules = { version: 2, commercial_policy: "mertel_phase_5", stage_order: ["overdue", "due_today", "days_before_due", "prompt_payment"],
@@ -152,7 +196,6 @@ describe("Fase 5.3 portfolio import HTTP / isolated MySQL", { skip: !(process.en
       const [customers] = await db.query("SELECT id,nit,name,address,city,phone FROM customers ORDER BY id");
       return JSON.stringify({ invoices, payments, allocations, customers });
     };
-    const before = await snapshot();
     const rows = [
       mertelRow({ Numero: "ME-OVERDUE", Emitida: "01/09/2026", Vence: "01/10/2026", Corriente: "", "60-90 días": "2,500,000", "Valor doc.": "3,000,000" }),
       mertelRow({ "Nit Cliente": "800002001", Numero: "ME-DUE", Emitida: "01/10/2026", Vence: "06/10/2026", Corriente: "250,000", "Valor doc.": "500,000" }),
@@ -164,6 +207,17 @@ describe("Fase 5.3 portfolio import HTTP / isolated MySQL", { skip: !(process.en
       mertelRow({ Numero: "ME-BAD", Emitida: "", Vence: "", Corriente: "texto" }),
     ];
     const bytes = await makeMertelWorkbook({ rows });
+    const imported = await request("POST", adminA, { body: bytes, fileName: "pipeline-resolucion.xlsx", mime: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+    const batchId=imported.body.data.batch_id;
+    const blocked=await request("POST",adminA,{body:bytes,fileName:"pipeline-resolucion.xlsx",mime:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",endpoint:"pipeline",referenceDate:"2026-10-06"});
+    assert.equal(blocked.status,409); assert.equal(blocked.body.code,"CUSTOMER_RESOLUTION_PENDING");
+    const resolution=await request("POST",adminA,{body:bytes,fileName:"pipeline-resolucion.xlsx",mime:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",endpoint:"resolution/analyze",batchId});
+    assert.equal(resolution.status,200);
+    for (const row of resolution.body.data.rows) {
+      if(row.status==="NEW") await fetch(`${root}/resolution/${row.id}/decision`,{method:"POST",headers:{Authorization:`Bearer ${adminA.token}`,"Content-Type":"application/json"},body:JSON.stringify({batch_id:batchId,decision:"create"})});
+      else if(row.status==="AMBIGUOUS") await fetch(`${root}/resolution/${row.id}/decision`,{method:"POST",headers:{Authorization:`Bearer ${adminA.token}`,"Content-Type":"application/json"},body:JSON.stringify({batch_id:batchId,decision:"confirm_same",customer_id:row.candidates[0].id})});
+    }
+    const before = await snapshot();
     const pipelineRequest = async (referenceDate) => {
       const url = new URL(`${root}/pipeline`); url.searchParams.set("file_name", "cartera al 06-10.xlsx");
       if (referenceDate) url.searchParams.set("reference_date", referenceDate);

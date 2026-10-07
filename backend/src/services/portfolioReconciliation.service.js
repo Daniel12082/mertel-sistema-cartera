@@ -1,4 +1,5 @@
 import pool from "../config/database.js";
+import { createHash } from "node:crypto";
 import { normalizeMertelNit } from "./mertelPortfolioXlsxParser.js";
 
 const labels = { NEW: "Nuevo", UPDATED: "Actualizado", UNCHANGED: "Sin cambios", DISAPPEARED: "No aparece en archivo", DUPLICATE: "Duplicado", RETURN: "Devolución", DEBIT_NOTE: "Nota débito", ERROR: "Error" };
@@ -31,8 +32,18 @@ export async function reconcilePortfolio({ bytes, scope }) {
       c.nit, c.name, c.address, c.city, c.phone
       FROM invoices i INNER JOIN customers c ON c.id=i.customer_id
       WHERE i.company_id=? AND c.company_id=? AND i.deleted_at IS NULL AND c.deleted_at IS NULL ORDER BY i.id`, [scope.companyId, scope.companyId]);
+    const digest=createHash("sha256").update(bytes).digest("hex");
+    const [resolution]=await db.query(`SELECT r.status,COUNT(*) count FROM mertel_customer_resolution_rows r JOIN import_batches b ON b.id=r.import_batch_id
+      WHERE r.company_id=? AND b.file_sha256=? GROUP BY r.status`,[scope.companyId,digest]);
     await db.commit();
-    return buildReconciliation(parsed, rows, customers);
+    const report=buildReconciliation(parsed, rows, customers);
+    const counts=Object.fromEntries(["SEARCHING","FOUND","NEW","AMBIGUOUS","INVALID","PERSISTENT","RESOLVED"].map(key=>[key,Number(resolution.find(item=>item.status===key)?.count||0)]));
+    const detected=new Set((parsed.customer_records||[]).map(row=>row.customer_nit_normalized).filter(Boolean)).size;
+    const resolved=counts.PERSISTENT+counts.RESOLVED;
+    const unresolved=counts.SEARCHING+counts.NEW+counts.AMBIGUOUS+counts.INVALID;
+    const pending=unresolved+Math.max(0,detected-resolved-unresolved);
+    report.metadata.customerResolution={counts,pending,ready:pending===0};
+    return report;
   } catch (error) {
     try { await db.rollback(); } catch {}
     throw error;

@@ -12,6 +12,7 @@ import {
   MessageSquareText,
   SlidersHorizontal,
   FileSpreadsheet,
+  SearchCheck,
   Gauge,
 } from "lucide-react";
 import { useAuth } from "../auth/useAuth";
@@ -73,6 +74,8 @@ function MainLayout() {
               <FileSpreadsheet size={19} strokeWidth={2} />
               <span>Importar cartera</span>
             </NavLink>}
+            {permissions.includes("portfolio.import") && <NavLink to="/administracion/resolucion-clientes" className={({ isActive }) =>
+              `mertel-nav-item ${isActive ? "active" : ""}`}><SearchCheck size={19} strokeWidth={2} /><span>Resolución de clientes</span></NavLink>}
             {permissions.includes("message_templates.manage") && <NavLink to="/administracion/plantillas-whatsapp" className={({ isActive }) =>
               `mertel-nav-item ${isActive ? "active" : ""}`}>
               <MessageSquareText size={19} strokeWidth={2} />

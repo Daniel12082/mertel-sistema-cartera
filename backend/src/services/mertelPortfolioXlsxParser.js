@@ -121,7 +121,7 @@ export async function parseMertelPortfolioXlsx(bytes) {
   const counts = { document_rows: 0, customer_summary_rows: 0, report_summary_rows: 0, empty_rows: 0, invalid_rows: 0,
     clients_detected: 0, unique_documents: 0, invoices: 0, returns: 0, debit_notes: 0, unknown_movements: 0, duplicate_documents: 0 };
   const nits = new Set(); const documentKeys = new Set(); const seenDocuments = new Set();
-  const preview = []; const documents = []; const maxPreview = 25;
+  const preview = []; const documents = []; const customer_records = []; const maxPreview = 25;
   const rowTotal = Math.max(0, sheet.rowCount - headerRow);
   if (rowTotal > MAX_ROWS) throw error("El archivo supera el máximo de filas permitido", "TOO_MANY_ROWS");
   if (!rowTotal) addIssue(headerRow, null, "NO_DATA_ROWS", "No se detectaron filas después del encabezado");
@@ -131,6 +131,8 @@ export async function parseMertelPortfolioXlsx(bytes) {
     const isEmpty = Object.values(source).every(empty);
     if (isEmpty) { counts.empty_rows += 1; continue; }
     const nit = normalizeMertelNit(source["Nit Cliente"]);
+    if (!empty(source["Nombre cliente"]) || nit.normalized) customer_records.push({ row_number: rowIndex,
+      customer_nit_original: nit.original, customer_nit_normalized: nit.normalized, type: "CUSTOMER", values: source });
     if (nit.normalized) nits.add(nit.normalized);
     const number = source.Numero.trim(); const movement = source.Movimiento.trim();
     const emitted = parseBusinessDate(source.Emitida); const due = parseBusinessDate(source.Vence);
@@ -212,6 +214,6 @@ export async function parseMertelPortfolioXlsx(bytes) {
     classifications: { document_rows: counts.document_rows, customer_summary_rows: counts.customer_summary_rows,
       report_summary_rows: counts.report_summary_rows, summary_rows: counts.customer_summary_rows + counts.report_summary_rows,
       empty_rows: counts.empty_rows, invalid_rows: counts.invalid_rows },
-    summary: { ...counts }, preview, documents, issues,
+    summary: { ...counts }, preview, documents, customer_records, issues,
   };
 }

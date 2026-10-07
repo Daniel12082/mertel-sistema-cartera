@@ -41,3 +41,20 @@ export async function generatePortfolioPipeline(file, referenceDate, { signal } 
     return unwrap(response);
   } catch (error) { return safeError(error); }
 }
+export async function analyzeCustomerResolution(file, batchId, { signal } = {}) {
+  try { return unwrap(await api.post("/admin/portfolio/imports/resolution/analyze", file, { params:{batch_id:batchId}, signal,
+    headers:{"Content-Type":"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"},timeout:120000 })); }
+  catch(error) { return safeError(error); }
+}
+export async function getCustomerResolution(batchId, { status="ALL", search="", signal } = {}) {
+  try { return unwrap(await api.get("/admin/portfolio/imports/resolution", {params:{batch_id:batchId,status,search},signal})); }
+  catch(error) { return safeError(error); }
+}
+export async function decideCustomerResolution(rowId, batchId, decision, { signal } = {}) {
+  try { return unwrap(await api.post(`/admin/portfolio/imports/resolution/${encodeURIComponent(rowId)}/decision`, {...decision,batch_id:batchId}, {signal})); }
+  catch(error) { return safeError(error); }
+}
+export async function getCustomerResolutionDashboard({ signal } = {}) {
+  try { return unwrap(await api.get("/admin/portfolio/imports/resolution/summary", {signal})); }
+  catch(error) { return safeError(error); }
+}

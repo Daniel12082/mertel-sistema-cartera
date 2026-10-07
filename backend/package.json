@@ -13,6 +13,7 @@
     "test:multi-company": "node --test test/multiCompany.test.js test/multiCompany.unit.test.js",
     "migrate:auth": "node scripts/migrate-auth.js",
     "migrate:portfolio-import": "node scripts/migrate-portfolio-import.js",
+    "migrate:customer-resolution": "node scripts/migrate-customer-resolution.js",
     "provision:mertel": "node scripts/provision-mertel.js",
     "provision:admin": "node scripts/provision-admin.js",
     "dev": "nodemon src/server.js",

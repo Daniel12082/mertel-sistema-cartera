@@ -3,16 +3,19 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { AuthContext } from "../src/auth/auth.context";
 import CollectionDashboard from "../src/pages/Administracion/CollectionDashboard";
 import { getCollectionDashboard } from "../src/services/collectionDashboard.service";
+import { MemoryRouter } from "react-router-dom";
+import { getCustomerResolutionDashboard } from "../src/services/portfolioImport.service";
 
 vi.mock("../src/services/collectionDashboard.service", () => ({ getCollectionDashboard: vi.fn() }));
+vi.mock("../src/services/portfolioImport.service", () => ({ getCustomerResolutionDashboard: vi.fn() }));
 const data = { reference_date: "2026-10-06", portfolio: { total_balance: "120.00", customers_in_collection: 1 },
   stages: [{ key: "overdue", label: "En mora", customers: 1, balance: "120.00" }],
   promises: { pending_count: 1, pending_amount: "30.00" }, activity: { activity_from: "2026-09-30", activity_to: "2026-10-06", actions_period: 4 },
   warnings: ["Reglas pendientes"], collection_status: "ready" };
 function view({ permissions = ["collection.view", "settings.manage"], user = { id: "1", company_id: "1" } } = {}) {
-  return render(<AuthContext.Provider value={{ user, permissions }}><CollectionDashboard /></AuthContext.Provider>);
+  return render(<AuthContext.Provider value={{ user, permissions }}><MemoryRouter><CollectionDashboard /></MemoryRouter></AuthContext.Provider>);
 }
-beforeEach(() => { vi.clearAllMocks(); getCollectionDashboard.mockResolvedValue(data); });
+beforeEach(() => { vi.clearAllMocks(); getCollectionDashboard.mockResolvedValue(data); getCustomerResolutionDashboard.mockResolvedValue({ counts:{SEARCHING:2,PERSISTENT:5,NEW:3,AMBIGUOUS:1,INVALID:0,RESOLVED:4},pending:6,batches:[{id:"9",file_name:"cartera.xlsx"}] }); });
 
 describe("5.5 dashboard operativo de cobranza", () => {
   it("renders portfolio, stage, promise, activity and configuration warning metrics", async () => {
@@ -42,5 +45,12 @@ describe("5.5 dashboard operativo de cobranza", () => {
     resolve({ ...data, portfolio: { total_balance: "0.00", customers_in_collection: 0 }, stages: [], promises: { pending_count: 0, pending_amount: "0.00" }, activity: { ...data.activity, actions_period: 0 }, warnings: [] });
     expect(await screen.findByText(/no tiene datos de cartera/)).toBeVisible();
     getCollectionDashboard.mockRejectedValueOnce(new Error("Error de dashboard")); view(); expect(await screen.findByRole("alert")).toHaveTextContent("Error de dashboard");
+  });
+  it("shows MERTEL client-resolution counters and a direct link from the dashboard", async()=>{
+    view({permissions:["collection.view","settings.manage","portfolio.import"]});
+    expect(await screen.findByRole("heading",{name:/Clientes por resolver/})).toBeVisible();
+    expect(screen.getByText("Hay 6 clientes pendientes de resolución.")).toBeVisible();
+    expect(screen.getByRole("link",{name:"Revisar cartera.xlsx"})).toHaveAttribute("href","/administracion/resolucion-clientes?batch_id=9");
+    expect(getCustomerResolutionDashboard).toHaveBeenCalled();
   });
 });

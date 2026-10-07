@@ -9,8 +9,30 @@ import { analyzePortfolioFile, listPortfolioImports, MAX_IMPORT_BYTES } from "..
 import { reconcilePortfolio } from "../services/portfolioReconciliation.service.js";
 import { generatePortfolioPipeline, listImportedPipelineActions, recordImportedPipelineAction } from "../services/portfolioPipeline.service.js";
 import { getCollectionDashboardController } from "../controllers/collectionDashboard.controller.js";
+import { analyzeCustomerResolution, decideCustomerResolution, getCustomerResolution, getCustomerResolutionDashboard } from "../services/customerResolution.service.js";
 import { administrativeCollectionHistory, administrativeHistoryActors } from "../controllers/collectionHistory.controller.js";
 const router = express.Router();
+router.post("/portfolio/imports/resolution/analyze", requirePermission("portfolio.import"), requireCompanyScope,
+  express.raw({ type: ["application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"], limit: MAX_IMPORT_BYTES }), async (req, res, next) => {
+    try {
+      if (!Buffer.isBuffer(req.body)) return res.status(400).json({ success: false, message: "Envía la cartera MERTEL como XLSX" });
+      res.set("Cache-Control", "no-store");
+      return res.json({ success: true, data: await analyzeCustomerResolution({ bytes: req.body, scope: req.companyScope,
+        batchId: req.query.batch_id, actorId: req.user.id }) });
+    } catch (error) { if ([400,403,404,409,413].includes(error.status)) return res.status(error.status).json({ success:false,message:error.message,code:error.code }); return next(error); }
+  });
+router.get("/portfolio/imports/resolution", requirePermission("portfolio.import"), requireCompanyScope, async (req,res,next) => {
+  try { res.set("Cache-Control","no-store"); return res.json({ success:true,data:await getCustomerResolution({ scope:req.companyScope,batchId:req.query.batch_id,status:req.query.status,search:req.query.search }) }); }
+  catch(error) { if([400,403].includes(error.status)) return res.status(error.status).json({success:false,message:error.message}); return next(error); }
+});
+router.get("/portfolio/imports/resolution/summary", requirePermission("portfolio.import"), requireCompanyScope, async (req,res,next) => {
+  try { res.set("Cache-Control","no-store"); const data=await getCustomerResolutionDashboard(req.companyScope); return res.json({success:true,data}); }
+  catch(error) { if([400,403].includes(error.status)) return res.status(error.status).json({success:false,message:error.message}); return next(error); }
+});
+router.post("/portfolio/imports/resolution/:id/decision", requirePermission("portfolio.import"), requireCompanyScope, async (req,res,next) => {
+  try { res.set("Cache-Control","no-store"); return res.json({success:true,data:await decideCustomerResolution({scope:req.companyScope,actorId:req.user.id,rowId:req.params.id,body:req.body,ipAddress:req.ip,userAgent:req.get("user-agent")})}); }
+  catch(error) { if([400,403,404,409].includes(error.status)) return res.status(error.status).json({success:false,message:error.message,code:error.code}); return next(error); }
+});
 router.get("/collection/dashboard", requirePermission("collection.view"), requirePermission("settings.manage"), requireCompanyScope, getCollectionDashboardController);
 router.get("/collection/history", requirePermission("history.view"), requirePermission("settings.manage"), requireCompanyScope, administrativeCollectionHistory);
 router.get("/collection/history/actors", requirePermission("history.view"), requirePermission("settings.manage"), requireCompanyScope, administrativeHistoryActors);
@@ -47,7 +69,7 @@ router.post("/portfolio/imports/pipeline", requirePermission("portfolio.import")
         referenceDate: req.query.reference_date, fileName: req.query.file_name });
       return res.json({ success: true, data });
     } catch (error) {
-      if ([400, 403, 404, 413].includes(error.status)) return res.status(error.status).json({ success: false, message: error.message, code: error.code });
+      if ([400, 403, 404, 409, 413].includes(error.status)) return res.status(error.status).json({ success: false, message: error.message, code: error.code });
       return next(error);
     }
   });

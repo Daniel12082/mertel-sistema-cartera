@@ -6,11 +6,17 @@ async function setup(page, { admin = true, globalAdmin = false } = {}) {
     roles: [admin ? "admin" : "collector"], permissions: admin ? ["portfolio.import", "collection.view", "collection.manage"] : ["collection.view"] };
   const calls = [];
   const importedActions = [];
+  let resolutionRows=[];
+  let resolutionReady=false;
   await page.route("**/api/**", async route => {
     const request = route.request(); const url = new URL(request.url()); calls.push({ method: request.method(), path: url.pathname, params: Object.fromEntries(url.searchParams), contentType: request.headers()["content-type"] });
     if (url.pathname === "/api/auth/refresh") return route.fulfill({ json: { data: { access_token: "fixture-memory", user } } });
     if (url.pathname === "/api/admin/companies") return route.fulfill({ json: { success: true, data: [{ id: "1", name: "Empresa fixture", status: "active" }] } });
     if (url.pathname === "/api/admin/portfolio/imports" && request.method() === "GET") return route.fulfill({ json: { success: true, data: [] } });
+    if (url.pathname === "/api/admin/portfolio/imports/resolution/summary") return route.fulfill({json:{success:true,data:{counts:{SEARCHING:0,FOUND:0,NEW:0,AMBIGUOUS:0,INVALID:0,PERSISTENT:0,RESOLVED:0},pending:0,batches:[]}}});
+    if (url.pathname === "/api/admin/portfolio/imports/resolution" && request.method()==="GET") return route.fulfill({json:{success:true,data:{batch_id:url.searchParams.get("batch_id"),counts:{SEARCHING:0,FOUND:0,NEW:resolutionReady?0:0,AMBIGUOUS:0,INVALID:0,PERSISTENT:resolutionReady?1:0,RESOLVED:0},pending:resolutionReady?0:0,ready_for_pipeline:resolutionReady,rows:resolutionRows}}});
+    if (url.pathname === "/api/admin/portfolio/imports/resolution/analyze" && request.method()==="POST") { resolutionRows=[{id:"501",status:"NEW",nit_normalized:"8000012690",source_rows:[8],source_data:{nit:"800.001.269-0",name:"Cliente MERTEL",address:"Calle 1",city:"BOGOTÁ",phone:"6011234567",credit_limit:100000},customer_id:null,current:null,candidates:[],differences:[]}]; return route.fulfill({json:{success:true,data:{batch_id:"2",counts:{SEARCHING:0,FOUND:0,NEW:1,AMBIGUOUS:0,INVALID:0,PERSISTENT:0,RESOLVED:0},pending:1,ready_for_pipeline:false,rows:resolutionRows}}}); }
+    if (/\/api\/admin\/portfolio\/imports\/resolution\/\d+\/decision$/.test(url.pathname) && request.method()==="POST") { resolutionReady=true; resolutionRows=resolutionRows.map(row=>({...row,status:"PERSISTENT",customer_id:"1001"})); return route.fulfill({json:{success:true,data:{batch_id:"2",counts:{SEARCHING:0,FOUND:0,NEW:0,AMBIGUOUS:0,INVALID:0,PERSISTENT:1,RESOLVED:0},pending:0,ready_for_pipeline:true,rows:resolutionRows}}}); }
     if (url.pathname === "/api/admin/portfolio/imports/analyze") {
       const isXlsx = url.searchParams.get("file_name")?.endsWith(".xlsx");
       return route.fulfill({ json: { success: true, data: isXlsx ? {
@@ -40,7 +46,7 @@ async function setup(page, { admin = true, globalAdmin = false } = {}) {
       source: { file_name: "cartera al 06-10.xlsx", reference_date: url.searchParams.get("reference_date"), processed_at: "2026-10-06T12:00:00Z" },
       summary: { customers: 1, documents: 1, overdue: 1, due_today: 0, due_in_five_days: 0, prompt_payment: 0, unclassified: 0, errors: 0 },
       stage_catalog: [{ key: "overdue", label: "En mora", category: "overdue" }], configuration_warnings: [], errors: [],
-      pipeline: [{ customer: { id: "xlsx:8000012690", nit: "800.001.269-0", name: "CLIENTE MERTEL", phone: "6011234567" }, source_details: { nit: "800.001.269-0", name: "CLIENTE MERTEL", collector: "COBRADOR", seller: "VENDEDOR", city: "BOGOTÁ", zone: "NORTE", mobile: "3000000000" }, source_context: "signed-context-fixture", stage: "overdue", stage_label: "En mora", priority: 4, reason: "Factura vencida con saldo pendiente.", total_balance: "250.00", main_invoice: { invoice: { invoice_number: "ME-74743", issue_date: "2026-09-01", due_date: "2026-10-01", source_row: 8 }, days_until_due: -5 }, invoices: [], documents: [{ source_row: 8, document_number: "ME-74743", movement: "012 Factura de venta credito", movement_type: "invoice", issue_date: "2026-09-01", due_date: "2026-10-01", document_value: 300, iva: 50, balance: "250.00", stage_label: "En mora", eligible: true, observations: "Nota de prueba" }] }],
+      pipeline: [{ customer: { id: "1001", nit: "800.001.269-0", name: "CLIENTE MERTEL", phone: "6011234567" }, source_details: { nit: "800.001.269-0", name: "CLIENTE MERTEL", collector: "COBRADOR", seller: "VENDEDOR", city: "BOGOTÁ", zone: "NORTE", mobile: "3000000000" }, source_context: "signed-context-fixture", stage: "overdue", stage_label: "En mora", priority: 4, reason: "Factura vencida con saldo pendiente.", total_balance: "250.00", main_invoice: { invoice: { invoice_number: "ME-74743", issue_date: "2026-09-01", due_date: "2026-10-01", source_row: 8 }, days_until_due: -5 }, invoices: [], documents: [{ source_row: 8, document_number: "ME-74743", movement: "012 Factura de venta credito", movement_type: "invoice", issue_date: "2026-09-01", due_date: "2026-10-01", document_value: 300, iva: 50, balance: "250.00", stage_label: "En mora", eligible: true, observations: "Nota de prueba" }] }],
       metadata: { read_only: true, persisted: false, balance_source: "Suma de buckets de antigüedad por factura" },
     } } });
     if (url.pathname === "/api/admin/portfolio/imports/pipeline/actions" && request.method() === "GET") return route.fulfill({ json: { success: true, data: importedActions } });
@@ -110,13 +116,17 @@ test("E2E XLSX analyze to read-only reconciliation, summary, filtering and detai
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
 
-test("E2E XLSX to temporary collection pipeline, filters and customer documents", async ({ page }) => {
+test("E2E XLSX requires customer resolution before temporary collection pipeline", async ({ page }) => {
   const calls = await setup(page); await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/administracion/importar-cartera");
   await page.getByLabel("Archivo CSV o Excel").setInputFiles({ name: "cartera al 06-10.xlsx", mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", buffer: Buffer.from([0x50, 0x4b, 3, 4]) });
   await page.getByRole("button", { name: "Analizar archivo" }).click();
-  await page.getByLabel("Fecha de referencia del pipeline").fill("2026-10-06");
-  await page.getByRole("button", { name: "Generar Pipeline" }).click();
+  await page.getByRole("button",{name:"Ver resolución de clientes"}).click();
+  await page.getByRole("button",{name:"Analizar y buscar clientes"}).click();
+  await page.getByRole("button",{name:"Crear cliente"}).click();
+  await page.getByRole("button",{name:"Confirmar",exact:true}).click();
+  await page.getByLabel("Fecha de referencia").fill("2026-10-06");
+  await page.getByRole("button", { name: "Generar pipeline" }).click();
   await expect(page.getByRole("heading", { name: "Pipeline de cartera importada" })).toBeVisible();
   await expect(page.getByText("Fuente: archivo de cartera MERTEL", { exact: false })).toBeVisible();
   await expect(page.getByLabel("Resumen del pipeline importado")).toContainText("En mora");

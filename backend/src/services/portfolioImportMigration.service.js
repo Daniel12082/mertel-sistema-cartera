@@ -21,3 +21,15 @@ export async function applyPortfolioImportMigration(db) {
     return { migration: "006_portfolio_import_analysis.sql", applied: !(hasHash && hasCode && indexes.length) };
   } finally { await db.query("SELECT RELEASE_LOCK(?)", [lockName]); }
 }
+
+export async function applyCustomerResolutionMigration(db) {
+  const [[{ databaseName }]] = await db.query("SELECT DATABASE() AS databaseName");
+  if (!databaseName) throw new Error("Selecciona una base de datos para la migración de resolución de clientes");
+  const [tables] = await db.query("SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='mertel_customer_resolution_rows'");
+  if (tables.length) return { migration: "008_mertel_customer_resolution.sql", applied: false };
+  const [base] = await db.query("SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME IN ('customers','companies','users','import_batches')");
+  if (base.length !== 4) throw new Error("Faltan tablas base para la resolución de clientes; no se ejecuta la migración");
+  const migration = await readFile(new URL("../../../database/migrations/008_mertel_customer_resolution.sql", import.meta.url), "utf8");
+  for (const statement of migration.split(";").map(part => part.trim()).filter(Boolean)) await db.query(statement);
+  return { migration: "008_mertel_customer_resolution.sql", applied: true };
+}
