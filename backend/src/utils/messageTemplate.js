@@ -1,4 +1,8 @@
 const VARIABLE_DEFINITIONS = Object.freeze([
+  ...['cartera_detalle', 'cantidad_facturas', 'total_cartera', 'base_antes_iva', 'descuento_pronto_pago', 'total_pronto_pago', 'aviso_condicionado', 'resumen_aviso'].map(name => ({ name, label: name.replaceAll('_', ' '), source: 'whatsapp.automatic_notice', example: 'Dato calculado del aviso' })),
+  { name: "cupo_credito", label: "Cupo de crédito", source: "customers.credit_limit", example: "$10.000.000,00" },
+  { name: "cupo_disponible", label: "Cupo disponible", source: "customers.available_credit", example: "$5.000.000,00" },
+  { name: "saldo_en_mora", label: "Saldo de facturas vencidas del mensaje", source: "whatsapp.overdue_invoice_balances", example: "$2.450.000,00" },
   { name: "cliente_nombre", label: "Nombre del cliente", source: "customers.name", example: "Cliente DEMO", legacy: true },
   { name: "nit", label: "NIT", source: "customers.nit", example: "900123456-1", legacy: true },
   { name: "fecha_emision", label: "Emisión", source: "main_invoice.issue_date", example: "2026-09-01", legacy: true },

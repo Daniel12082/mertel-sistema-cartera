@@ -3,6 +3,8 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../auth/useAuth";
 import { analyzePortfolioFile, getPortfolioImports, reconcilePortfolioFile } from "../../services/portfolioImport.service";
 import "./PortfolioImport.css";
+import { useAppDataMode } from '../../simulation/useAppDataMode';
+import SimulationPortfolioImport from '../../simulation/SimulationPortfolioImport';
 
 const MAX_BYTES = 2 * 1024 * 1024;
 function formatDate(value) { return value ? new Date(value).toLocaleString() : "—"; }
@@ -11,12 +13,13 @@ export default function PortfolioImport() {
   const navigate = useNavigate();
   const { permissions = [] } = useAuth();
   const authorized = permissions.includes("portfolio.import");
+  const { mode } = useAppDataMode();
   const [file, setFile] = useState(null); const [analysis, setAnalysis] = useState(null);
   const [history, setHistory] = useState([]); const [loading, setLoading] = useState(false);
   const [error, setError] = useState(""); const [historyError, setHistoryError] = useState("");
   const [reconciliation, setReconciliation] = useState(null); const [reconciling, setReconciling] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState("ALL"); const [search, setSearch] = useState(""); const [selected, setSelected] = useState(null);
-  const ready = authorized;
+  const ready = authorized && mode !== 'SIMULATION';
 
   const loadHistory = useCallback(async signal => {
     if (!ready) return;
@@ -55,6 +58,7 @@ export default function PortfolioImport() {
   }
 
   if (!authorized) return <section className="portfolio-import-page"><div className="portfolio-import-notice error" role="alert">No tienes permiso para analizar archivos de cartera.</div></section>;
+  if (mode === 'SIMULATION') return <SimulationPortfolioImport />;
   const mertelXlsx = analysis?.format === "mertel_xlsx";
   return <section className="portfolio-import-page">
     <header><h2>Importar cartera</h2><p>Analiza CSV o el Excel de cartera MERTEL sin modificar información comercial.</p></header>

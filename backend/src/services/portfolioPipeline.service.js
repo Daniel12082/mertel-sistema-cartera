@@ -45,9 +45,9 @@ function operationText(value, maxLength, required = false) {
   return value.trim() || null;
 }
 
-export async function recordImportedPipelineAction({ scope, token, body, ipAddress = null, userAgent = null }) {
+export async function recordImportedPipelineAction({ scope, token, body, ipAddress = null, userAgent = null, secret = process.env.JWT_SECRET }) {
   if (!validCompanyId(scope?.companyId) || !validCompanyId(scope?.actorId)) throw Object.assign(new Error("La gestión manual requiere contexto de empresa autorizado."), { status: 403 });
-  const context = verifySourceContext(token, process.env.JWT_SECRET, scope.companyId);
+  const context = verifySourceContext(token, secret, scope.companyId);
   if (!body || typeof body !== "object" || Array.isArray(body) || Object.keys(body).some(key => !["document_number", "action_type", "description"].includes(key))) throw Object.assign(new Error("Campos de gestión no válidos."), { status: 400 });
   const actionType = operationText(body.action_type, 50, true);
   const description = operationText(body.description, 4000, true);
@@ -71,9 +71,9 @@ export async function recordImportedPipelineAction({ scope, token, body, ipAddre
   finally { db.release(); }
 }
 
-export async function listImportedPipelineActions({ scope, token }) {
+export async function listImportedPipelineActions({ scope, token, secret = process.env.JWT_SECRET }) {
   if (!validCompanyId(scope?.companyId)) throw Object.assign(new Error("Se requiere contexto de empresa autorizado."), { status: 403 });
-  const context = verifySourceContext(token, process.env.JWT_SECRET, scope.companyId);
+  const context = verifySourceContext(token, secret, scope.companyId);
   const db = await pool.getConnection();
   try {
     await db.query("START TRANSACTION READ ONLY");
@@ -235,7 +235,7 @@ export function buildPortfolioPipeline({ parsed, referenceDate, fileName, proces
   };
 }
 
-export async function generatePortfolioPipeline({ bytes, scope, referenceDate, fileName, processedAt }) {
+export async function generatePortfolioPipeline({ bytes, scope, referenceDate, fileName, processedAt, secret = process.env.JWT_SECRET }) {
   if (!validCompanyId(scope?.companyId)) throw Object.assign(new Error("El contexto MERTEL no está disponible"), { status: 403 });
   if (!validDate(referenceDate)) throw Object.assign(new Error("reference_date es obligatoria y debe usar YYYY-MM-DD"), { status: 400, code: "INVALID_REFERENCE_DATE" });
   const parsed = await parseMertelPortfolioXlsx(bytes);
@@ -261,7 +261,7 @@ export async function generatePortfolioPipeline({ bytes, scope, referenceDate, f
     const rules = await loadCompanyCollectionRules(scope.companyId, connection);
     await connection.commit();
     return buildPortfolioPipeline({ parsed, referenceDate, fileName, processedAt, companyId: scope.companyId, rules,
-      sourceHash, secret: process.env.JWT_SECRET, resolutionByNit: resolved });
+      sourceHash, secret, resolutionByNit: resolved });
   } catch (error) {
     try { await connection.rollback(); } catch {}
     throw error;

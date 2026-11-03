@@ -3,11 +3,19 @@ import { useAuth } from "../../auth/useAuth";
 import { getCollectionSettings, updateCollectionStages } from "../../services/collectionSettingsAdmin.service";
 import "./CollectionSettings.css";
 
+const stageNames = {overdue: 'En mora', due_today: 'Vence hoy', days_before_due: 'Faltan 5 días', five_days_before_due: 'Faltan 5 días', prompt_payment: 'Pronto pago'};
+function commercialValue(item) {
+  if (item.key === 'stage_order') return item.value.map(key => stageNames[key] || 'Etapa de cobranza').join(' → ');
+  if (item.key === 'prompt_payment.rounding') return 'Peso colombiano (COP)';
+  return Array.isArray(item.value) ? item.value.join(' → ') : `${item.value}${item.unit ? ` ${item.unit}` : ''}`;
+}
+
 export default function CollectionSettings() {
   const { permissions = [] } = useAuth();
   const authorized = permissions.includes("settings.manage");
   const [state, setState] = useState({ loading: true, saving: false, error: "", data: null, success: "" });
   const [stages, setStages] = useState([]);
+  const [revision, setRevision] = useState(0);
   useEffect(() => {
     if (!authorized) {
       setState({ loading: false, saving: false, error: "", data: null, success: "" }); setStages([]);
@@ -19,7 +27,7 @@ export default function CollectionSettings() {
       if (!controller.signal.aborted) { setState({ loading: false, saving: false, error: "", data, success: "" }); setStages(data.stages); }
     }).catch(error => { if (!controller.signal.aborted) setState({ loading: false, saving: false, error: error.message, data: null, success: "" }); });
     return () => controller.abort();
-  }, [authorized]);
+  }, [authorized, revision]);
 
   async function save() {
     setState(current => ({ ...current, saving: true, error: "", success: "" }));
@@ -34,7 +42,7 @@ export default function CollectionSettings() {
   return <section className="collection-settings-page">
     <header className="collection-settings-header"><div><h2>Configuración de cobranza</h2><p>Administra las etapas operativas de la política de cobranza de MERTEL.</p></div></header>
     {state.loading ? <div role="status">Cargando configuración de cobranza…</div> : null}
-    {state.error && <div className="collection-settings-notice error" role="alert">{state.error}</div>}
+    {state.error && <div className="collection-settings-notice error" role="alert">{state.error}<button type="button" onClick={() => setRevision(value => value + 1)}>Reintentar</button></div>}
     {state.success && <div className="collection-settings-notice success" role="status">{state.success}</div>}
     {!state.loading && state.data && !configured && <div className="collection-settings-notice">MERTEL Importaciones todavía no tiene reglas de cobranza configuradas.</div>}
     {!state.loading && configured && <>
@@ -47,9 +55,9 @@ export default function CollectionSettings() {
       </section>
       <section className="collection-settings-section"><h3>Reglas comerciales confirmadas</h3><p>Estos valores se muestran desde la configuración validada y no se editan en esta pantalla.</p>
         <div className="collection-settings-list">{state.data.settings.filter(item => !item.editable).map(item => <div className="collection-settings-row" key={item.key}>
-          <span><strong>{item.label}</strong><small>{item.description}</small></span><span className="collection-settings-readonly">{Array.isArray(item.value) ? item.value.join(" → ") : `${item.value}${item.unit ? ` ${item.unit}` : ""}`}</span>
+          <span><strong>{item.label}</strong><small>{item.key === "prompt_payment.rounding" ? "Redondeo al peso colombiano entero." : item.description}</small></span><span className="collection-settings-readonly">{commercialValue(item)}</span>
         </div>)}</div>
-        <p>El beneficio condicionado del 10% entre los días 60 y 70 se mantiene informativo. La base de cálculo y coexistencia financiera están pendientes de definición.</p>
+        <p>El beneficio condicionado del 10% entre los días 60 y 70 se mantiene informativo.</p>
       </section>
     </>}
   </section>;

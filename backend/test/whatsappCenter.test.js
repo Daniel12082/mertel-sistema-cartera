@@ -121,19 +121,19 @@ describe('WhatsApp center HTTP / MySQL, MOCK only', { skip: !(process.env.DB_HOS
     }
     await assert.rejects(services.mockSendWhatsApp({ scope: scope(), messageId: id, now: new Date('2026-10-07T16:00:00Z') }), /Máximo/);
   });
-  test('limits, scheduling, engine automatic rule and activation safety', async () => {
-    await request('PUT', '/admin/whatsapp/automations/overdue', fullRule({ mode: 'AUTOMATICO', start_time: '08:00', end_time: '17:00', weekdays: [1,2,3,4,5] }));
-    assert.equal((await request('PATCH', settingsPath, { automations_enabled: true })).status, 200);
-    await db.query("UPDATE messages SET created_at='2026-01-01',budget_date='2026-10-07'");
+  test('manual limits, scheduling and activation safety', async () => {
+    await request('PUT', '/admin/whatsapp/automations/overdue', fullRule({ mode: 'MANUAL', start_time: '08:00', end_time: '17:00', weekdays: [1,2,3,4,5] }));
+    assert.equal((await request('PATCH', settingsPath, { automations_enabled: true })).status, 409);
+    await db.query("UPDATE messages SET created_at='2026-01-01',budget_date='2030-10-10'");
     await request('PATCH', settingsPath, { customer_daily_limit: 1 });
-    const attempt = () => services.enqueueWhatsApp({ scope: scope(), actorId: admin.id, body: { customer_id: customerId, mode: 'AUTOMATICO' }, now: new Date('2026-10-07T17:00:00Z') });
+    const attempt = () => services.enqueueWhatsApp({ scope: scope(), actorId: admin.id, body: { customer_id: customerId, template_id: templateId, mode: 'MANUAL' }, now: new Date('2030-10-10T17:00:00Z') });
     await assert.rejects(attempt(), /Límite/);
     await request('PATCH', settingsPath, { customer_daily_limit: 10 });
     await request('PATCH', settingsPath, { global_daily_limit: 1 }); await assert.rejects(attempt(), /Límite/);
     await request('PATCH', settingsPath, { global_daily_limit: 100 });
-    await request('PUT', '/admin/whatsapp/automations/overdue', fullRule({ mode: 'AUTOMATICO', daily_limit: 1 })); await assert.rejects(attempt(), /Límite/);
-    await request('PUT', '/admin/whatsapp/automations/overdue', fullRule({ mode: 'AUTOMATICO', start_time: '08:00', end_time: '17:00', weekdays: [1,2,3,4,5] }));
-    const scheduled = await services.enqueueWhatsApp({ scope: scope(), actorId: admin.id, body: { customer_id: customerId, mode: 'AUTOMATICO' }, now: new Date('2030-10-11T23:00:00Z') });
+    await request('PUT', '/admin/whatsapp/automations/overdue', fullRule({ mode: 'MANUAL', daily_limit: 1 })); await assert.rejects(attempt(), /Límite/);
+    await request('PUT', '/admin/whatsapp/automations/overdue', fullRule({ mode: 'MANUAL', start_time: '08:00', end_time: '17:00', weekdays: [1,2,3,4,5] }));
+    const scheduled = await services.enqueueWhatsApp({ scope: scope(), actorId: admin.id, body: { customer_id: customerId, template_id: templateId, mode: 'MANUAL' }, now: new Date('2030-10-11T23:00:00Z') });
     assert.equal(scheduled.message.status, 'PENDING'); assert.ok(new Date(scheduled.message.scheduled_at) > new Date('2030-10-11T23:00:00Z'));
     const deferred = await services.mockSendWhatsApp({ scope: scope(), messageId: scheduled.message.id, now: new Date('2030-10-11T23:00:00Z') }); assert.equal(deferred.scheduled, true);
     await request('POST', '/admin/whatsapp/disconnect', {});

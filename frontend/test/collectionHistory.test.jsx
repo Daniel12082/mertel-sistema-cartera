@@ -12,6 +12,22 @@ function view({ user = { id: "1", company_id: "1" }, permissions = ["history.vie
 beforeEach(() => { vi.clearAllMocks(); getAdministrativeHistory.mockResolvedValue({ events: [event], pagination: { page: 1, limit: 20, total: 1, pages: 1, has_next: false, has_previous: false } }); getAdministrativeHistoryActors.mockResolvedValue([{ id: "1", name: "Ana" }]); });
 
 describe("administrative collection history", () => {
+  it("omits empty filters and preserves independent date bounds, ranges and other filters", async () => {
+    view(); await screen.findByText("Observación");
+    expect(getAdministrativeHistory).toHaveBeenLastCalledWith({ type: "all", page: 1, limit: 20 }, expect.anything());
+    fireEvent.change(screen.getByLabelText("Hasta"), { target: { value: "2026-10-07" } });
+    await waitFor(() => expect(getAdministrativeHistory).toHaveBeenLastCalledWith({ type: "all", date_to: "2026-10-07", page: 1, limit: 20 }, expect.anything()));
+    fireEvent.change(screen.getByLabelText("Desde"), { target: { value: "2026-10-01" } });
+    await waitFor(() => expect(getAdministrativeHistory).toHaveBeenLastCalledWith(expect.objectContaining({ date_from: "2026-10-01", date_to: "2026-10-07" }), expect.anything()));
+    fireEvent.change(screen.getByLabelText("Hasta"), { target: { value: "" } });
+    fireEvent.change(screen.getByLabelText("Tipo de evento"), { target: { value: "promise" } });
+    fireEvent.change(screen.getByLabelText("Usuario"), { target: { value: "1" } });
+    fireEvent.change(screen.getByLabelText("Cliente, identificación, factura o archivo"), { target: { value: "Cliente" } });
+    await waitFor(() => expect(getAdministrativeHistory).toHaveBeenLastCalledWith({ type: "promise", actor_id: "1", q: "Cliente", date_from: "2026-10-01", page: 1, limit: 20 }, expect.anything()));
+    fireEvent.change(screen.getByLabelText("Usuario"), { target: { value: "" } });
+    fireEvent.change(screen.getByLabelText("Desde"), { target: { value: "" } });
+    await waitFor(() => expect(getAdministrativeHistory).toHaveBeenLastCalledWith({ type: "promise", q: "Cliente", page: 1, limit: 20 }, expect.anything()));
+  });
   it("renders safe event context and filters by dates, type and actor", async () => {
     view(); expect(await screen.findByText("Observación")).toBeVisible(); expect(screen.getByText("Cliente: Cliente · NIT")).toBeVisible();
     fireEvent.change(screen.getByLabelText("Desde"), { target: { value: "2026-10-01" } });

@@ -6,11 +6,14 @@ export const MESSAGE_STATES = ['PENDING', 'PROCESSING', 'SENT', 'DELIVERED', 'RE
 export const RETRY_POLICY = Object.freeze({ max_attempts: 3, delay_minutes: 15 });
 export const defaultWhatsAppSettings = () => ({ provider: null, number: '', phone_number_id: '', business_account_id: '',
   connection_status: 'NOT_CONFIGURED', automations_enabled: false, global_daily_limit: null,
-  customer_daily_limit: null, rules: [], retry: { ...RETRY_POLICY } });
+  customer_daily_limit: null, rules: [], excluded_customers: {}, retry: { ...RETRY_POLICY } });
 export function publicWhatsAppSettings(settings) {
   const { encrypted_credentials, ...safe } = settings;
-  return { ...safe, credentials_configured: Boolean(encrypted_credentials), real_sending_enabled: false,
-    notice: 'Solo MOCK. No se realizan envíos reales.' };
+  const meta = String(process.env.WHATSAPP_PROVIDER || '').toLowerCase() === 'meta';
+  return { ...safe, provider: meta ? 'WHATSAPP_CLOUD_API' : safe.provider, credentials_configured: Boolean(encrypted_credentials),
+    real_sending_enabled: meta && process.env.WHATSAPP_TEST_MODE === 'true', test_mode: meta && process.env.WHATSAPP_TEST_MODE === 'true',
+    test_allowed_recipient: meta && process.env.WHATSAPP_TEST_MODE === 'true' ? '+573173697659' : null,
+    notice: meta ? 'Meta Cloud API en modo de prueba: solo se permite el destinatario autorizado por el backend.' : 'Solo MOCK. No se realizan envíos reales.' };
 }
 export function encryptCredentials(input, keyValue = process.env.WHATSAPP_ENCRYPTION_KEY) {
   if (!keyValue || !/^[a-f\d]{64}$/i.test(keyValue)) throw operationError(409, 'Configura WHATSAPP_ENCRYPTION_KEY en el servidor antes de guardar credenciales.');
@@ -45,19 +48,7 @@ export function validateRule(body, stages) {
   if (body.interval_hours > 8760) throw operationError(400, 'Intervalo máximo: un año.');
   return { ...body, template_id: String(body.template_id) };
 }
-export function bogotaDate(now = new Date()) { return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Bogota', year: 'numeric', month: '2-digit', day: '2-digit' }).format(now); }
-export function nextWindow(rule, now = new Date()) {
-  const day = bogotaDate(now);
-  for (let offset = 0; offset < 8; offset++) {
-    const date = new Date(`${day}T00:00:00-05:00`); date.setUTCDate(date.getUTCDate() + offset);
-    const dateKey = bogotaDate(date); const weekday = date.getUTCDay() || 7;
-    if (!rule.weekdays.includes(weekday)) continue;
-    const start = new Date(`${dateKey}T${rule.start_time}:00-05:00`);
-    const end = new Date(`${dateKey}T${rule.end_time}:00-05:00`);
-    if (now < end) return new Date(Math.max(now.getTime(), start.getTime()));
-  }
-  throw operationError(400, 'No hay horario disponible.');
-}
+export {bogotaDate,nextWindow} from './whatsappSchedule.js';
 export function idempotencyKey({ companyId, customerId, stage, templateId, day, mode }) {
   return createHash('sha256').update(JSON.stringify([String(companyId), String(customerId), stage, String(templateId), day, mode])).digest('hex');
 }

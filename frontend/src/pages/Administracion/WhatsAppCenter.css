@@ -26,4 +26,15 @@
 .wa-center th,.wa-center td { padding: 14px; border-bottom: 1px solid #dce5e9; vertical-align: top; max-width: 360px; }
 .wa-center td p { margin: 8px 0; }
 .wa-center a { margin: 10px; color: #136853; }
+.wa-manual-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); gap: 28px; }
+.wa-eyebrow { font-size: 12px; font-weight: 700; letter-spacing: .08em; color: #136853; }
+.wa-preview { background: #f5f9f8; border: 1px solid #dce5e9; border-radius: 12px; padding: 20px; min-width: 0; }
+.wa-preview pre { background: white; line-height: 1.65; min-height: 100px; }
+.wa-center .wa-primary { background: #136853; color: white; font-weight: 700; width: 100%; padding: 14px; }
+.wa-warning { background: #fff8e6; color: #77530c; border-radius: 8px; padding: 12px; }
+.wa-timeline { list-style: none; padding: 0; margin: 24px 0; border-left: 3px solid #168b71; }
+.wa-timeline li { padding: 8px 20px 24px; margin: 0 0 18px 18px; border: 1px solid #dce5e9; border-radius: 12px; }
+.wa-timeline code { overflow-wrap: anywhere; }
+.wa-center :is(button, input, select, textarea, a):focus-visible { outline: 3px solid #168b71; outline-offset: 3px; }
+@media(max-width: 700px) { .wa-manual-layout { grid-template-columns: 1fr; gap: 18px; } .wa-preview { padding: 14px; } }
 @media(max-width: 700px) { .wa-grid { grid-template-columns: 1fr; } .wa-card { padding: 16px; } .wa-center dl { grid-template-columns: 1fr; } .wa-center header h1 { font-size: 25px; } }

@@ -727,7 +727,6 @@ INSERT INTO settings (
 )
 VALUES
     (NULL, 'iva_percentage', '19', 'number', 'Porcentaje de IVA'),
-    (NULL, 'prompt_payment_discount', '3', 'number', 'Descuento por pronto pago'),
     (NULL, 'business_day_due_day', '7', 'number', 'Día hábil de referencia'),
     (NULL, 'payment_cutoff_day', '10', 'number', 'Día límite de pago'),
     (NULL, 'reminder_days_before_due', '5', 'number', 'Días antes del vencimiento para recordatorio'),

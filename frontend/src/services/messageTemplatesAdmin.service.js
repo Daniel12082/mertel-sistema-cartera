@@ -1,4 +1,13 @@
 import api from "./api";
+import { simulationSnapshot } from '../simulation/store';
+import { requireMedia, MEDIA_UNAVAILABLE } from './whatsappMedia.service';
+
+function validateAttachment(payload) {
+  if (payload.attachment || payload.content_type && payload.content_type !== 'text') {
+    if (simulationSnapshot().mode !== 'SIMULATION') throw new Error(MEDIA_UNAVAILABLE);
+    requireMedia(payload.attachment);
+  }
+}
 
 function unwrap(response) {
   const body = response?.data;
@@ -19,9 +28,11 @@ export async function getMessageTemplateAdminData({ signal } = {}) {
   return request(async () => unwrap(await api.get("/collection/message-templates", { signal })));
 }
 export async function createMessageTemplate(payload) {
+  validateAttachment(payload);
   return request(async () => unwrap(await api.post("/collection/message-templates", payload)));
 }
 export async function updateMessageTemplate(templateId, payload) {
+  validateAttachment(payload);
   return request(async () => unwrap(await api.put(`/collection/message-templates/${encodeURIComponent(templateId)}`, payload)));
 }
 export async function setMessageTemplateActive(templateId, active) {

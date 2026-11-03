@@ -1,7 +1,6 @@
-import { randomUUID } from 'node:crypto';
+import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 
-// A real adapter must implement this contract and normalize authenticated webhooks.
-// No real adapter is registered in this phase, so no path can perform external IO.
+// Providers normalize transport details; credentials are always read from server-only env.
 export class WhatsAppProvider {
   async sendMessage() { throw new Error('Provider method not implemented'); }
   async sendTemplateMessage(message) { return this.sendMessage(message); }
@@ -9,6 +8,179 @@ export class WhatsAppProvider {
   async validateConnection() { throw new Error('Provider method not implemented'); }
   handleIncomingWebhook() { throw new Error('Provider method not implemented'); }
   handleDeliveryStatus() { throw new Error('Provider method not implemented'); }
+}
+
+const META_TEST_RECIPIENT = '+573173697659';
+const GRAPH_HOST = 'https://graph.facebook.com';
+
+export class MetaWhatsAppProvider extends WhatsAppProvider {
+  constructor({ env = process.env, fetchImpl = globalThis.fetch, timeoutMs = 12000 } = {}) {
+    super();
+    this.env = env;
+    this.fetchImpl = fetchImpl;
+    this.timeoutMs = timeoutMs;
+    this.config = readMetaConfig(env);
+  }
+
+  async request(path, { method = 'GET', body, signal } = {}) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(new Error('timeout')), this.timeoutMs);
+    const abort = () => controller.abort(signal.reason);
+    signal?.addEventListener('abort', abort, { once: true });
+    try {
+      const response = await this.fetchImpl(`${GRAPH_HOST}/${this.config.version}/${path}`, {
+        method, signal: controller.signal,
+        headers: { Authorization: `Bearer ${this.config.accessToken}`, Accept: 'application/json', ...(body ? { 'Content-Type': 'application/json' } : {}) },
+        ...(body ? { body: JSON.stringify(body) } : {})
+      });
+      const text = await response.text();
+      let data = null;
+      try { data = text ? JSON.parse(text) : null; } catch { /* Provider response details are not logged or returned. */ }
+      if (!response.ok || data?.error) {
+        const error = data?.error || {};
+        const code = response.status === 401 || response.status === 403 ? 'META_AUTH_FAILED' :
+          response.status === 429 ? 'META_RATE_LIMITED' : `META_HTTP_${response.status}`;
+        const safe = new Error(typeof error.error_user_msg === 'string' ? error.error_user_msg.slice(0, 500) : 'Meta rechazó la solicitud.');
+        safe.code = typeof error.code === 'number' ? String(error.code) : code;
+        safe.httpStatus = response.status;
+        safe.retryAfter = response.headers.get('retry-after');
+        throw safe;
+      }
+      return data || {};
+    } catch (error) {
+      if (error?.httpStatus) throw error;
+      const safe = new Error(error?.name === 'AbortError' ? 'Tiempo de espera agotado al consultar Meta.' : 'No fue posible conectar con Meta.');
+      safe.code = error?.name === 'AbortError' ? 'META_TIMEOUT' : 'META_NETWORK_ERROR';
+      throw safe;
+    } finally {
+      clearTimeout(timeout);
+      signal?.removeEventListener('abort', abort);
+    }
+  }
+
+  assertTestRecipient(value, { manual = false } = {}) {
+    if (this.env.WHATSAPP_TEST_MODE !== 'true') throw providerError('META_TEST_MODE_REQUIRED', 'El envío real está deshabilitado: activa el modo de pruebas en el backend.');
+    const configured = String(this.env.WHATSAPP_TEST_ALLOWED_RECIPIENTS || '').split(',').map(item => item.trim()).filter(Boolean);
+    let recipient;
+    try { recipient = normalizePhone(value); } catch { throw providerError('META_RECIPIENT_INVALID', 'Destinatario inválido.'); }
+    let configuredRecipient = null;
+    try { configuredRecipient = configured.length === 1 ? normalizePhone(configured[0]) : null; } catch { /* rejected below */ }
+    const allowed = configuredRecipient === META_TEST_RECIPIENT;
+    if (!allowed || recipient !== META_TEST_RECIPIENT || !manual) throw providerError('META_TEST_RECIPIENT_BLOCKED', 'El modo de pruebas solo permite un envío manual al destinatario de prueba autorizado.');
+    return recipient;
+  }
+
+  async validateConnection() {
+    const data = await this.request(`${this.config.phoneNumberId}?fields=display_phone_number,verified_name`);
+    const phone = typeof data.display_phone_number === 'string' ? data.display_phone_number : null;
+    return { status: 'CONNECTED', phone, verified_name: typeof data.verified_name === 'string' ? data.verified_name : null, provider: 'WHATSAPP_CLOUD_API' };
+  }
+
+  async getConnectionStatus() { return this.validateConnection(); }
+
+  async listMessageTemplates() {
+    const rows = [];
+    let after = null;
+    for (let page = 0; page < 20; page++) {
+      const params = new URLSearchParams({ fields: 'name,status,category,language,components', limit: '100' });
+      if (after) params.set('after', after);
+      const data = await this.request(`${this.config.businessAccountId}/message_templates?${params}`);
+      if (!Array.isArray(data.data)) throw providerError('META_INVALID_RESPONSE', 'Meta devolvió una lista de plantillas inválida.');
+      rows.push(...data.data.map(normalizeMetaTemplate));
+      after = data.paging?.cursors?.after || null;
+      if (!data.paging?.next || !after) break;
+    }
+    return rows;
+  }
+
+  async sendMessage({ recipient, manual = false, payload, signal } = {}) {
+    const to = this.assertTestRecipient(recipient, { manual });
+    if (!payload || !['text', 'template'].includes(payload.type)) throw providerError('META_MESSAGE_TYPE_UNSUPPORTED', 'Tipo de mensaje no habilitado para esta prueba.');
+    const data = await this.request(`${this.config.phoneNumberId}/messages`, { method: 'POST', body: { messaging_product: 'whatsapp', recipient_type: 'individual', to: to.slice(1), ...payload }, signal });
+    const message = data.messages?.[0];
+    if (typeof message?.id !== 'string' || !message.id.startsWith('wamid.')) throw providerError('META_INVALID_RESPONSE', 'Meta no confirmó un identificador de mensaje.');
+    // HTTP success means accepted by Meta, never delivered. Delivery comes only by webhook.
+    return { accepted: true, status: 'SENT', provider: 'WHATSAPP_CLOUD_API', provider_message_id: message.id,
+      response: { messaging_product: data.messaging_product || 'whatsapp', contacts: data.contacts || [], messages: [message] } };
+  }
+
+  async sendTemplateMessage({ recipient, manual = false, template, signal } = {}) {
+    const to = this.assertTestRecipient(recipient, { manual });
+    const approved = (await this.listMessageTemplates()).find(row => row.name === template?.name && row.language === template?.language && row.status === 'APPROVED');
+    if (!approved) throw providerError('META_TEMPLATE_NOT_APPROVED', 'La plantilla no está aprobada por Meta para este idioma.');
+    validateTemplateParameters(approved, template.components || []);
+    return this.sendMessage({ recipient: to, manual, payload: { type: 'template', template: { name: approved.name, language: { code: approved.language }, ...(template.components?.length ? { components: template.components } : {}) } }, signal });
+  }
+
+  verifyWebhookSignature(rawBody, signature) {
+    if (typeof signature !== 'string' || !/^sha256=[a-f\d]{64}$/i.test(signature)) return false;
+    const expected = createHmac('sha256', this.config.appSecret).update(rawBody).digest();
+    const received = Buffer.from(signature.slice(7), 'hex');
+    return received.length === expected.length && timingSafeEqual(expected, received);
+  }
+
+  verifyWebhookChallenge(mode, token, challenge) {
+    if (mode !== 'subscribe' || typeof token !== 'string' || typeof challenge !== 'string') return null;
+    const supplied = Buffer.from(token); const expected = Buffer.from(this.config.webhookVerifyToken);
+    return supplied.length === expected.length && timingSafeEqual(supplied, expected) ? challenge : null;
+  }
+
+  handleIncomingWebhook(dto) { return normalizeMetaWebhook(dto); }
+  handleDeliveryStatus(dto) { return normalizeMetaStatus(dto); }
+}
+
+function readMetaConfig(env) {
+  if (String(env.WHATSAPP_PROVIDER || '').toLowerCase() !== 'meta') throw providerError('META_PROVIDER_DISABLED', 'WHATSAPP_PROVIDER=meta no está configurado en el backend.');
+  const fields = {
+    accessToken: env.WHATSAPP_ACCESS_TOKEN, version: env.WHATSAPP_API_VERSION,
+    phoneNumberId: env.WHATSAPP_PHONE_NUMBER_ID, businessAccountId: env.WHATSAPP_BUSINESS_ACCOUNT_ID,
+    appId: env.WHATSAPP_APP_ID, businessId: env.WHATSAPP_BUSINESS_ID,
+    webhookVerifyToken: env.WHATSAPP_WEBHOOK_VERIFY_TOKEN, appSecret: env.WHATSAPP_APP_SECRET
+  };
+  if (Object.values(fields).some(value => typeof value !== 'string' || !value.trim())) throw providerError('META_CONFIGURATION_INCOMPLETE', 'Falta configuración requerida de WhatsApp Cloud API en el entorno seguro del backend.');
+  if (!/^v\d+\.\d+$/.test(fields.version) || !/^\d{8,25}$/.test(fields.phoneNumberId) || !/^\d{8,25}$/.test(fields.businessAccountId) || !/^\d{8,25}$/.test(fields.appId) || !/^\d{8,25}$/.test(fields.businessId)) throw providerError('META_CONFIGURATION_INVALID', 'La configuración de WhatsApp Cloud API no tiene un formato válido.');
+  return fields;
+}
+
+function providerError(code, message) { return Object.assign(new Error(message), { code }); }
+function normalizeMetaTemplate(row) {
+  if (!row || typeof row.name !== 'string' || typeof row.language !== 'string' || typeof row.status !== 'string' || !Array.isArray(row.components)) throw providerError('META_INVALID_TEMPLATE', 'Meta devolvió una plantilla con formato inválido.');
+  return { name: row.name, language: row.language, category: row.category || null, status: row.status, components: row.components };
+}
+function validateTemplateParameters(template, components) {
+  if (!Array.isArray(components) || components.some(component => !component || !['header', 'body', 'button'].includes(component.type) || !Array.isArray(component.parameters))) throw providerError('META_TEMPLATE_COMPONENT_INVALID', 'Los componentes de la plantilla no son válidos.');
+  for (const definition of template.components) {
+    if (definition.type === 'HEADER' && definition.format !== 'TEXT') throw providerError('META_TEMPLATE_COMPONENT_UNSUPPORTED', 'Las plantillas con encabezado multimedia requieren habilitar el envío multimedia validado.');
+    if (definition.type === 'BUTTONS' && (definition.buttons || []).some(button => ['URL', 'PHONE_NUMBER', 'OTP', 'CATALOG', 'MPM'].includes(button.type))) throw providerError('META_TEMPLATE_COMPONENT_UNSUPPORTED', 'Los botones dinámicos o interactivos requieren validación adicional.');
+  }
+  const required = template.components.filter(row => ['HEADER', 'BODY'].includes(row.type)).flatMap(row => [...(row.text || '').matchAll(/\{\{(\d+)\}\}/g)].map(match => ({ type: row.type.toLowerCase(), index: Number(match[1]) })));
+  const supplied = components.flatMap(component => (component.parameters || []).map((parameter, index) => ({ type: component.type, index: index + 1, parameter })));
+  if (required.length !== supplied.length || required.some((item, index) => item.type !== supplied[index].type || supplied[index].parameter.type !== 'text' || typeof supplied[index].parameter.text !== 'string' || supplied[index].parameter.text.length > 1024)) throw providerError('META_TEMPLATE_PARAMETERS_INVALID', 'Los parámetros no corresponden a las variables de la plantilla aprobada.');
+}
+
+function normalizeMetaWebhook(payload) {
+  if (payload?.object !== 'whatsapp_business_account' || !Array.isArray(payload.entry)) throw providerError('META_WEBHOOK_INVALID', 'Webhook de Meta inválido.');
+  const events = [];
+  for (const entry of payload.entry) for (const change of entry.changes || []) {
+    if (change.field !== 'messages' || !change.value) continue;
+    for (const message of change.value.messages || []) {
+      const timestamp = new Date(Number(message.timestamp) * 1000);
+      if (typeof message?.id !== 'string' || typeof message?.type !== 'string' || Number.isNaN(timestamp.getTime())) throw providerError('META_WEBHOOK_INVALID', 'Evento de mensaje de Meta inválido.');
+      events.push({ kind: 'message', phone: normalizePhone(message.from), provider_message_id: message.id, type: message.type,
+        content: message.type === 'text' ? message.text?.body : null,
+        media: message[message.type]?.id ? { id: message[message.type].id, mime_type: message[message.type].mime_type || null, sha256: message[message.type].sha256 || null } : null,
+        timestamp });
+    }
+    for (const status of change.value.statuses || []) events.push({ kind: 'status', ...normalizeMetaStatus(status) });
+  }
+  return events;
+}
+function normalizeMetaStatus(status) {
+  const values = { sent: 'SENT', delivered: 'DELIVERED', read: 'READ', failed: 'FAILED' };
+  if (!status || typeof status.id !== 'string' || !values[status.status]) throw providerError('META_STATUS_INVALID', 'Estado de Meta inválido.');
+  const timestamp = new Date(Number(status.timestamp) * 1000);
+  if (Number.isNaN(timestamp.getTime())) throw providerError('META_STATUS_INVALID', 'Marca de tiempo de Meta inválida.');
+  return { kind: 'status', provider_message_id: status.id, status: values[status.status], recipient: status.recipient_id ? normalizePhone(status.recipient_id) : null, timestamp, errors: Array.isArray(status.errors) ? status.errors.map(row => ({ code: String(row.code || ''), title: String(row.title || '').slice(0, 200), message: String(row.message || '').slice(0, 500) })) : [] };
 }
 
 export function normalizePhone(value) {
@@ -40,6 +212,7 @@ export class MockWhatsAppProvider extends WhatsAppProvider {
 }
 
 export function whatsappProvider(name) {
-  if (name !== 'MOCK') throw new Error('La integración real todavía no está disponible.');
-  return new MockWhatsAppProvider();
+  if (name === 'MOCK') return new MockWhatsAppProvider();
+  if (name === 'WHATSAPP_CLOUD_API' || String(name).toLowerCase() === 'meta') return new MetaWhatsAppProvider();
+  throw new Error('Proveedor WhatsApp no disponible.');
 }

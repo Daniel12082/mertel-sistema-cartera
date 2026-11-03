@@ -30,6 +30,13 @@ describe("5.2 administrative collection settings", () => {
     expect(screen.getByText("3 %")).toBeVisible();
     expect(screen.getByRole("checkbox", { name: "Activar Vence hoy" })).toBeChecked();
   });
+  it("presents business labels without technical engine identifiers", async () => {
+    getCollectionSettings.mockResolvedValue({...data,settings:[...data.settings,{key:'stage_order',label:'Prioridad de etapas',description:'Prioridad comercial',value:['overdue','due_today','days_before_due','prompt_payment'],editable:false},{key:'prompt_payment.rounding',label:'Redondeo monetario',description:'Redondeo convencional half-up',value:'half_up',unit:'COP entero',editable:false}]});
+    view();
+    expect(await screen.findByText('En mora → Vence hoy → Faltan 5 días → Pronto pago')).toBeVisible();
+    expect(screen.getByText('Peso colombiano (COP)')).toBeVisible();
+    for (const text of ['overdue','due_today','days_before_due','prompt_payment','half_up','half-up','pendientes de definición']) expect(document.body.textContent).not.toContain(text);
+  });
   it("saves explicit stage changes and shows confirmation", async () => {
     view(); await screen.findByRole("checkbox", { name: "Activar Vence hoy" });
     fireEvent.click(screen.getByRole("checkbox", { name: "Activar Vence hoy" }));

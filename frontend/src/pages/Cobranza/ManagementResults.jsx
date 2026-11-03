@@ -4,8 +4,10 @@ import {collectionResultsRequest} from '../../services/collectionResults.service
 import CollectionPaymentForm from './CollectionPaymentForm';
 import {formatCurrency,formatDate} from '../../utils/format';
 import './ManagementResults.css';
+import {useAppDataMode} from '../../simulation/useAppDataMode';
 
 export default function ManagementResults({customerId,referenceDate,contextToken,startOpen=false,onChanged}){
+  const simulated=useAppDataMode().mode==='SIMULATION';
   const {permissions=[],user}=useAuth();const canManage=permissions.includes('collection.manage');
   const canPay=canManage&&permissions.includes('payments.create')&&permissions.includes('payment_allocations.create');
   const [opened,setOpened]=useState(startOpen);const [context,setContext]=useState(null);const [error,setError]=useState('');
@@ -21,7 +23,7 @@ export default function ManagementResults({customerId,referenceDate,contextToken
     return()=>controller.abort();
   },[opened,persistent,canManage,customerId,referenceDate,contextToken,reload]);
   async function complete(data){
-    setNotice(data.payment?'Pago registrado correctamente. El motor recalculará la cobranza con los saldos reales.':'Gestión guardada. Un pago reportado sigue pendiente de conciliación.');
+    setNotice(simulated?(data.payment?'Pago registrado correctamente en simulación. Solo cambió el saldo temporal; no se guardó en MySQL.':'Gestión simulada registrada únicamente en memoria.'):(data.payment?'Pago registrado correctamente. El motor recalculará la cobranza con los saldos reales.':'Gestión guardada. Un pago reportado sigue pendiente de conciliación.'));
     setResult('');setForm({invoice_id:'',description:'',reported_amount:'',reported_payment_date:'',promised_date:'',promised_amount:''});key.current=crypto.randomUUID();setReload(value=>value+1);
     if(onChanged)await onChanged(data);
   }

@@ -7,7 +7,7 @@ const entries = [
   ["payment_allocations", "Asignaciones", [["view", "Ver asignaciones", true], ["create", "Crear asignaciones", true], ["reverse", "Reversar asignaciones", true]]],
   ["portfolio", "Cartera", [["view", "Ver cartera, resumen y conciliación", true], ["export", "Exportar cartera", false], ["import", "Analizar archivos de cartera sin aplicarlos", true]]],
   ["collection", "Cobranza", [["view", "Ver cobranza", true], ["manage", "Registrar gestiones y promesas manuales de cobranza", true]]],
-  ["reports", "Reportes", [["view", "Ver reportes", false], ["export", "Exportar reportes", false]]],
+  ["reports", "Reportes", [["view", "Ver reportes", true], ["export", "Exportar reportes", false]]],
   ["history", "Historial", [["view", "Consultar historial operativo y administrativo autorizado", true]]],
   ["messages", "Mensajes", [["view", "Ver mensajes", false], ["manage", "Gestionar mensajes", false]]],
   ["message_templates", "Plantillas WhatsApp", [["manage", "Administrar plantillas de WhatsApp", true]]],

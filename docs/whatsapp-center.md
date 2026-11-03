@@ -1,5 +1,7 @@
 # Centro de WhatsApp MERTEL
 
+> Actualización del 8 de octubre de 2026: el centro ahora abre en Envío manual y reúne preview y envío en una sola acción. Los controles de automatización son una vista deshabilitada. Ver [implementación y validación actuales](whatsapp-manual-validation.md). Las secciones siguientes documentan la infraestructura existente y su fase original; sus antiguos botones de activación/generación automática y preparación manual ya no se muestran en el centro.
+
 Ruta: **Administración → WhatsApp** (`/administracion/whatsapp`). MERTEL sigue siendo el único contexto operativo. No se añadieron empresas, planes, campañas, IA ni respuestas automáticas.
 
 ## Arquitectura

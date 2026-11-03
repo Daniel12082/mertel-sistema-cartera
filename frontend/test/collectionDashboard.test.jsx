@@ -48,7 +48,7 @@ describe("5.5 dashboard operativo de cobranza", () => {
   });
   it("shows MERTEL client-resolution counters and a direct link from the dashboard", async()=>{
     view({permissions:["collection.view","settings.manage","portfolio.import"]});
-    expect(await screen.findByRole("heading",{name:/Clientes por resolver/})).toBeVisible();
+    expect(await screen.findByText("Hay 6 clientes pendientes de resolución.")).toBeVisible();
     expect(screen.getByText("Hay 6 clientes pendientes de resolución.")).toBeVisible();
     expect(screen.getByRole("link",{name:"Revisar cartera.xlsx"})).toHaveAttribute("href","/administracion/resolucion-clientes?batch_id=9");
     expect(getCustomerResolutionDashboard).toHaveBeenCalled();

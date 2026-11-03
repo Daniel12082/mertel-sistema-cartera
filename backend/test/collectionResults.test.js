@@ -58,17 +58,18 @@ describe('Management results → existing financial ledger / isolated MySQL', {s
   const scope=actor=>({companyId,companyName:'MERTEL IMPORTACIONES',actorId:(actor||admin).id});
   test('full payment is atomic, zero balance leaves the engine pipeline and automatic queue stops',async()=>{
     const item=await client();
+    await db.query("UPDATE invoices SET due_date='2026-10-06' WHERE id=?",[item.invoices[0]]);
     await wa.updateWhatsAppSettings({scope:scope(),actorId:admin.id,body:{provider:'MOCK',global_daily_limit:100,customer_daily_limit:10}});
     await wa.testWhatsAppConnection({scope:scope(),actorId:admin.id});
-    const [template]=await db.query("INSERT INTO message_templates(company_id,name,channel,content,stage,status) VALUES (?,'DEMO','whatsapp','{{saldo}}','overdue','active')",[companyId]);
+    const [template]=await db.query("INSERT INTO message_templates(company_id,name,channel,content,stage,status) VALUES (?,'mertel_mora','whatsapp','{{saldo}}','overdue','active')",[companyId]);
     await wa.saveWhatsAppRule({scope:scope(),actorId:admin.id,stage:'overdue',body:{stage:'overdue',enabled:true,template_id:String(template.insertId),mode:'AUTOMATICO',start_time:'00:00',end_time:'23:59',weekdays:[1,2,3,4,5,6,7],daily_limit:100,interval_hours:1}});
     await wa.updateWhatsAppSettings({scope:scope(),actorId:admin.id,body:{automations_enabled:true}});
     const queued=await wa.enqueueWhatsApp({scope:scope(),actorId:admin.id,body:{customer_id:item.id,mode:'AUTOMATICO'},now:new Date('2026-10-07T15:00:00Z')});
     const {response,body}=await paid(item);assert.equal(response.body.data.payment.amount,'119.00');assert.equal(response.body.data.allocations[0].amount,'119.00');assert.equal(response.body.data.total_balance,'0.00');assert.equal(response.body.data.collection_item,null);
     const [[invoice]]=await db.query('SELECT balance FROM invoices WHERE id=?',[item.invoices[0]]);assert.equal(invoice.balance,'0.00');
     const [[message]]=await db.query('SELECT status FROM messages WHERE customer_id=?',[item.id]);assert.equal(message.status,'CANCELLED');
-    await assert.rejects(wa.enqueueWhatsApp({scope:scope(),body:{customer_id:item.id,mode:'AUTOMATICO'}}),/no identifica/);
-    await assert.rejects(wa.mockSendWhatsApp({scope:scope(),messageId:queued.message.id}),/no puede procesarse/);
+    await assert.rejects(wa.enqueueWhatsApp({scope:scope(),body:{customer_id:item.id,mode:'AUTOMATICO'}}),/No hay un aviso|no identifica/);
+    await assert.rejects(wa.mockSendWhatsApp({scope:scope(),messageId:queued.message.id}),/no puede enviarse|no puede procesarse/);
     const duplicate=await request('POST',`${path(item.id)}/payments`,body);assert.equal(duplicate.body.data.duplicate,true);assert.equal(duplicate.body.data.payment.id,response.body.data.payment.id);
     const unchanged=await snapshot();assert.equal((await request('POST',`${path(item.id)}/payment-preview`,paymentBody(item))).status,409);assert.deepEqual(await snapshot(),unchanged);
   });
@@ -76,7 +77,7 @@ describe('Management results → existing financial ledger / isolated MySQL', {s
     const item=await client(['100.00','50.00']);const {response}=await paid(item);assert.equal(response.body.data.total_balance,'50.00');assert.equal(response.body.data.collection_item.stage,'five_days_before_due');assert.equal(String(response.body.data.collection_item.main_invoice.invoice.invoice_id),item.invoices[1]);
   });
   test('partial payment changes only balance and remains eligible with fresh WhatsApp preview',async()=>{
-    const item=await client(['3482310.00']);const {response}=await paid(item,paymentBody(item,{amount:'1500000.00',payment_kind:'PARTIAL',allocations:[{invoice_id:item.invoices[0],amount:'1500000.00'}]}));
+    const item=await client(['3482310.00']);await db.query("UPDATE invoices SET due_date='2026-10-06' WHERE id=?",[item.invoices[0]]);const {response}=await paid(item,paymentBody(item,{amount:'1500000.00',payment_kind:'PARTIAL',allocations:[{invoice_id:item.invoices[0],amount:'1500000.00'}]}));
     assert.equal(response.body.data.total_balance,'1982310.00');assert.equal(response.body.data.collection_item.stage,'overdue');
     const [template]=await db.query("INSERT INTO message_templates(company_id,name,channel,content,stage,status) VALUES (?,'DEMO','whatsapp','{{saldo}}','overdue','active')",[companyId]);
     const preview=await request('POST','/admin/whatsapp/preview',{customer_id:item.id,template_id:String(template.insertId)},admin);assert.equal(preview.status,200);assert.match(preview.body.data.content,/1[.,]982[.,]310/);

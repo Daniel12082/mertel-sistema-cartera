@@ -19,6 +19,8 @@ import CustomerResolution from "./pages/Administracion/CustomerResolution";
 import AdminDashboard from "./pages/Administracion/AdminDashboard";
 import LoginPage from "./pages/Login/LoginPage";
 import ProtectedRoute from "./auth/ProtectedRoute";
+import SimulationReports from './simulation/SimulationReports';
+import { useAppDataMode } from './simulation/useAppDataMode';
 
 function PlaceholderPage({ title }) {
   return (
@@ -64,13 +66,14 @@ function App() {
 
         <Route
           path="/reportes"
-          element={<PlaceholderPage title="Reportes" />}
+          element={<SimulationReports />}
         />
 
         <Route
           path="/configuracion"
           element={<Configuracion />}
         />
+        <Route path="/configuracion/:category" element={<Configuracion />} />
 
         <Route
           path="/administracion/plantillas-whatsapp"
@@ -108,10 +111,13 @@ export default App;
 
 function CobranzaRoute() {
   const location = useLocation();
-  return location.state?.portfolioPipeline ? <PortfolioPipelineView data={location.state.portfolioPipeline} /> : <Cobranza navigationState={location.state} />;
+  const { mode } = useAppDataMode();
+  const state = mode === 'SIMULATION' ? null : location.state;
+  return state?.portfolioPipeline ? <PortfolioPipelineView data={state.portfolioPipeline} /> : <Cobranza navigationState={state} />;
 }
 
 function CollectionHistoryRoute() {
   const location=useLocation();
-  return <CollectionHistory navigationState={location.state} />;
+  const { mode } = useAppDataMode();
+  return <CollectionHistory navigationState={mode === 'SIMULATION' ? null : location.state} />;
 }

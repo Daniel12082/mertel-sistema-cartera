@@ -18,7 +18,7 @@ function money(value) {
 }
 
 // Both preview and preparation are READ ONLY, including messages/audits/operations.
-export async function collectionMessage({ customerId, referenceDate, templateId, step = "templates", scope, transactionDb }, dbPool = pool) {
+export async function collectionMessage({ customerId, referenceDate, templateId, step = "templates", scope, transactionDb, resolvedContext }, dbPool = pool) {
   if (!["templates", "preview", "prepare"].includes(step)) throw operationError(400, "Operación no válida.");
   if (!validCompanyId(scope?.companyId)) throw operationError(scope?.globalAdmin ? 400 : 403, "Se requiere contexto de empresa autorizado.");
   customerId = operationId(customerId, "customer_id");
@@ -30,11 +30,13 @@ export async function collectionMessage({ customerId, referenceDate, templateId,
     const [[company]] = await db.query("SELECT id FROM companies WHERE id=? AND status='active' AND deleted_at IS NULL", [scope.companyId]);
     if (!company) throw operationError(403, "Empresa no disponible.");
     const filter = companyFilter(scope, "company_id");
-    const [[customer]] = await db.query(`SELECT CAST(id AS CHAR) AS id,name,nit,phone FROM customers
+    const [[storedCustomer]] = await db.query(`SELECT CAST(id AS CHAR) AS id,name,nit,phone,credit_limit,available_credit FROM customers
       WHERE id=? AND status='active' AND deleted_at IS NULL ${filter.sql}`, [customerId, ...filter.values]);
+    const customer=resolvedContext?.customer||storedCustomer;
     if (!customer) throw operationError(404, "Cliente no encontrado.");
-    const collection = await readCompanyCollection({ referenceDate, scope, filters: { customerId } }, db);
-    const item = [...collection.customers, ...collection.non_overdue_pending.customers].find(row => String(row.customer.id) === customerId);
+    let item;
+    if(resolvedContext)item=resolvedContext.item;
+    else {const collection = await readCompanyCollection({ referenceDate, scope, filters: { customerId } }, db);item=[...collection.customers, ...collection.non_overdue_pending.customers].find(row => String(row.customer.id) === customerId);}
     const templates = (await getCompanyMessageTemplates(scope.companyId, { channel: "whatsapp", stringIds: true }, db))
       .filter(template => template.stage == null || template.stage === item?.stage);
     if (step === "templates") {
@@ -47,7 +49,7 @@ export async function collectionMessage({ customerId, referenceDate, templateId,
     const primary = item?.main_invoice;
     const invoice = primary?.invoice;
     const invoiceNumber = invoice?.invoice_number || null;
-    const customerBalance = money(item?.total_balance);
+    const customerBalance = money(resolvedContext?.balance??item?.total_balance);
     const daysUntilDue = primary?.days_until_due ?? null;
     const overdueDays = daysUntilDue == null ? null : Math.max(0, -daysUntilDue);
     const values = {
@@ -61,6 +63,8 @@ export async function collectionMessage({ customerId, referenceDate, templateId,
       cliente_nombre: customer.name || null, nit: customer.nit || null, fecha_emision: invoice?.issue_date || null,
       dias_restantes: daysUntilDue == null ? null : Math.max(0, daysUntilDue), etapa: item?.stage_label || item?.stage || null,
       empresa: scope.companyName || "MERTEL IMPORTACIONES S.A.S.",
+      cupo_credito: money(customer.credit_limit), cupo_disponible: money(customer.available_credit),
+      saldo_en_mora: resolvedContext?.overdue_balance!=null?money(resolvedContext.overdue_balance):null,
     };
     const rendered = renderMessageTemplate(template.content, values);
     const phoneAvailable = typeof customer.phone === "string" && customer.phone.trim().length > 0;

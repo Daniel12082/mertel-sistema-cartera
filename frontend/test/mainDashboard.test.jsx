@@ -1,0 +1,21 @@
+import {beforeEach,expect,it,vi} from 'vitest';
+import {render,screen,fireEvent,waitFor,within} from '@testing-library/react';
+import {MemoryRouter} from 'react-router-dom';
+import {AuthContext} from '../src/auth/auth.context';
+import Dashboard from '../src/pages/Dashboard/Dashboard';
+import {getAdminDashboard} from '../src/services/adminDashboard.service';
+vi.mock('../src/services/adminDashboard.service',()=>({getAdminDashboard:vi.fn()}));
+vi.mock('../src/pages/Dashboard/DashboardCharts',()=>({DistributionChart:()=>null,StageBars:()=>null,ActivityChart:()=>null}));
+const ok=data=>({status:'ok',data});
+const data={period:{reference_date:'2026-10-07',from:'2026-10-01',to:'2026-10-07'},overview:ok({customers_with_balance:1,pending_invoices:2,overdue_invoices:1,invoiced_value:'150',total_customers:3,sent_messages:6}),summary:ok({total_balance:'100',stages:[{key:'overdue',label:'En mora',balance:'100',customers:1,documents:2}],warnings:[]}),collection:ok({managed_customers:1,actions_count:2}),recovery:ok({payments_count:1,payments_amount:'50'}),reported_payments:ok({count:1,amount:'25'}),promises:ok({active:1,overdue:2,pending_count:3,fulfilled_period:1}),resolution:ok({pending:2}),whatsapp:ok({sent:1,delivered:2,read_count:3}),priority_customers:ok([{id:'1',name:'Cliente real',nit:'123456',balance:'100',stage:'En mora',priority:4,invoice:'ME-1',due_date:'2026-10-01'}]),recent_activity:ok([{id:'1',actor:'Sistema',action:'invoice_settled',occurred_at:'2026-10-07T15:00:00Z'}])};
+function view(permissions=['settings.manage','collection.view']){render(<MemoryRouter><AuthContext.Provider value={{permissions}}><Dashboard/></AuthContext.Provider></MemoryRouter>);}
+beforeEach(()=>{vi.clearAllMocks();getAdminDashboard.mockResolvedValue(data);});
+it('reuses one aggregate request and renders financial, collection, payment, resolution and engine sources',async()=>{
+  view();await screen.findByText('Cliente real');expect(getAdminDashboard).toHaveBeenCalledTimes(1);expect(getAdminDashboard).toHaveBeenCalledWith({period:'month'},expect.anything());
+  for(const title of ['Resumen general','Estado de cartera','Actividad de cobranza','Pagos','Análisis de clientes','Clientes prioritarios','Actividad reciente'])expect(screen.getByRole('region',{name:title})).toBeVisible();
+  const metrics=screen.getByRole('region',{name:'Resumen general'});expect(within(metrics).getByText('Mensajes enviados este mes').closest('article')).toHaveTextContent('6');expect(screen.getByText('Promesas pendientes').closest('article')).toHaveTextContent('3');expect(screen.getByText('Pagos reportados pendientes de revisión').closest('article')).toHaveTextContent('1');expect(screen.getByText('Clientes por resolver').closest('article')).toHaveTextContent('2');expect(screen.getByText('ME-1')).toBeVisible();
+  fireEvent.click(screen.getByRole('button',{name:'Actualizar'}));await waitFor(()=>expect(getAdminDashboard).toHaveBeenCalledTimes(2));
+});
+it('shows true empty state and zero balances without creating data',async()=>{getAdminDashboard.mockResolvedValue({...data,overview:ok({customers_with_balance:0,pending_invoices:0,overdue_invoices:0,invoiced_value:'0',total_customers:0}),priority_customers:ok([]),recent_activity:ok([])});view();await screen.findByText('Sin facturas persistentes con saldo pendiente.');expect(screen.getByText('Sin clientes prioritarios en cobranza.')).toBeVisible();expect(screen.getByText('Sin actividad operativa registrada este mes.')).toBeVisible();});
+it('global metrics are permission protected before fetching',()=>{view(['collection.view']);expect(screen.getByRole('status')).toHaveTextContent('No tienes permiso');expect(getAdminDashboard).not.toHaveBeenCalled();});
+it('failed sources stay unavailable rather than becoming zero',async()=>{getAdminDashboard.mockResolvedValue({...data,overview:{status:'error'},reported_payments:{status:'error'}});view();await screen.findByText('Cliente real');expect(screen.getByText('Facturas pendientes').closest('article')).toHaveTextContent('No disponible');expect(screen.getByText('Pagos reportados pendientes de revisión').closest('article')).toHaveTextContent('No disponible');expect(screen.getAllByRole('alert').length).toBeGreaterThan(0);});

@@ -72,6 +72,8 @@ describe("5.1A template and 5.2 collection settings administration HTTP / MySQL"
     assert.equal(own.status, 200); assert.equal(own.cache, "no-store");
     assert.deepEqual(own.body.data.templates, []); assert.ok(own.body.data.stage_catalog.some(stage => stage.key === supportedStage));
     assert.deepEqual(own.body.data.variables.filter(item => !item.legacy).map(item => item.name), [
+      'cartera_detalle', 'cantidad_facturas', 'total_cartera', 'base_antes_iva', 'descuento_pronto_pago', 'total_pronto_pago', 'aviso_condicionado', 'resumen_aviso',
+      'cupo_credito', 'cupo_disponible', 'saldo_en_mora',
       "nombre_cliente", "identificacion_cliente", "telefono_cliente", "numero_factura", "fecha_factura", "fecha_vencimiento",
       "valor_factura", "saldo_pendiente", "dias_mora", "dias_para_vencimiento", "etapa_cobranza", "motivo_cobranza",
     ]);

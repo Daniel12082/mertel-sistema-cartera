@@ -12,7 +12,13 @@ import { getCollectionDashboardController } from "../controllers/collectionDashb
 import { analyzeCustomerResolution, decideCustomerResolution, getCustomerResolution, getCustomerResolutionDashboard } from "../services/customerResolution.service.js";
 import { administrativeCollectionHistory, administrativeHistoryActors } from "../controllers/collectionHistory.controller.js";
 import { getAdminDashboard } from "../services/adminDashboard.service.js";
+import {listManagedUsers,saveManagedUser} from '../services/userManagement.service.js';
 const router = express.Router();
+function managedUsers(handler){return async(req,res)=>{try{res.set('Cache-Control','no-store');return res.json({success:true,data:await handler(req)});}catch(error){const status=[400,403,404,409].includes(error.status)?error.status:500;return res.status(status).json({success:false,message:status===500?'No se pudo guardar o consultar el usuario.':error.message});}};}
+router.get('/users',requirePermission('settings.manage'),requireCompanyScope,managedUsers(req=>listManagedUsers(req.companyScope)));
+router.post('/users',requirePermission('settings.manage'),requireCompanyScope,managedUsers(req=>saveManagedUser({scope:req.companyScope,actorId:req.user.id,body:req.body})));
+router.put('/users/:id',requirePermission('settings.manage'),requireCompanyScope,managedUsers(req=>saveManagedUser({scope:req.companyScope,actorId:req.user.id,userId:req.params.id,body:req.body})));
+router.patch('/users/:id/status',requirePermission('settings.manage'),requireCompanyScope,managedUsers(req=>saveManagedUser({scope:req.companyScope,actorId:req.user.id,userId:req.params.id,body:req.body,statusOnly:true})));
 router.get('/dashboard', requirePermission('settings.manage'), requireCompanyScope, async(req,res,next)=>{
   try { res.set('Cache-Control','no-store');return res.json({success:true,data:await getAdminDashboard({scope:req.companyScope,query:req.query})}); }
   catch(error) { if([400,403].includes(error.status))return res.status(error.status).json({success:false,message:error.message});return next(error); }
@@ -71,7 +77,7 @@ router.post("/portfolio/imports/pipeline", requirePermission("portfolio.import")
       if (!Buffer.isBuffer(req.body)) return res.status(400).json({ success: false, message: "Envía el contenido de la cartera MERTEL como XLSX" });
       res.set("Cache-Control", "no-store");
       const data = await generatePortfolioPipeline({ bytes: req.body, scope: req.companyScope,
-        referenceDate: req.query.reference_date, fileName: req.query.file_name });
+        referenceDate: req.query.reference_date, fileName: req.query.file_name, secret: req.app.get("authConfig")?.secret });
       return res.json({ success: true, data });
     } catch (error) {
       if ([400, 403, 404, 409, 413].includes(error.status)) return res.status(error.status).json({ success: false, message: error.message, code: error.code });
@@ -81,7 +87,7 @@ router.post("/portfolio/imports/pipeline", requirePermission("portfolio.import")
 router.get("/portfolio/imports/pipeline/actions", requirePermission("collection.view"), requireCompanyScope, async (req, res, next) => {
   try {
     res.set("Cache-Control", "no-store");
-    return res.json({ success: true, data: await listImportedPipelineActions({ scope: req.companyScope, token: req.query.context_token }) });
+    return res.json({ success: true, data: await listImportedPipelineActions({ scope: req.companyScope, token: req.query.context_token, secret: req.app.get("authConfig")?.secret }) });
   } catch (error) {
     if ([400, 403].includes(error.status)) return res.status(error.status).json({ success: false, message: error.message });
     return next(error);
@@ -90,7 +96,7 @@ router.get("/portfolio/imports/pipeline/actions", requirePermission("collection.
 router.post("/portfolio/imports/pipeline/actions", requirePermission("collection.manage"), requireCompanyScope, async (req, res, next) => {
   try {
     res.set("Cache-Control", "no-store");
-    const data = await recordImportedPipelineAction({ scope: req.companyScope, token: req.body?.context_token,
+    const data = await recordImportedPipelineAction({ scope: req.companyScope, token: req.body?.context_token, secret: req.app.get("authConfig")?.secret,
       body: req.body?.operation, ipAddress: req.ip, userAgent: req.get("user-agent") });
     return res.status(201).json({ success: true, data });
   } catch (error) {

@@ -20,6 +20,7 @@ test('stage balances count only engine-classified invoices, top and priority reu
   const collection=buildCollectionResult({company:{id:1},referenceDate:'2026-10-07',customers:dates.map((_,n)=>({id:n+1,company_id:1,name:`Cliente ${n+1}`,nit:String(n)})),invoices,rules});
   const result=dashboardPortfolio(collection);
   assert.equal(result.summary.total_balance,'1900.00');
+  assert.equal(result.summary.unclassified_balance,'900.00');
   for(const [key,balance]of [['overdue','100.00'],['due_today','200.00'],['five_days_before_due','300.00'],['prompt_payment','400.00']])assert.equal(result.summary.stages.find(stage=>stage.key===key).balance,balance);
   assert.equal(result.top_customers[0].balance,'1000.00');
   assert.deepEqual(result.priority_customers.map(row=>row.id),collection.customers.map(row=>String(row.customer.id)));

@@ -23,7 +23,10 @@ export default function CollectionHistory({navigationState}) {
       .catch(() => { if (!controller.signal.aborted) setActors({ key: "mertel", rows: [] }); });
     return () => controller.abort();
   }, [ready]);
-  const params = useMemo(() => ({ ...filters, page, limit: 20 }), [filters, page]);
+  const params = useMemo(() => ({
+    ...Object.fromEntries(Object.entries(filters).filter(([, value]) => value !== "")),
+    page, limit: 20,
+  }), [filters, page]);
   const key = ready ? JSON.stringify(params) : null;
   useEffect(() => {
     if (!ready) return undefined;

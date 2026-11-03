@@ -1,4 +1,5 @@
 import axios from "axios";
+import { simulationActive, simulationSnapshot, beginRealWrite, finishRealWrite } from '../simulation/store';
 
 // Support the documented origin and existing configurations ending in /api.
 const configuredOrigin = import.meta.env.VITE_API_URL?.trim();
@@ -84,6 +85,26 @@ export function logoutSession() {
   return logoutPromise;
 }
 api.interceptors.request.use(config => {
+  const started = simulationSnapshot();
+  const underlying = axios.getAdapter(config.adapter || api.defaults.adapter);
+  // Guard at dispatch, not just at button visibility. Per-request adapters cannot bypass it.
+  config.adapter = async dispatched => {
+    if (simulationSnapshot().epoch !== started.epoch) throw new axios.CanceledError('La fuente de datos cambió.');
+    const simulated = simulationActive();
+    const mutating = !['get', 'head', 'options'].includes((dispatched.method || 'get').toLowerCase());
+    if (simulated) {
+      dispatched.headers.delete('Authorization'); dispatched.headers.delete('Cookie'); dispatched.headers.set('X-Mertel-Simulation', 'true');
+      dispatched.withCredentials = false;
+    } else if (mutating) beginRealWrite();
+    try {
+      const selectedAdapter = simulated ? (await import('../simulation/adapter')).simulationAdapter : underlying;
+      if (simulationSnapshot().epoch !== started.epoch) throw new axios.CanceledError('La fuente de datos cambió.');
+      const response = await selectedAdapter(dispatched);
+      if (simulationSnapshot().epoch !== started.epoch) throw new axios.CanceledError('La respuesta pertenece a otra fuente de datos.');
+      return response;
+    } finally { if (!simulated && mutating) finishRealWrite(); }
+  };
+  if (simulationActive()) config.skipAuth = true;
   if (!config.skipAuth) {
     config.sessionRevision = revision;
     if (session?.accessToken) config.headers.set("Authorization", `Bearer ${session.accessToken}`);

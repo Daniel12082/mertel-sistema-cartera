@@ -1,4 +1,7 @@
 import express from "express";
+import appearanceRoutes from './routes/appearance.routes.js';
+import reportsRoutes from './routes/reports.routes.js';
+import { rejectSimulationRequests } from './middleware/rejectSimulationRequests.js';
 import cors from "cors";
 import helmet from "helmet";
 import cookieParser from "cookie-parser";
@@ -14,9 +17,11 @@ import portfolioRoutes from "./routes/portfolio.routes.js";
 import adminRoutes from "./routes/admin.routes.js";
 import collectionRoutes from "./routes/collection.routes.js";
 import { adminWhatsAppRoutes, collectorWhatsAppRoutes } from "./routes/whatsapp.routes.js";
+import { metaWebhookRoutes } from './routes/metaWebhook.routes.js';
 import collectionResultsRoutes from "./routes/collectionResults.routes.js";
 export function createApp(config = loadAuthConfig()) {
   const app = express();
+  app.set("authConfig", config);
   app.set("trust proxy", config.trustProxyHops);
   app.use(helmet());
   app.use(cors({
@@ -24,8 +29,11 @@ export function createApp(config = loadAuthConfig()) {
       if (!origin || config.origins.includes(origin)) return callback(null, true);
       return callback(Object.assign(new Error("Origen no permitido"), { status: 403 }));
     }, credentials: true, methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
+    allowedHeaders: ["Content-Type", "Authorization", "X-Mertel-Simulation"],
   }));
+  // Meta signs the raw request bytes. This public endpoint must precede express.json and auth.
+  app.use('/api/whatsapp/webhook', metaWebhookRoutes);
+  app.use('/api', rejectSimulationRequests);
   app.use(express.json());
   app.use(cookieParser());
   app.get("/api/health", (req, res) => res.json({ success: true, message: "MERTEL API funcionando correctamente", timestamp: new Date().toISOString() }));
@@ -35,6 +43,8 @@ export function createApp(config = loadAuthConfig()) {
   });
   app.use("/api/auth", authRoutes(config));
   const authenticate = authenticateToken(config);
+  app.use('/api/appearance', authenticate, requireCompanyScope, appearanceRoutes);
+  app.use('/api/admin/reports', authenticate, reportsRoutes);
   app.use("/api/customers", authenticate, requireCompanyScope, customerRoutes);
   app.use("/api/invoices", authenticate, requireCompanyScope, invoiceRoutes);
   app.use("/api/payments", authenticate, requireCompanyScope, paymentRoutes);

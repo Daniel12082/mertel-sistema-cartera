@@ -5,56 +5,24 @@ import { companyFilter, sameCompany, scopeError, validCompanyId } from "../utils
 export async function getAllCustomers(scope) {
   const filter = companyFilter(scope, "company_id");
   const [rows] = await pool.query(`
-    SELECT
-      id,
-      company_id,
-      nit,
-      name,
-      phone,
-      email,
-      address,
-      city,
-      credit_limit,
-      available_credit,
-      status,
-      notes,
-      created_at,
-      updated_at
+    SELECT id, company_id, nit, name, phone, email, address, city,
+      credit_limit, available_credit, status, notes, created_at, updated_at
     FROM customers
     WHERE deleted_at IS NULL ${filter.sql}
     ORDER BY name ASC
   `, filter.values);
-
   return rows;
 }
 
 export async function getCustomerById(id, scope) {
   const filter = companyFilter(scope, "company_id");
-  const [rows] = await pool.query(
-    `
-      SELECT
-        id,
-        company_id,
-        nit,
-        name,
-        phone,
-        email,
-        address,
-        city,
-        credit_limit,
-        available_credit,
-        status,
-        notes,
-        created_at,
-        updated_at
-      FROM customers
-      WHERE id = ?
-        AND deleted_at IS NULL ${filter.sql}
-      LIMIT 1
-    `,
-    [id, ...filter.values],
-  );
-
+  const [rows] = await pool.query(`
+    SELECT id, company_id, nit, name, phone, email, address, city,
+      credit_limit, available_credit, status, notes, created_at, updated_at
+    FROM customers
+    WHERE id = ? AND deleted_at IS NULL ${filter.sql}
+    LIMIT 1
+  `, [id, ...filter.values]);
   return rows[0] || null;
 }
 
@@ -64,66 +32,17 @@ export async function createCustomer(customer, scope) {
   if (!validCompanyId(companyId)) throw scopeError("Se requiere una empresa existente para crear el cliente", 400);
   const [companies] = await pool.query("SELECT id FROM companies WHERE id=? AND status='active' AND deleted_at IS NULL", [companyId]);
   if (!companies.length) throw scopeError("Empresa no encontrada", 404);
-  const {
-    nit,
-    name,
-    phone = null,
-    email = null,
-    address = null,
-    city = null,
-    credit_limit = 0,
-    available_credit = 0,
-    status = "active",
-    notes = null,
-  } = customer;
+  const { nit, name, phone = null, email = null, address = null, city = null,
+    credit_limit = 0, available_credit = 0, status = "active", notes = null } = customer;
   const company_id = companyId;
-
-  const [result] = await pool.query(
-    `
-      INSERT INTO customers (
-        company_id,
-        nit,
-        name,
-        phone,
-        email,
-        address,
-        city,
-        credit_limit,
-        available_credit,
-        status,
-        notes
-      )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `,
-    [
-      company_id,
-      nit,
-      name,
-      phone,
-      email,
-      address,
-      city,
-      credit_limit,
-      available_credit,
-      status,
-      notes,
-    ],
-  );
-
-  return {
-    id: result.insertId,
-    company_id,
-    nit,
-    name,
-    phone,
-    email,
-    address,
-    city,
-    credit_limit,
-    available_credit,
-    status,
-    notes,
-  };
+  const [result] = await pool.query(`
+    INSERT INTO customers (company_id, nit, name, phone, email, address, city,
+      credit_limit, available_credit, status, notes)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `, [company_id, nit, name, phone, email, address, city, credit_limit,
+    available_credit, status, notes]);
+  return { id: result.insertId, company_id, nit, name, phone, email, address, city,
+    credit_limit, available_credit, status, notes };
 }
 
 export async function updateCustomer(id, customer, scope) {
@@ -135,56 +54,15 @@ export async function updateCustomer(id, customer, scope) {
   if (scope.globalAdmin && customer.company_id !== undefined && !sameCompany(customer.company_id, existing.company_id)) {
     throw scopeError("No se puede cambiar la empresa del cliente", 409);
   }
-  const {
-    nit,
-    name,
-    phone = null,
-    email = null,
-    address = null,
-    city = null,
-    credit_limit = 0,
-    available_credit = 0,
-    status = "active",
-    notes = null,
-  } = customer;
-
-  const [result] = await pool.query(
-    `
-      UPDATE customers
-      SET
-        nit = ?,
-        name = ?,
-        phone = ?,
-        email = ?,
-        address = ?,
-        city = ?,
-        credit_limit = ?,
-        available_credit = ?,
-        status = ?,
-        notes = ?
-      WHERE id = ?
-        AND deleted_at IS NULL ${filter.sql}
-    `,
-    [
-      nit,
-      name,
-      phone,
-      email,
-      address,
-      city,
-      credit_limit,
-      available_credit,
-      status,
-      notes,
-      id,
-      ...filter.values,
-    ],
-  );
-
-  if (result.affectedRows === 0) {
-    return null;
-  }
-
+  const { nit, name, phone = null, email = null, address = null, city = null,
+    credit_limit = 0, available_credit = 0, status = "active", notes = null } = customer;
+  const [result] = await pool.query(`
+    UPDATE customers SET nit=?, name=?, phone=?, email=?, address=?, city=?,
+      credit_limit=?, available_credit=?, status=?, notes=?
+    WHERE id=? AND deleted_at IS NULL ${filter.sql}
+  `, [nit, name, phone, email, address, city, credit_limit, available_credit,
+    status, notes, id, ...filter.values]);
+  if (result.affectedRows === 0) return null;
   return await getCustomerById(id, scope);
 }
 
@@ -193,7 +71,6 @@ export async function deleteCustomer(id, scope) {
   const connection = await pool.getConnection();
   try {
     await connection.beginTransaction();
-    // Creations/reassignments lock this same parent before writing.
     const [customers] = await connection.query(
       `SELECT id FROM customers WHERE id = ? AND deleted_at IS NULL ${filter.sql} FOR UPDATE`, [id, ...filter.values],
     );
@@ -202,8 +79,7 @@ export async function deleteCustomer(id, scope) {
       SELECT
         EXISTS(SELECT 1 FROM invoices WHERE customer_id = ? AND deleted_at IS NULL AND balance > 0) AS debt,
         EXISTS(SELECT 1 FROM payments WHERE customer_id = ?) AS payments,
-        EXISTS(SELECT 1 FROM payment_allocations a
-          JOIN invoices i ON i.id = a.invoice_id
+        EXISTS(SELECT 1 FROM payment_allocations a JOIN invoices i ON i.id = a.invoice_id
           JOIN payments p ON p.id = a.payment_id
           WHERE a.deleted_at IS NULL AND (i.customer_id = ? OR p.customer_id = ?)) AS allocations,
         EXISTS(SELECT 1 FROM payment_promises WHERE customer_id = ? AND status = 'pending') AS promises

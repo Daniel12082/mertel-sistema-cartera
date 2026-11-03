@@ -13,11 +13,13 @@
   --mertel-red-dark: #c90511;
   --mertel-bg: #f4f6f9;
   --mertel-white: #ffffff;
-  --mertel-border: #dfe4ec;
+  --mertel-border: #e3e9f1;
   --mertel-text: #172033;
   --mertel-muted: #667085;
   --mertel-hover: #eef1f6;
-  --mertel-shadow: 0 1px 3px rgba(16, 24, 40, 0.08);
+  --mertel-shadow: 0 2px 6px rgba(16, 24, 40, 0.035);
+  --mertel-radius: 12px;
+  --mertel-focus: #365c91;
 }
 
 * {
@@ -47,6 +49,20 @@ textarea {
 
 button {
   cursor: pointer;
+}
+
+:where(button,a,input,select,textarea):focus-visible,
+.mertel-content :is(button,a,input,select,textarea):focus-visible,
+.mertel-navigation a:focus-visible {
+  outline: 2px solid var(--mertel-focus);
+  outline-offset: 3px;
+}
+
+.mertel-content :where(table,strong,dd) { font-variant-numeric: tabular-nums; }
+
+@media (max-width: 700px) {
+  .mertel-content :where(button) { min-height: 44px; }
+  .mertel-content :where(input,select,textarea) { font-size: 16px; }
 }
 
 a {
@@ -113,11 +129,16 @@ a {
 .mertel-navigation {
   min-height: 0;
   overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
   flex: 1;
   display: flex;
   flex-direction: column;
   gap: 5px;
 }
+
+.mertel-navigation::-webkit-scrollbar { width: 0; height: 0; }
 
 .mertel-navigation-group {
   display: grid;
@@ -381,4 +402,12 @@ a {
   .mertel-content {
     padding: 20px 16px;
   }
+}
+
+/* Preserve the existing mobile navigation as a single usable scroll row. */
+@media (max-width: 700px) {
+  .mertel-navigation { align-items: center; flex: none; flex-wrap: nowrap; overflow-y: hidden; }
+  .mertel-navigation-group { display: contents; }
+  .mertel-navigation-group > span { display: none; }
+  .mertel-navigation .mertel-nav-item { min-height: 44px; }
 }

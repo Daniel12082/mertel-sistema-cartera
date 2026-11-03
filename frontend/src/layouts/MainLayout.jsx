@@ -1,4 +1,7 @@
 import { NavLink, Outlet } from "react-router-dom";
+import SimulationControls from '../simulation/SimulationControls';
+import { useAppDataMode } from '../simulation/useAppDataMode';
+import { useAppearance } from '../appearance/appearance.context';
 import SessionActions from "../auth/SessionActions";
 import {
   LayoutDashboard,
@@ -10,7 +13,6 @@ import {
   BarChart3,
   Settings,
   MessageSquareText,
-  SlidersHorizontal,
   FileSpreadsheet,
   SearchCheck,
   Gauge,
@@ -30,15 +32,17 @@ const navigation = [
 
 function MainLayout() {
   const { permissions = [] } = useAuth();
+  const { mode } = useAppDataMode();
+  const { appearance } = useAppearance();
   return (
     <div className="mertel-layout">
       <aside className="mertel-sidebar">
         <div className="mertel-brand">
-          <div className="mertel-brand-mark">M</div>
+          <div className="mertel-brand-mark">{appearance.compactLogo ? <img src={appearance.compactLogo} alt="Logo compacto"/> : appearance.name.slice(0,1)}</div>
 
           <div className="mertel-brand-copy">
-            <strong>MERTEL</strong>
-            <span>Gestión de cartera</span>
+            <strong>{appearance.name}</strong>
+            <span>{appearance.description}</span>
           </div>
         </div>
 
@@ -72,11 +76,6 @@ function MainLayout() {
               <MessageSquareText size={19} strokeWidth={2} />
               <span>Plantillas WhatsApp</span>
             </NavLink>}
-            {permissions.includes("settings.manage") && <NavLink to="/administracion/configuracion-cobranza" className={({ isActive }) =>
-              `mertel-nav-item ${isActive ? "active" : ""}`}>
-              <SlidersHorizontal size={19} strokeWidth={2} />
-              <span>Configuración</span>
-            </NavLink>}
             {permissions.includes("portfolio.import") && <NavLink to="/administracion/importar-cartera" className={({ isActive }) =>
               `mertel-nav-item ${isActive ? "active" : ""}`}>
               <FileSpreadsheet size={19} strokeWidth={2} />
@@ -96,10 +95,12 @@ function MainLayout() {
       <div className="mertel-main">
         <header className="mertel-header">
           <div>
-            <h1>MERTEL</h1>
-            <span>Sistema de gestión de cartera</span>
+            {appearance.logo && <img className="mertel-brand-main-logo" src={appearance.logo} alt="Logo principal"/>}
+            <h1>{appearance.name}</h1>
+            <span>{appearance.description}</span>
           </div>
-          <SessionActions />
+          <SimulationControls />
+          {mode !== 'SIMULATION' && <SessionActions />}
         </header>
 
         <main className="mertel-content">

@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { DEFAULT_APPEARANCE } from '../../../backend/src/config/appearance';
 
 const variableCatalog = [
   { name: "nombre_cliente", label: "Nombre del cliente", source: "customers.name", example: "Juan Pérez" },
@@ -20,6 +21,7 @@ async function setup(page, { canManage = true, empty = true, error = false } = {
   await page.route("**/api/**", async route => {
     const request = route.request(); const url = new URL(request.url()); const path = url.pathname; const method = request.method();
     calls.push({ method, path, body: request.postDataJSON() });
+    if (path === '/api/appearance' && method === 'GET') return route.fulfill({json:{success:true,data:{appearance:DEFAULT_APPEARANCE,company_name:'MERTEL IMPORTACIONES'}}});
     if (path === "/api/auth/refresh") return route.fulfill({ json: { data: { access_token: "fixture-memory", user } } });
     if (path === "/api/collection/message-templates" && method === "GET") return route.fulfill(error ? { status: 500, json: { success: false, message: "private SQL data" } } : { json: { success: true, data: { templates, stage_catalog: stageCatalog, variables: variableCatalog } } });
     if (path === "/api/collection/message-templates" && method === "POST") {
@@ -60,7 +62,8 @@ for (const width of [1440, 390, 320]) {
     const row = page.getByRole("row", { name: /Aviso de saldo/ }); await expect(row).toBeVisible();
     await row.getByRole("button", { name: /Activar/ }).click(); await expect(row.getByText("Activa")).toBeVisible();
     await expect.poll(() => calls.filter(call => call.method === "GET" && call.path === "/api/collection/message-templates").length).toBe(3);
-    expect(calls.filter(call => !call.path.startsWith("/api/auth/")).map(call => `${call.method} ${call.path}`)).toEqual([
+    expect(calls.filter(call => call.path === '/api/appearance').map(call => call.method)).toEqual(['GET']);
+    expect(calls.filter(call => !call.path.startsWith("/api/auth/") && call.path !== '/api/appearance').map(call => `${call.method} ${call.path}`)).toEqual([
       "GET /api/collection/message-templates", "POST /api/collection/message-templates", "GET /api/collection/message-templates", "POST /api/collection/message-templates/42/activate", "GET /api/collection/message-templates",
     ]);
     expect(calls.some(call => JSON.stringify(call.body ?? {}).includes("company_id"))).toBe(false);

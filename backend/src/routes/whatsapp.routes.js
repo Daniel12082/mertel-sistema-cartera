@@ -22,11 +22,20 @@ adminWhatsAppRoutes.get('/', respond(center.getWhatsAppCenter));
 adminWhatsAppRoutes.get('/status', respond(center.getWhatsAppCenter));
 adminWhatsAppRoutes.patch('/settings', respond(center.updateWhatsAppSettings));
 adminWhatsAppRoutes.post('/test', respond(center.testWhatsAppConnection));
+adminWhatsAppRoutes.get('/meta/templates', respond(center.listMetaMessageTemplates));
+adminWhatsAppRoutes.post('/meta/test-messages', respond(center.enqueueMetaTestMessage));
+adminWhatsAppRoutes.post('/meta/test-messages/:messageId/send', respond(args => center.sendMetaTestMessage({ ...args, body: args.body })));
 adminWhatsAppRoutes.post('/disconnect', respond(center.disconnectWhatsApp));
 adminWhatsAppRoutes.get('/automations', respond(center.getWhatsAppCenter));
+adminWhatsAppRoutes.get('/customers/:customerId/sequence', respond(center.getCustomerWhatsAppSequence));
 adminWhatsAppRoutes.put('/automations/:stage', respond(center.saveWhatsAppRule));
 adminWhatsAppRoutes.get('/messages', respond(center.listWhatsAppMessages));
 adminWhatsAppRoutes.get('/audit', respond(center.listWhatsAppAudit));
+adminWhatsAppRoutes.patch('/customers/:customerId/exclusion', respond(center.excludeWhatsAppCustomer));
+adminWhatsAppRoutes.post('/automations/process', respond(args => {
+  if (args.body && Object.keys(args.body).length) throw Object.assign(new Error('La fecha automática la determina el servidor.'), { status: 400 });
+  return center.processWhatsAppAutomations(args);
+}));
 adminWhatsAppRoutes.post('/preview', respond(center.previewWhatsApp));
 adminWhatsAppRoutes.post('/test-configuration', respond(center.testWhatsAppConfiguration));
 adminWhatsAppRoutes.post('/queue', respond(center.enqueueWhatsApp));
@@ -39,6 +48,8 @@ adminWhatsAppRoutes.post('/mock-incoming', respond(center.mockIncomingWhatsApp))
 export const collectorWhatsAppRoutes = express.Router();
 collectorWhatsAppRoutes.use(requirePermission('collection.view'), requirePermission('collection.manage'), requireCompanyScope);
 collectorWhatsAppRoutes.get('/customers/:customerId/messages', respond(center.listWhatsAppMessages));
+collectorWhatsAppRoutes.get('/customers/:customerId/sequence', respond(center.getCustomerWhatsAppSequence));
+collectorWhatsAppRoutes.post('/customers/:customerId/messages/:messageId/mock-send',respond(center.mockSendWhatsApp));
 collectorWhatsAppRoutes.post('/customers/:customerId/queue', respond(args => {
   if (args.body?.mode && args.body.mode !== 'MANUAL') return Promise.reject(Object.assign(new Error('El cobrador solo puede preparar mensajes manuales.'), { status: 403 }));
   return center.enqueueWhatsApp({ ...args, body: { customer_id: args.customerId, template_id: args.body?.template_id, mode: 'MANUAL' } });

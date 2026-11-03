@@ -34,7 +34,9 @@ export function dashboardPortfolio(collection) {
     priority:item.priority,invoice:item.main_invoice?.invoice?.invoice_number||null,due_date:item.main_invoice?.invoice?.due_date||null,
     overdue_days:item.main_invoice?.days_until_due<0?-item.main_invoice.days_until_due:null,collector:null});
   const all=[...collection.customers,...collection.non_overdue_pending.customers];
-  return { summary:{total_balance:collection.summary.total_balance,customers_in_collection:collection.summary.total_customers,stages,warnings:collection.configuration_warnings},
+  const classifiedCents=stages.reduce((sum,stage)=>sum+moneyCents(stage.balance),0n);
+  const unclassifiedBalance=centsMoney(moneyCents(collection.summary.total_balance)-classifiedCents);
+  return { summary:{total_balance:collection.summary.total_balance,unclassified_balance:unclassifiedBalance,customers_in_collection:collection.summary.total_customers,stages,warnings:collection.configuration_warnings},
     top_customers:[...all].sort((a,b)=>moneyCents(a.total_balance)>moneyCents(b.total_balance)?-1:moneyCents(a.total_balance)<moneyCents(b.total_balance)?1:0).slice(0,10).map(view),
     priority_customers:collection.customers.slice(0,10).map(view),customer_contexts:all.map(view) };
 }
@@ -55,18 +57,40 @@ export async function getAdminDashboard({scope,query={},now=new Date()}, dbPool=
     });
     if(result.summary.status==='error') for(const key of ['top_customers','priority_customers']) result[key]={status:'error',message:'No fue posible cargar la cartera.'};
     if(result.summary.status==='ok') await section('top_customers',async()=>{
-      const [rows]=await db.query(`SELECT CAST(c.id AS CHAR) id,c.name,c.nit,SUM(i.balance) balance FROM customers c
+      const [rows]=await db.query(`SELECT CAST(c.id AS CHAR) id,c.name,c.nit,SUM(i.balance) balance,COUNT(*) invoices_count FROM customers c
         JOIN invoices i ON i.customer_id=c.id AND i.company_id=c.company_id
         WHERE c.company_id=? AND c.status='active' AND c.deleted_at IS NULL AND i.deleted_at IS NULL AND i.balance>0
         GROUP BY c.id,c.name,c.nit ORDER BY balance DESC,c.id LIMIT 10`,[scope.companyId]);
       return rows.map(row=>({...engineCustomers.get(row.id),...row,stage:engineCustomers.get(row.id)?.stage||'Sin etapa elegible',collector:null}));
     });
     const utc=[period.from_utc,period.to_utc,scope.companyId];
+    await section('overview',async()=>{
+      const [[invoices]]=await db.query(`SELECT COUNT(DISTINCT CASE WHEN i.balance>0 THEN c.id END) customers_with_balance,
+        COALESCE(SUM(i.balance>0),0) pending_invoices,
+        COALESCE(SUM(i.balance>0 AND i.due_date<CAST(? AS DATE)),0) overdue_invoices,
+        COALESCE(SUM(i.document_value),0) invoiced_value
+        FROM invoices i JOIN customers c ON c.id=i.customer_id AND c.company_id=i.company_id
+        WHERE i.company_id=? AND i.deleted_at IS NULL AND c.deleted_at IS NULL AND c.status='active'`,[period.reference_date,scope.companyId]);
+      const [[customers]]=await db.query('SELECT COUNT(*) total_customers FROM customers WHERE company_id=? AND deleted_at IS NULL',[scope.companyId]);
+      const [[messages]]=await db.query("SELECT COUNT(*) sent_messages FROM messages WHERE company_id=? AND channel='whatsapp' AND direction='outbound' AND sent_at>=? AND sent_at<?",[scope.companyId,period.from_utc,period.to_utc]);
+      return {...invoices,...customers,...messages};
+    });
     await section('collection',async()=>{
       const [[row]]=await db.query(`SELECT COUNT(*) actions_count,COUNT(DISTINCT customer_id) managed_customers,
         COALESCE(SUM(action_type='CONTACTED'),0) contacts,COUNT(DISTINCT CASE WHEN action_type='NO_RESPONSE' THEN customer_id END) no_response,
         COALESCE(SUM(action_type='PARTIAL_PAYMENT'),0) partial_payments,COALESCE(SUM(action_type='PAID'),0) full_payments
         FROM collection_actions WHERE action_date>=? AND action_date<? AND company_id=?`,utc);return row;
+    });
+    await section('activity_trend',async()=>{
+      const [rows]=await db.query(`SELECT day,SUM(gestions) gestions,SUM(payments) payments,SUM(promises) promises FROM (
+        SELECT DATE_FORMAT(action_date-INTERVAL 5 HOUR,'%Y-%m-%d') day,COUNT(*) gestions,0 payments,0 promises
+        FROM collection_actions WHERE action_date>=? AND action_date<? AND company_id=? GROUP BY day
+        UNION ALL SELECT DATE_FORMAT(created_at-INTERVAL 5 HOUR,'%Y-%m-%d'),0,COUNT(*),0
+        FROM payments WHERE created_at>=? AND created_at<? AND company_id=? AND status='confirmed' GROUP BY DATE_FORMAT(created_at-INTERVAL 5 HOUR,'%Y-%m-%d')
+        UNION ALL SELECT DATE_FORMAT(created_at-INTERVAL 5 HOUR,'%Y-%m-%d'),0,0,COUNT(*)
+        FROM payment_promises WHERE created_at>=? AND created_at<? AND company_id=? GROUP BY DATE_FORMAT(created_at-INTERVAL 5 HOUR,'%Y-%m-%d')
+        ) activity GROUP BY day ORDER BY day`,[...utc,...utc,...utc]);
+      return rows.map(row=>({...row,gestions:Number(row.gestions),payments:Number(row.payments),promises:Number(row.promises)}));
     });
     await section('recovery',async()=>{
       const [[payments]]=await db.query(`SELECT COUNT(*) payments_count,COALESCE(SUM(amount),0) payments_amount FROM payments
@@ -82,7 +106,7 @@ export async function getAdminDashboard({scope,query={},now=new Date()}, dbPool=
     await section('reported_payments',async()=>{const [[row]]=await db.query(`SELECT COUNT(*) count,COALESCE(SUM(reported_amount),0) amount FROM collection_actions WHERE company_id=? AND action_type='PAYMENT_REPORTED' AND status='PENDING_REVIEW'`,[scope.companyId]);return row;});
     await section('resolution',()=>getCustomerResolutionDashboard(scope,db));
     await section('promises',async()=>{
-      const [[row]]=await db.query(`SELECT COALESCE(SUM(status='pending' AND promised_date>=?),0) active,
+      const [[row]]=await db.query(`SELECT COALESCE(SUM(status='pending'),0) pending_count,COALESCE(SUM(status='pending' AND promised_date>=?),0) active,
         COALESCE(SUM(status='pending' AND promised_date<?),0) overdue,COALESCE(SUM(status='pending' AND promised_date BETWEEN ? AND ?),0) upcoming,
         COALESCE(SUM(status='fulfilled' AND fulfilled_at>=? AND fulfilled_at<?),0) fulfilled_period
         FROM payment_promises WHERE company_id=?`,[period.reference_date,period.reference_date,period.reference_date,shiftDay(period.reference_date,5),...utc]);return row;
@@ -101,7 +125,8 @@ export async function getAdminDashboard({scope,query={},now=new Date()}, dbPool=
         DATE_FORMAT(l.created_at,'%Y-%m-%dT%H:%i:%sZ') occurred_at,CONCAT_WS(' ',u.first_name,u.last_name) user_name,
         JSON_UNQUOTE(JSON_EXTRACT(l.new_values,'$.actor_type')) actor_type,
         JSON_UNQUOTE(JSON_EXTRACT(l.new_values,'$.customer_id')) customer_id,
-        JSON_UNQUOTE(JSON_EXTRACT(l.new_values,'$.amount')) amount,c.name customer_name,i.invoice_number
+        JSON_UNQUOTE(JSON_EXTRACT(l.new_values,'$.amount')) amount,c.name customer_name,i.invoice_number,
+        JSON_UNQUOTE(JSON_EXTRACT(l.new_values,'$.status')) status
         FROM audit_logs l LEFT JOIN users u ON u.id=l.user_id AND (u.company_id=l.company_id OR u.company_id IS NULL)
         LEFT JOIN customers c ON c.id=JSON_UNQUOTE(JSON_EXTRACT(l.new_values,'$.customer_id')) AND c.company_id=l.company_id
         LEFT JOIN invoices i ON i.id=COALESCE(JSON_UNQUOTE(JSON_EXTRACT(l.new_values,'$.invoice_id')),IF(l.entity_type='invoice',l.entity_id,NULL)) AND i.company_id=l.company_id

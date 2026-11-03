@@ -54,7 +54,13 @@ describe('Administrative dashboard / real MySQL read-only', {skip:!(process.env.
   async function request(method,path,body,actor=collector){const response=await fetch(root+path,{method,headers:{'Content-Type':'application/json',...(actor?{Authorization:`Bearer ${actor.token}`}:{})},...(body===undefined?{}:{body:JSON.stringify(body)})});return{status:response.status,body:await response.json()};}
   const scope=actor=>({companyId,companyName:'MERTEL IMPORTACIONES',actorId:(actor||admin).id});
   test('authorization and immutable MERTEL scope',async()=>{
-    assert.equal((await request('GET','/admin/dashboard',undefined,admin)).status,200);
+    const initial=await request('GET','/admin/dashboard',undefined,admin);
+    assert.equal(initial.status,200);
+    assert.equal(initial.body.data.overview.status,'ok');
+    assert.equal(initial.body.data.overview.data.customers_with_balance,0);
+    assert.equal(Number(initial.body.data.overview.data.pending_invoices),0);
+    assert.equal(initial.body.data.overview.data.invoiced_value,'0.00');
+    assert.deepEqual(initial.body.data.activity_trend.data,[]);
     assert.equal((await request('GET','/admin/dashboard',undefined,collector)).status,403);
     assert.equal((await request('GET','/admin/dashboard',undefined,null)).status,401);
     assert.equal((await request('GET','/admin/dashboard?company_id=99999',undefined,admin)).status,403);
@@ -64,13 +70,22 @@ describe('Administrative dashboard / real MySQL read-only', {skip:!(process.env.
     const now=new Date('2026-10-07T15:00:00Z');const item=await client(['100.00','50.00']);
     await db.query("INSERT INTO payment_promises(company_id,customer_id,invoice_id,promised_date,promised_amount) VALUES (?,?,?,'2026-10-06',20),(?,?,?,'2026-10-09',30)",[companyId,item.id,item.invoices[0],companyId,item.id,item.invoices[1]]);
     await db.query("INSERT INTO collection_actions(company_id,customer_id,invoice_id,action_type,status,reported_amount,action_date) VALUES (?,?,?,'PAYMENT_REPORTED','PENDING_REVIEW',40,'2026-10-07 12:00:00')",[companyId,item.id,item.invoices[0]]);
+    await db.query("INSERT INTO collection_actions(company_id,customer_id,action_type,action_date) VALUES (?,?,'CONTACTED','2026-10-05 15:00:00')",[companyId,item.id]);
     const previous=await snapshot();
     const result=await getAdminDashboard({scope:scope(),now});
     for(const key of ['summary','collection','recovery','resolution','promises','whatsapp','recent_activity','top_customers','priority_customers'])assert.equal(result[key].status,'ok',key);
     assert.equal(result.summary.data.total_balance,'150.00');assert.equal(result.summary.data.stages.find(s=>s.key==='overdue').balance,'100.00');assert.equal(result.summary.data.stages.find(s=>s.key==='five_days_before_due').balance,'50.00');
+    assert.equal(result.overview.data.customers_with_balance,1);
+    assert.equal(Number(result.overview.data.pending_invoices),2);
+    assert.equal(Number(result.overview.data.overdue_invoices),1);
+    assert.equal(result.overview.data.invoiced_value,'150.00');
+    assert.equal(result.overview.data.total_customers,1);
+    assert.equal(result.top_customers.data[0].invoices_count,2);
     assert.equal(result.reported_payments.data.amount,'40.00');assert.equal(Number(result.promises.data.overdue),1);assert.equal(Number(result.promises.data.active),1);assert.equal(Number(result.promises.data.upcoming),1);
     assert.equal(result.top_customers.data[0].id,item.id);assert.equal(result.priority_customers.data[0].id,item.id);
     const week=await getAdminDashboard({scope:scope(),now,query:{period:'7'}});assert.deepEqual(week.summary,result.summary);assert.deepEqual(week.promises,result.promises);
+    assert.ok(week.activity_trend.data.some(day=>day.day==='2026-10-05'&&day.gestions===1));
+    assert.ok(week.activity_trend.data.some(day=>day.day==='2026-10-07'&&day.gestions>=1));
     assert.deepEqual(await snapshot(),previous);
   });
   test('period payments and allocations, audit actor, MOCK and absence of secrets',async()=>{
