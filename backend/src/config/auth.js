@@ -33,8 +33,8 @@ export function loadAuthConfig(env = process.env) {
       throw new Error("FRONTEND_URL debe contener orígenes exactos; HTTPS en producción");
     }
   }
-  if (production && (origins.length !== 1 || origins[0] !== "https://mertelimportaciones.com")) {
-    throw new Error("FRONTEND_URL en producción debe ser únicamente https://mertelimportaciones.com");
+  if (production && (origins.length !== 1 || origins[0] !== "https://cobranzasmertelimportaciones.com")) {
+    throw new Error("FRONTEND_URL en producción debe ser únicamente https://cobranzasmertelimportaciones.com");
   }
   const sameSite = (env.AUTH_COOKIE_SAME_SITE ?? (development ? "lax" : undefined))?.trim().toLowerCase();
   if (!["lax", "strict", "none"].includes(sameSite)) {

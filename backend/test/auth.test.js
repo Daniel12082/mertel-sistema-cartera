@@ -258,7 +258,7 @@ describe("secure authentication HTTP / MySQL integration", { skip: !configured }
   });
   for (const [nodeEnv, sameSite] of [["development", "lax"], ["production", "lax"], ["production", "strict"], ["production", "none"]]) {
     test(`refresh cookie attributes on login/rotation/clear: ${nodeEnv}, SameSite=${sameSite}`, async () => {
-      const frontendOrigin = nodeEnv === "production" ? "https://mertelimportaciones.com" : origin;
+      const frontendOrigin = nodeEnv === "production" ? "https://cobranzasmertelimportaciones.com" : origin;
       const app = createApp(loadAuthConfig({ JWT_SECRET: secret, FRONTEND_URL: frontendOrigin,
         TRUST_PROXY_HOPS: "1", NODE_ENV: nodeEnv, AUTH_COOKIE_SAME_SITE: sameSite }));
       const listener = await serve(app);
@@ -296,7 +296,7 @@ describe("secure authentication HTTP / MySQL integration", { skip: !configured }
     });
   }
   test("production CORS admits only the final frontend and rejects other origins before login", async () => {
-    const frontendOrigin = "https://mertelimportaciones.com";
+    const frontendOrigin = "https://cobranzasmertelimportaciones.com";
     const app = createApp(loadAuthConfig({ JWT_SECRET: secret, FRONTEND_URL: frontendOrigin,
       TRUST_PROXY_HOPS: "1", NODE_ENV: "production", AUTH_COOKIE_SAME_SITE: "lax" }));
     const listener = await serve(app);
@@ -309,7 +309,7 @@ describe("secure authentication HTTP / MySQL integration", { skip: !configured }
       assert.equal(preflight.headers.get("access-control-allow-origin"), frontendOrigin);
       assert.equal(preflight.headers.get("access-control-allow-credentials"), "true");
       for (const deniedOrigin of ["*", "https://mertel.hostifycol.com", "https://api.mertel.hostifycol.com",
-        "https://api.mertelimportaciones.com", "https://www.mertelimportaciones.com", origin, "https://untrusted.example"]) {
+        "https://mertelimportaciones.com", "https://api.cobranzasmertelimportaciones.com", "https://www.cobranzasmertelimportaciones.com", origin, "https://untrusted.example"]) {
         const denied = await assertStatus("POST", "/api/auth/login", {
           url, body: { email, password }, headers: { Origin: deniedOrigin },
         }, 403);

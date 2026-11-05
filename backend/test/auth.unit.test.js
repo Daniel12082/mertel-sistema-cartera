@@ -23,7 +23,7 @@ test("explicit SameSite preserves HttpOnly and enforces Secure according to NODE
   for (const nodeEnv of [undefined, "development", "test", "production"]) {
     for (const sameSite of ["lax", "strict", "none"]) {
       const settings = { ...env, NODE_ENV: nodeEnv, AUTH_COOKIE_SAME_SITE: sameSite,
-        FRONTEND_URL: nodeEnv === "production" ? "https://mertelimportaciones.com" : env.FRONTEND_URL };
+        FRONTEND_URL: nodeEnv === "production" ? "https://cobranzasmertelimportaciones.com" : env.FRONTEND_URL };
       if (sameSite === "none" && nodeEnv !== "production") {
         assert.throws(() => loadAuthConfig(settings), /none requiere Secure/);
       } else {
@@ -39,8 +39,8 @@ test("explicit SameSite preserves HttpOnly and enforces Secure according to NODE
     }
   }
   for (const origin of ["*", "https://mertel.hostifycol.com", "https://api.mertel.hostifycol.com",
-    "https://api.mertelimportaciones.com", "https://www.mertelimportaciones.com", env.FRONTEND_URL,
-    "https://mertelimportaciones.com,https://untrusted.example", "https://mertelimportaciones.com,https://mertelimportaciones.com"]) {
+    "https://mertelimportaciones.com", "https://api.cobranzasmertelimportaciones.com", "https://www.cobranzasmertelimportaciones.com", env.FRONTEND_URL,
+    "https://cobranzasmertelimportaciones.com,https://untrusted.example", "https://cobranzasmertelimportaciones.com,https://cobranzasmertelimportaciones.com"]) {
     assert.throws(() => loadAuthConfig({ ...env, NODE_ENV: "production", FRONTEND_URL: origin }));
   }
 });
@@ -58,14 +58,14 @@ test("local defaults only apply in development and keep explicit invalid values 
 });
 
 test("production has no local fallback and accepts explicit None only with Secure and HttpOnly", () => {
-  const productionEnv = { JWT_SECRET: env.JWT_SECRET, NODE_ENV: "production", FRONTEND_URL: "https://mertelimportaciones.com", AUTH_COOKIE_SAME_SITE: "None" };
+  const productionEnv = { JWT_SECRET: env.JWT_SECRET, NODE_ENV: "production", FRONTEND_URL: "https://cobranzasmertelimportaciones.com", AUTH_COOKIE_SAME_SITE: "None" };
   const production = loadAuthConfig(productionEnv);
-  assert.deepEqual(production.origins, ["https://mertelimportaciones.com"]);
+  assert.deepEqual(production.origins, ["https://cobranzasmertelimportaciones.com"]);
   assert.deepEqual(production.cookieOptions, { httpOnly: true, secure: true, sameSite: "none", path: "/api/auth" });
   for (const field of ["FRONTEND_URL", "AUTH_COOKIE_SAME_SITE"]) {
     for (const missing of [undefined, ""]) assert.throws(() => loadAuthConfig({ ...productionEnv, [field]: missing }));
   }
-  for (const origin of ["http://localhost:5173", "*", "http://mertelimportaciones.com"]) {
+  for (const origin of ["http://localhost:5173", "*", "http://cobranzasmertelimportaciones.com"]) {
     assert.throws(() => loadAuthConfig({ ...productionEnv, FRONTEND_URL: origin }));
   }
   assert.throws(() => loadAuthConfig({ ...productionEnv, AUTH_COOKIE_SAME_SITE: "invalid" }));
