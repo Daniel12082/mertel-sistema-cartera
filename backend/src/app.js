@@ -1,3 +1,4 @@
+import { transportSecurity, apiRateLimit, validateRequestStructure } from "./middleware/security.js";
 import express from "express";
 import appearanceRoutes from './routes/appearance.routes.js';
 import reportsRoutes from './routes/reports.routes.js';
@@ -23,7 +24,10 @@ export function createApp(config = loadAuthConfig()) {
   const app = express();
   app.set("authConfig", config);
   app.set("trust proxy", config.trustProxyHops);
+  app.disable("x-powered-by");
   app.use(helmet());
+  app.use(transportSecurity(config));
+  app.use("/api", apiRateLimit());
   app.use(cors({
     origin(origin, callback) {
       if (!origin || config.origins.includes(origin)) return callback(null, true);
@@ -34,10 +38,11 @@ export function createApp(config = loadAuthConfig()) {
   // Meta signs the raw request bytes. This public endpoint must precede express.json and auth.
   app.use('/api/whatsapp/webhook', metaWebhookRoutes);
   app.use('/api', rejectSimulationRequests);
-  app.use(express.json());
+  app.use(express.json({ limit: "100kb", strict: true }));
+  app.use(validateRequestStructure);
   app.use(cookieParser());
   app.get("/api/health", (req, res) => res.json({ success: true, message: "MERTEL API funcionando correctamente", timestamp: new Date().toISOString() }));
-  app.get("/api/health/db", async (req, res) => {
+  app.get("/api/health/db", authenticateToken(config), async (req, res) => {
     try { await pool.query("SELECT 1 AS connected"); return res.json({ success: true, message: "MERTEL conectado correctamente a MySQL" }); }
     catch { return res.status(500).json({ success: false, message: "No se pudo conectar a MySQL" }); }
   });

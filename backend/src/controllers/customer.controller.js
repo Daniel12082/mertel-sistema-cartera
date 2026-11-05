@@ -13,8 +13,19 @@ function parseCustomerId(value) {
 }
 
 function hasRequiredCustomerFields(body) {
-  return typeof body?.nit === "string" && body.nit.trim().length > 0
-    && typeof body?.name === "string" && body.name.trim().length > 0;
+  const allowed = ['company_id','nit','name','phone','email','address','city','credit_limit','available_credit','status','notes'];
+  if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).some(key => !allowed.includes(key))) return false;
+  const lengths = { nit: 50, name: 200, phone: 50, email: 150, address: 255, city: 100, notes: 5000 };
+  for (const [key, max] of Object.entries(lengths)) {
+    if (body[key] != null && (typeof body[key] !== 'string' || body[key].length > max || /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(body[key]))) return false;
+  }
+  if (body.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(body.email)) return false;
+  if (body.status !== undefined && !['active','inactive'].includes(body.status)) return false;
+  for (const key of ['credit_limit','available_credit']) {
+    if (body[key] !== undefined && !/^(?:0|[1-9]\d{0,12})(?:\.\d{1,2})?$/.test(String(body[key]))) return false;
+  }
+  return typeof body.nit === 'string' && body.nit.trim().length > 0
+    && typeof body.name === 'string' && body.name.trim().length > 0;
 }
 
 export async function getCustomers(req, res) {
@@ -23,7 +34,7 @@ export async function getCustomers(req, res) {
     return res.status(200).json({ success: true, data: customers });
   } catch (error) {
     if (error.status) return res.status(error.status).json({ success: false, message: error.message });
-    console.error("Error obteniendo clientes:", error);
+    console.error("Error obteniendo clientes:");
     return res.status(500).json({ success: false, message: "No se pudieron obtener los clientes" });
   }
 }
@@ -37,7 +48,7 @@ export async function createCustomer(req, res) {
     return res.status(201).json({ success: true, data: customer });
   } catch (error) {
     if (error.status) return res.status(error.status).json({ success: false, message: error.message });
-    console.error("Error creando cliente:", error);
+    console.error("Error creando cliente:");
     return res.status(500).json({ success: false, message: "No se pudo crear el cliente" });
   }
 }
@@ -51,7 +62,7 @@ export async function getCustomerById(req, res) {
     return res.status(200).json({ success: true, data: customer });
   } catch (error) {
     if (error.status) return res.status(error.status).json({ success: false, message: error.message });
-    console.error("Error obteniendo cliente:", error);
+    console.error("Error obteniendo cliente:");
     return res.status(500).json({ success: false, message: "No se pudo obtener el cliente" });
   }
 }
@@ -68,7 +79,7 @@ export async function updateCustomer(req, res) {
     return res.status(200).json({ success: true, data: customer });
   } catch (error) {
     if (error.status) return res.status(error.status).json({ success: false, message: error.message });
-    console.error("Error actualizando cliente:", error);
+    console.error("Error actualizando cliente:");
     return res.status(500).json({ success: false, message: "No se pudo actualizar el cliente" });
   }
 }
@@ -82,7 +93,7 @@ export async function deleteCustomer(req, res) {
     return res.status(200).json({ success: true, message: "Cliente eliminado correctamente" });
   } catch (error) {
     if (error.status) return res.status(error.status).json({ success: false, message: error.message });
-    console.error("Error eliminando cliente:", error);
+    console.error("Error eliminando cliente:");
     return res.status(500).json({ success: false, message: "No se pudo eliminar el cliente" });
   }
 }

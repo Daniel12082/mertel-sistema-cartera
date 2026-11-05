@@ -18,7 +18,10 @@ export function authRoutes(config) {
     standardHeaders: "draft-8", legacyHeaders: false, skipSuccessfulRequests: true,
     message: { success: false, message: "Demasiados intentos de acceso. Inténtalo más tarde." },
   }), controller.login);
-  router.post("/refresh", controller.refresh);
+  router.post("/refresh", rateLimit({ windowMs: config.rateWindowMs, limit: config.rateMax * 3,
+    standardHeaders: "draft-8", legacyHeaders: false,
+    message: { success: false, message: "Demasiadas solicitudes de sesi�n" },
+  }), controller.refresh);
   router.post("/logout", controller.logout);
   router.get("/me", authenticateToken(config), controller.me);
   return router;

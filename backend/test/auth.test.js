@@ -180,8 +180,11 @@ describe("secure authentication HTTP / MySQL integration", { skip: !configured }
     await assertStatus("GET", `/api/customers/${customerId}`, { token: s.token }, 403);
     await assertStatus("GET", "/api/auth/me", { token: s.token }, 200);
   });
-  test("technical health remains public and discloses no database name or financial data", async () => {
-    for (const path of ["/api/health", "/api/health/db"]) {
+  test("health is minimal and database diagnostics require authentication", async () => {
+    await assertStatus("GET", "/api/health/db", {}, 401);
+    const authenticated = await session();
+    await assertStatus("GET", "/api/health/db", { token: authenticated.token }, 200);
+    for (const path of ["/api/health"]) {
       const result = await assertStatus("GET", path, {}, 200);
       assert.equal(JSON.stringify(result.body).includes(databaseName), false); assertNoSecrets(result);
     }
@@ -257,7 +260,7 @@ describe("secure authentication HTTP / MySQL integration", { skip: !configured }
     test(`refresh cookie attributes on login/rotation/clear: ${nodeEnv}, SameSite=${sameSite}`, async () => {
       const frontendOrigin = nodeEnv === "production" ? "https://mertelimportaciones.com" : origin;
       const app = createApp(loadAuthConfig({ JWT_SECRET: secret, FRONTEND_URL: frontendOrigin,
-        NODE_ENV: nodeEnv, AUTH_COOKIE_SAME_SITE: sameSite }));
+        TRUST_PROXY_HOPS: "1", NODE_ENV: nodeEnv, AUTH_COOKIE_SAME_SITE: sameSite }));
       const listener = await serve(app);
       const url = `http://127.0.0.1:${listener.address().port}`;
       // Node fetch checks server headers here; it does not enforce browser cookie policies or HTTPS.
@@ -271,14 +274,14 @@ describe("secure authentication HTTP / MySQL integration", { skip: !configured }
         else assert.doesNotMatch(cookie, /; Secure(?:;|$)/);
       }
       try {
-        const s = await request("POST", "/api/auth/login", { url, body: { email, password }, headers: { Origin: frontendOrigin } });
+        const s = await request("POST", "/api/auth/login", { url, body: { email, password }, headers: { Origin: frontendOrigin, "X-Forwarded-Proto": "https" } });
         assert.equal(s.status, 200); assertCookie(s);
         assert.equal(s.headers.get("access-control-allow-origin"), frontendOrigin);
         assert.equal(s.headers.get("access-control-allow-credentials"), "true");
         assert.equal(s.headers.get("x-content-type-options"), "nosniff");
         assert.ok(s.headers.get("content-security-policy"));
         const cookie = s.headers.getSetCookie()[0].split(";")[0];
-        const headers = { Origin: frontendOrigin, "Sec-Fetch-Site": "same-site" };
+        const headers = { Origin: frontendOrigin, "Sec-Fetch-Site": "same-site", "X-Forwarded-Proto": "https" };
         const rotated = await assertStatus("POST", "/api/auth/refresh", { url, cookie, headers }, 200);
         assertCookie(rotated);
         const nextCookie = rotated.headers.getSetCookie()[0].split(";")[0];
@@ -295,12 +298,12 @@ describe("secure authentication HTTP / MySQL integration", { skip: !configured }
   test("production CORS admits only the final frontend and rejects other origins before login", async () => {
     const frontendOrigin = "https://mertelimportaciones.com";
     const app = createApp(loadAuthConfig({ JWT_SECRET: secret, FRONTEND_URL: frontendOrigin,
-      NODE_ENV: "production", AUTH_COOKIE_SAME_SITE: "lax" }));
+      TRUST_PROXY_HOPS: "1", NODE_ENV: "production", AUTH_COOKIE_SAME_SITE: "lax" }));
     const listener = await serve(app);
     const url = `http://127.0.0.1:${listener.address().port}`;
     try {
       const preflight = await fetch(`${url}/api/auth/refresh`, { method: "OPTIONS", headers: {
-        Origin: frontendOrigin, "Access-Control-Request-Method": "POST", "Access-Control-Request-Headers": "content-type",
+        "X-Forwarded-Proto": "https", Origin: frontendOrigin, "Access-Control-Request-Method": "POST", "Access-Control-Request-Headers": "content-type",
       } });
       assert.equal(preflight.status, 204);
       assert.equal(preflight.headers.get("access-control-allow-origin"), frontendOrigin);

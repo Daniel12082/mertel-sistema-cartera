@@ -68,7 +68,7 @@ function badRequest(res, error) {
 }
 
 function serverError(res, error) {
-  console.error("Error consultando cartera:", error);
+  console.error("Error consultando cartera:");
   return res.status(500).json({ success: false, message: "No se pudo consultar la cartera" });
 }
 

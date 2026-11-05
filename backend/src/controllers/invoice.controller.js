@@ -82,6 +82,9 @@ function isValidOptionalDate(value) {
 }
 
 function hasRequiredInvoiceFields(body) {
+  const allowed = ['id', 'balance', 'created_at', 'updated_at', 'customer_name', 'customer_nit','company_id','customer_id','invoice_number','document_value','base_value','iva_value','promo_18','discount','issue_date','due_date','credit_days','status','notes','email'];
+  if (!body || Array.isArray(body) || typeof body !== 'object' || Object.keys(body).some(key => !allowed.includes(key))) return false;
+  if (body.invoice_number?.length > 150 || body.notes?.length > 5000 || body.email?.length > 150 || body.status?.length > 30) return false;
   return (
     Number.isSafeInteger(body?.customer_id) &&
     body.customer_id > 0 &&
@@ -110,7 +113,7 @@ export async function getInvoices(req, res) {
     return res.status(200).json({ success: true, data: invoices });
   } catch (error) {
     if (error.status) return res.status(error.status).json({ success: false, message: error.message });
-    console.error("Error obteniendo facturas:", error);
+    console.error("Error obteniendo facturas:");
     return res.status(500).json({
       success: false,
       message: "No se pudieron obtener las facturas",
@@ -132,7 +135,7 @@ export async function getInvoiceById(req, res) {
     return res.status(200).json({ success: true, data: invoice });
   } catch (error) {
     if (error.status) return res.status(error.status).json({ success: false, message: error.message });
-    console.error("Error obteniendo factura:", error);
+    console.error("Error obteniendo factura:");
     return res.status(500).json({
       success: false,
       message: "No se pudo obtener la factura",
@@ -158,7 +161,7 @@ export async function createInvoice(req, res) {
       return res.status(404).json({ success: false, message: "Cliente no encontrado" });
     }
 
-    console.error("Error creando factura:", error);
+    console.error("Error creando factura:");
     return res.status(500).json({
       success: false,
       message: "No se pudo crear la factura",
@@ -198,7 +201,7 @@ export async function updateInvoice(req, res) {
       return res.status(404).json({ success: false, message: "Cliente no encontrado" });
     }
 
-    console.error("Error actualizando factura:", error);
+    console.error("Error actualizando factura:");
     return res.status(500).json({
       success: false,
       message: "No se pudo actualizar la factura",
@@ -220,7 +223,7 @@ export async function deleteInvoice(req, res) {
     return res.status(200).json({ success: true, message: "Factura eliminada correctamente" });
   } catch (error) {
     if (error.status) return res.status(error.status).json({ success: false, message: error.message });
-    console.error("Error eliminando factura:", error);
+    console.error("Error eliminando factura:");
     return res.status(500).json({
       success: false,
       message: "No se pudo eliminar la factura",

@@ -142,7 +142,8 @@ describe("role authorization and internal admin provisioning HTTP / MySQL", { sk
     assert.equal((await request("PUT", "/admin/roles", { token: collector.body.data.access_token, body: {} })).status, 404);
   });
   test("health/auth behavior is retained and no planned modules or public registration are invented", async () => {
-    for (const path of ["/health", "/health/db"]) assert.equal((await request("GET", path)).status, 200);
+    assert.equal((await request("GET", "/health")).status, 200);
+    assert.equal((await request("GET", "/health/db")).status, 401);
     const session = await login(); const cookie = session.headers.getSetCookie()[0].split(";")[0];
     const refreshed = await request("POST", "/auth/refresh", { cookie }); assert.equal(refreshed.status, 200);
     assert.equal((await request("POST", "/auth/logout", { cookie: refreshed.headers.getSetCookie()[0].split(";")[0] })).status, 200);

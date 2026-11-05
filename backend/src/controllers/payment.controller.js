@@ -56,6 +56,9 @@ function optionalText(value, maxLength = Infinity) {
 }
 
 function normalizePayment(body = {}) {
+  const allowed = ['id', 'created_at', 'updated_at', 'customer_name', 'customer_nit', 'total_allocated', 'available_amount','company_id','created_by','customer_id','payment_date','amount','payment_method','reference','status','notes'];
+  if (!body || Array.isArray(body) || typeof body !== 'object' || Object.keys(body).some(key => !allowed.includes(key))) return null;
+  if (!optionalText(body.notes, 5000)) return null;
   const company = optionalId(body?.company_id);
   const creator = optionalId(body?.created_by);
   const amount = normalizeMoney(body?.amount, { allowZero: false });
@@ -106,7 +109,7 @@ function publicError(res, error) {
   if (error.code === "ER_NO_REFERENCED_ROW_2") {
     return res.status(404).json({ success: false, message: "No se encontró una referencia del pago" });
   }
-  console.error("Error procesando pagos:", error);
+  console.error("Error procesando pagos:");
   return res.status(500).json({ success: false, message: "No se pudo procesar la solicitud de pagos" });
 }
 
