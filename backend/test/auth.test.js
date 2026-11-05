@@ -309,7 +309,7 @@ describe("secure authentication HTTP / MySQL integration", { skip: !configured }
       assert.equal(preflight.headers.get("access-control-allow-origin"), frontendOrigin);
       assert.equal(preflight.headers.get("access-control-allow-credentials"), "true");
       for (const deniedOrigin of ["*", "https://mertel.hostifycol.com", "https://api.mertel.hostifycol.com",
-        "https://mertelimportaciones.com", "https://api.cobranzasmertelimportaciones.com", "https://www.cobranzasmertelimportaciones.com", origin, "https://untrusted.example"]) {
+        "https://mertelimportaciones.com", "https://app.cobranzasmertelimportaciones.com", "https://www.cobranzasmertelimportaciones.com", origin, "https://untrusted.example"]) {
         const denied = await assertStatus("POST", "/api/auth/login", {
           url, body: { email, password }, headers: { Origin: deniedOrigin },
         }, 403);

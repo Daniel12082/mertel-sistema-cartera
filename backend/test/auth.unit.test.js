@@ -39,7 +39,7 @@ test("explicit SameSite preserves HttpOnly and enforces Secure according to NODE
     }
   }
   for (const origin of ["*", "https://mertel.hostifycol.com", "https://api.mertel.hostifycol.com",
-    "https://mertelimportaciones.com", "https://api.cobranzasmertelimportaciones.com", "https://www.cobranzasmertelimportaciones.com", env.FRONTEND_URL,
+    "https://mertelimportaciones.com", "https://app.cobranzasmertelimportaciones.com", "https://www.cobranzasmertelimportaciones.com", env.FRONTEND_URL,
     "https://cobranzasmertelimportaciones.com,https://untrusted.example", "https://cobranzasmertelimportaciones.com,https://cobranzasmertelimportaciones.com"]) {
     assert.throws(() => loadAuthConfig({ ...env, NODE_ENV: "production", FRONTEND_URL: origin }));
   }

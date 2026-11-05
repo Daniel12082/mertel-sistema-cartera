@@ -14,7 +14,7 @@ beforeEach(() => { clearSession(); });
 describe("API environment", () => {
   it("rejects missing or unsafe production API configuration", async () => {
     try {
-      for (const value of [undefined, "http://localhost:3000", "https://user:password@example.test", "https://api.cobranzasmertelimportaciones.com/api?key=example"]) {
+      for (const value of [undefined, "http://localhost:3000", "https://user:password@example.test", "https://app.cobranzasmertelimportaciones.com/api?key=example"]) {
         vi.resetModules(); vi.stubEnv("PROD", true); vi.stubEnv("VITE_API_URL", value);
         await expect(import("../src/services/api")).rejects.toThrow(/VITE_API_URL/);
       }
@@ -23,8 +23,8 @@ describe("API environment", () => {
   it("preserves the production /api compatibility and local development fallback", async () => {
     try {
       for (const [production, value, expected] of [
-        [true, "https://api.cobranzasmertelimportaciones.com", "https://api.cobranzasmertelimportaciones.com/api"],
-        [true, "https://api.cobranzasmertelimportaciones.com/api/", "https://api.cobranzasmertelimportaciones.com/api"],
+        [true, "https://app.cobranzasmertelimportaciones.com", "https://app.cobranzasmertelimportaciones.com/api"],
+        [true, "https://app.cobranzasmertelimportaciones.com/api/", "https://app.cobranzasmertelimportaciones.com/api"],
         [false, undefined, "http://localhost:3000/api"],
       ]) {
         vi.resetModules(); vi.stubEnv("PROD", production); vi.stubEnv("VITE_API_URL", value);
