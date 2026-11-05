@@ -106,3 +106,34 @@ describe('visual conversations on the existing local dataset and adapter', () =>
     await expect(pending).rejects.toThrow(/Simulación|fuente de datos/); expect(network).not.toHaveBeenCalled();
   });
 });
+
+it('replies through the real test flow after receiving a message from the authorized phone', async () => {
+  leaveSimulation();
+  const recipient = '+573173697659';
+  const incoming = { id: '1', customer_id: null, recipient, provider: 'WHATSAPP_CLOUD_API',
+    direction: 'inbound', status: 'DELIVERED', content: 'Hola', received_at: new Date().toISOString() };
+  const outgoing = { ...incoming, id: '2', direction: 'outbound', status: 'SENT', content: 'Hola desde MERTEL' };
+  const respond = data => Promise.resolve({ status: 200, data: { success: true, data } });
+  network.mockImplementation(config => {
+    if (config.url === '/customers') return respond([]);
+    if (config.url === '/admin/whatsapp/messages') return respond({ messages: [incoming] });
+    if (config.url === '/admin/whatsapp/meta/test-messages') {
+      expect(JSON.parse(config.data)).toEqual({ recipient, content: outgoing.content, confirmed: true });
+      return respond({ message: { id: outgoing.id } });
+    }
+    if (config.url === '/admin/whatsapp/meta/test-messages/2/send') return respond({ accepted: true, message: outgoing });
+    throw new Error('Unexpected request');
+  });
+  const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+  try {
+    const user = userEvent.setup();
+    render(<SimulationContext.Provider value={{ mode: 'REAL' }}>
+      <WhatsAppConversations settings={{ provider: 'WHATSAPP_CLOUD_API', connection_status: 'CONNECTED', test_mode: true, test_allowed_recipient: recipient }} />
+    </SimulationContext.Provider>);
+    await open(user, 'Conversación sin asociar');
+    await user.type(screen.getByLabelText('Respuesta de prueba por WhatsApp'), outgoing.content);
+    await user.click(screen.getByRole('button', { name: 'Enviar prueba por WhatsApp' }));
+    expect(await screen.findByLabelText('Mensaje saliente 2')).toHaveTextContent(outgoing.content);
+    expect(confirm).toHaveBeenCalledOnce();
+  } finally { confirm.mockRestore(); }
+});
