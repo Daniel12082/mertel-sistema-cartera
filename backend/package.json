@@ -16,7 +16,6 @@
     "migrate:auth": "node scripts/migrate-auth.js",
     "migrate:portfolio-import": "node scripts/migrate-portfolio-import.js",
     "migrate:customer-resolution": "node scripts/migrate-customer-resolution.js",
-    "migrate:customer-resolution": "node scripts/migrate-customer-resolution.js",
     "provision:mertel": "node scripts/provision-mertel.js",
     "provision:admin": "node scripts/provision-admin.js",
     "dev": "nodemon src/server.js",
@@ -42,6 +41,13 @@
     "nodemon": "^3.1.14"
   },
   "overrides": {
-    "uuid": "^11.1.1"
+    "uuid": "^11.1.1",
+    "exceljs": {
+      "archiver": "7.0.1"
+    },
+    "minimatch": "11.0.2",
+    "archiver-utils": {
+      "glob": "14.0.3"
+    }
   }
 }
