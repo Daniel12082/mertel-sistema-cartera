@@ -76,17 +76,21 @@
   width: 100%;
   max-width: none;
   margin: 0;
+  box-sizing: border-box;
 }
 
 .mertel-content:has(> .wa-center-expanded) {
-  padding: 12px;
+  padding: clamp(12px, 1.2vw, 24px);
+  min-width: 0;
   background-image: none;
 }
 
 @media (min-width: 701px) {
   .mertel-main:has(.wa-center-expanded) {
-    width: auto;
-    flex: 1;
+    --wa-sidebar-width: 270px;
+    width: calc(100% - var(--wa-sidebar-width));
+    margin-left: var(--wa-sidebar-width);
+    flex: 0 0 auto;
     min-width: 0;
     height: 100dvh;
     display: flex;
@@ -112,6 +116,10 @@
     min-height: 320px;
     grid-template-columns: clamp(230px, 26%, 400px) minmax(0, 1fr);
   }
+}
+
+@media (min-width: 701px) and (max-width: 900px) {
+  .mertel-main:has(.wa-center-expanded) { --wa-sidebar-width: 230px; }
 }
 
 @media (max-width: 700px) {
