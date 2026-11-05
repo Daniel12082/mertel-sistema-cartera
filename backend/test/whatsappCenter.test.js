@@ -9,7 +9,7 @@ import { applyAuthMigrations } from '../src/services/authMigrations.service.js';
 import { applyWhatsAppMigration } from '../src/services/whatsappMigration.service.js';
 dotenv.config({ path: new URL('../.env', import.meta.url), quiet: true });
 
-describe('WhatsApp center HTTP / MySQL, MOCK only', { skip: !(process.env.DB_HOST && process.env.DB_USER) }, () => {
+describe('WhatsApp center HTTP / MySQL, no real sends', { skip: !(process.env.DB_HOST && process.env.DB_USER) }, () => {
   const schema = `mertel_wa_test_${randomUUID().replaceAll('-', '')}`; const originalDatabase = process.env.DB_NAME;
   const keyBefore = process.env.WHATSAPP_ENCRYPTION_KEY;
   const config = loadAuthConfig({ JWT_SECRET: randomBytes(48).toString('base64url'), FRONTEND_URL: 'http://localhost:5173', AUTH_COOKIE_SAME_SITE: 'lax', NODE_ENV: 'test', AUTH_RATE_LIMIT_MAX: '1000' });
@@ -149,5 +149,31 @@ describe('WhatsApp center HTTP / MySQL, MOCK only', { skip: !(process.env.DB_HOS
     const audit = await request('GET', '/admin/whatsapp/audit'); assert.ok(audit.body.data.some(event => event.action === 'incoming')); assert.ok(audit.body.data.some(event => event.entity_type === 'message_template'));
     assert.deepEqual(await financialSnapshot(), financialBefore);
     assert.equal((await request('POST', '/webhook/whatsapp', incoming, null)).status, 404);
+  });
+  test('Meta allows three manual test messages per Bogota day and deduplicates concurrent requests', async () => {
+    const env = {
+      WHATSAPP_PROVIDER: 'meta', WHATSAPP_TEST_MODE: 'true', WHATSAPP_TEST_ALLOWED_RECIPIENTS: '+573173697659',
+      WHATSAPP_PHONE_NUMBER_ID: '12345678', WHATSAPP_BUSINESS_ACCOUNT_ID: '12345678',
+      WHATSAPP_APP_ID: '12345678', WHATSAPP_BUSINESS_ID: '12345678', WHATSAPP_ACCESS_TOKEN: 'fixture',
+      WHATSAPP_API_VERSION: 'v27.0', WHATSAPP_WEBHOOK_VERIFY_TOKEN: 'fixture', WHATSAPP_APP_SECRET: 'fixture',
+    };
+    const previous = Object.fromEntries(Object.keys(env).map(key => [key, process.env[key]]));
+    Object.assign(process.env, env);
+    try {
+      await db.query("UPDATE settings SET setting_value=JSON_SET(setting_value,'$.provider','WHATSAPP_CLOUD_API') WHERE company_id=? AND setting_key='whatsapp_center'", [companyId]);
+      const path = '/admin/whatsapp/meta/test-messages';
+      const queue = content => request('POST', path, { recipient: env.WHATSAPP_TEST_ALLOWED_RECIPIENTS, content, confirmed: true });
+      const first = await queue('Primera prueba');
+      assert.equal(first.status, 200);
+      const copies = await Promise.all([queue('Primera prueba'), queue('Segunda prueba'), queue('Tercera prueba'), queue('Cuarta prueba')]);
+      assert.equal(copies[0].body.data.message.id, first.body.data.message.id);
+      assert.equal(copies[0].body.data.duplicate, true);
+      assert.deepEqual(copies.slice(1).map(result => result.status).sort(), [200, 200, 429]);
+    } finally {
+      for (const [key, value] of Object.entries(previous)) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+    }
   });
 });

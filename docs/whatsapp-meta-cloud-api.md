@@ -6,7 +6,7 @@ La integración usa únicamente variables del entorno del backend. El token, App
 
 Definir en el entorno seguro las variables documentadas en `backend/.env.example`, con `WHATSAPP_PROVIDER=meta`, una versión de Graph API vigente validada, y `WHATSAPP_TEST_MODE=true`. Durante esta fase `WHATSAPP_TEST_ALLOWED_RECIPIENTS` debe ser exactamente `+573173697659`.
 
-La pantalla Centro de WhatsApp permite validar la conexión y preparar un único mensaje de texto de prueba. La validación y el endpoint vuelven a comprobar en el backend que el destinatario es el autorizado, que es un flujo manual y que no se seleccionó un cliente, campaña, archivo o automatización. Nunca se debe probar contra un cliente de cartera.
+La pantalla Centro de WhatsApp permite validar la conexión y preparar hasta tres mensajes manuales de prueba por día (hora de Bogotá). La validación y el endpoint vuelven a comprobar en el backend que el destinatario es el autorizado, que es un flujo manual y que no se seleccionó un cliente, campaña, archivo o automatización. Nunca se debe probar contra un cliente de cartera.
 
 Al rotar el token, cambiar solo `WHATSAPP_ACCESS_TOKEN` en el gestor de secretos y reiniciar el backend de forma controlada. Usar “Probar conexión Meta” para comprobarlo; un error de autenticación queda como error de conexión sin exponer el token.
 

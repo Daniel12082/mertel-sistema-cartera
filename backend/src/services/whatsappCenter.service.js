@@ -181,8 +181,13 @@ export async function enqueueMetaTestMessage({ scope, actorId, body, now = new D
     const key = createHash('sha256').update(JSON.stringify(['meta-test', scope.companyId, recipient, body.content.trim(), now.toISOString().slice(0, 16)])).digest('hex');
     const [[duplicate]] = await db.query('SELECT CAST(id AS CHAR) id FROM messages WHERE company_id=? AND idempotency_key=?', [scope.companyId, key]);
     if (duplicate) return { message: await messageById(db, scope, duplicate.id), duplicate: true };
-    const [[previous]] = await db.query("SELECT CAST(id AS CHAR) id FROM messages WHERE company_id=? AND provider='WHATSAPP_CLOUD_API' AND customer_id IS NULL AND recipient=? AND direction='outbound' LIMIT 1 FOR UPDATE", [scope.companyId, recipient]);
-    if (previous) throw operationError(409, 'Ya existe una prueba Meta para este destinatario. Consulta su historial y espera el webhook; no se enviará un mensaje repetido.');
+    const [[{ total }]] = await db.query(
+      "SELECT COUNT(*) AS total FROM messages WHERE company_id=? AND provider='WHATSAPP_CLOUD_API' AND customer_id IS NULL AND recipient=? AND direction='outbound' AND message_mode='MANUAL' AND budget_date=?",
+      [scope.companyId, recipient, bogotaDate(now)],
+    );
+    if (Number(total) >= 3) {
+      throw operationError(429, 'Alcanzaste el límite de 3 envíos de prueba por día para este destinatario.');
+    }
     const [result] = await db.query(`INSERT INTO messages(company_id,customer_id,created_by,channel,recipient,content,status,provider,direction,message_mode,idempotency_key,scheduled_at,budget_date)
       VALUES (?,NULL,?,'whatsapp',? ,?,'PENDING','WHATSAPP_CLOUD_API','outbound','MANUAL',?,?,?)`,
       [scope.companyId, actorId, recipient, body.content.trim(), key, now, bogotaDate(now)]);
@@ -192,15 +197,18 @@ export async function enqueueMetaTestMessage({ scope, actorId, body, now = new D
 }
 
 export async function sendMetaTestMessage({ scope, actorId, messageId, body, now = new Date() }, dbPool = pool) {
-  if (!body || Object.keys(body).some(key => key !== 'confirmed') || body.confirmed !== true) throw operationError(400, 'Confirma explícitamente el único envío de prueba antes de continuar.');
+  if (!body || Object.keys(body).some(key => key !== 'confirmed') || body.confirmed !== true) throw operationError(400, 'Confirma explícitamente el envío de prueba antes de continuar.');
   const id = operationId(messageId, 'message_id');
   const claimed = await transaction(scope, async (db, settings) => {
     if (runtimeProvider(settings) !== 'WHATSAPP_CLOUD_API' || settings.connection_status !== 'CONNECTED') throw operationError(409, 'Valida la conexión con Meta antes de enviar la prueba.');
     const message = await messageById(db, scope, id, true);
-    if (message.customer_id || message.provider !== 'WHATSAPP_CLOUD_API' || message.message_mode !== 'MANUAL' || !['PENDING', 'FAILED'].includes(message.status)) throw operationError(409, 'Solo se puede enviar un mensaje manual de prueba pendiente.');
+    if (message.customer_id || message.provider !== 'WHATSAPP_CLOUD_API' || message.message_mode !== 'MANUAL' || message.direction !== 'outbound' || message.status !== 'PENDING' || Number(message.attempts) !== 0) throw operationError(409, 'Solo se puede enviar un mensaje manual de prueba pendiente.');
     try { whatsappProvider('WHATSAPP_CLOUD_API').assertTestRecipient(message.recipient, { manual: true }); }
     catch (error) { throw operationError(403, error.message || 'Destinatario de prueba no autorizado.'); }
-    const attempts = Number(message.attempts) + 1;
+    if (!message.scheduled_at || bogotaDate(new Date(message.scheduled_at)) !== bogotaDate(now)) {
+      throw operationError(409, 'Esta prueba quedó pendiente de un día anterior. Prepara una prueba nueva.');
+    }
+    const attempts = 1;
     await db.query("UPDATE messages SET status='PROCESSING',attempts=?,last_attempt_at=?,budget_date=? WHERE id=? AND company_id=?", [attempts, now, bogotaDate(now), id, scope.companyId]);
     await audit(db, scope, actorId, 'meta_request', 'whatsapp_message', id, { recipient: message.recipient, attempts, test_mode: true });
     return { message: { ...message, attempts } };

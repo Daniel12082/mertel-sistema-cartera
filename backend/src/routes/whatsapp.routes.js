@@ -10,7 +10,7 @@ function respond(work) {
       messageId: req.params.messageId, stage: req.params.stage, filters: req.query, fail: req.body?.fail,
       status: req.body?.status, customerId: req.params.customerId }) }); }
     catch (error) {
-      if ([400, 403, 404, 409].includes(error.status)) return res.status(error.status).json({ success: false, message: error.message });
+      if ([400, 403, 404, 409, 429].includes(error.status)) return res.status(error.status).json({ success: false, message: error.message });
       if (['ER_BAD_FIELD_ERROR', 'ER_NO_SUCH_TABLE'].includes(error.code)) return res.status(503).json({ success: false, message: 'Ejecuta la migración 007 del centro WhatsApp antes de usar la cola.' });
       return next(error);
     }
