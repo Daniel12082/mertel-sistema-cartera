@@ -57,13 +57,25 @@ export default function WhatsAppConversations({ settings, chatOnly = false, pref
   const [showRemoved, setShowRemoved] = useState(false);
   const [newChat, setNewChat] = useState(false);
   const [newNumber, setNewNumber] = useState('');
-  const [newMessage, setNewMessage] = useState('');
   const [newChatError, setNewChatError] = useState('');
+  const newChatsKey = `mertel:wa-new-chats:${mode}:${preferenceOwner ?? 'admin'}`;
+  const [newChats, setNewChats] = useState(() => {
+    if (!chatOnly) return [];
+    try {
+      const saved = JSON.parse(localStorage.getItem(newChatsKey));
+      return Array.isArray(saved) ? saved.filter(row => row && phoneKey(row.phone)) : [];
+    } catch { return []; }
+  });
   useEffect(() => {
     if (chatOnly) {
       try { localStorage.setItem(preferenceKey, JSON.stringify(preferences)); } catch { /* Storage can be disabled. */ }
     }
   }, [chatOnly, preferenceKey, preferences]);
+  useEffect(() => {
+    if (chatOnly) {
+      try { localStorage.setItem(newChatsKey, JSON.stringify(newChats)); } catch { /* Storage can be disabled. */ }
+    }
+  }, [chatOnly, newChatsKey, newChats]);
   function updatePreference(key, patch) {
     setPreferences(current => ({ ...current, [key]: { ...current[key], ...patch } }));
   }
@@ -79,7 +91,16 @@ export default function WhatsAppConversations({ settings, chatOnly = false, pref
   const [busy, setBusy] = useState(false), [mobile, setMobile] = useState('list'), [associateId, setAssociateId] = useState('');
   const [loadingMore, setLoadingMore] = useState(false); const pagePending = useRef(false);
   const pending = useRef(false), active = useRef(true), chosen = useRef('');
-  const conversations = useMemo(() => buildConversations(customers, records), [customers, records]);
+  const conversations = useMemo(() => {
+    const rows = buildConversations(customers, records);
+    const existing = new Set(rows.map(row => phoneKey(row.phone)).filter(Boolean));
+    newChats.forEach(row => {
+      const phone = phoneKey(row.phone);
+      if (!phone || existing.has(phone)) return;
+      rows.push({ key: `unlinked:new:${phone}`, customer: null, name: 'Nuevo chat', phone: row.phone, nit: '', candidates: [], messages: [], last: null });
+    });
+    return rows;
+  }, [customers, records, newChats]);
   const conversation = conversations.find(row => row.key === selection) || null;
   const customerId = conversation?.customer ? String(conversation.customer.id) : '';
   const filtered = conversations.filter(row => (!chatOnly || Boolean(preferences[row.key]?.removed) === showRemoved) && (!customerFilter || String(row.customer?.id) === customerFilter) && (!filter || (filter === 'empty' ? !row.last : filter === 'history' ? Boolean(row.last) : row.last?.status === filter)) &&
@@ -207,14 +228,12 @@ export default function WhatsAppConversations({ settings, chatOnly = false, pref
     if (match) {
       setShowRemoved(Boolean(preferences[match.key]?.removed));
       choose(match.key);
-      if (newMessage.trim()) setDrafts(current => ({ ...current, [match.key]: newMessage }));
-    } else if (!simulated) {
-      window.open(`https://wa.me/${phone}?text=${encodeURIComponent(newMessage.trim())}`, '_blank', 'noopener,noreferrer');
     } else {
-      setNewChatError('En simulación puedes abrir los números de la bandeja.');
-      return;
+      const formatted = `+${phone}`;
+      setNewChats(current => current.some(row => phoneKey(row.phone) === phone) ? current : [...current, { phone: formatted, created_at: new Date().toISOString() }]);
+      choose(`unlinked:new:${phone}`);
     }
-    setNewChat(false); setNewNumber(''); setNewMessage(''); setNewChatError('');
+    setNewChat(false); setNewNumber(''); setNewChatError('');
   }
   function removeConversation() {
     if (!window.confirm('¿Quitar este chat de la bandeja? Podrás recuperarlo en Chats quitados.')) return;
@@ -235,10 +254,8 @@ export default function WhatsAppConversations({ settings, chatOnly = false, pref
           {newChat && <form className="wa-new-chat" onSubmit={openNumber}>
             <label htmlFor="wa-new-number">Número de WhatsApp</label>
             <input id="wa-new-number" type="tel" placeholder="+57…" value={newNumber} onChange={event => setNewNumber(event.target.value)} required />
-            <label htmlFor="wa-new-message">Mensaje (opcional)</label>
-            <textarea id="wa-new-message" maxLength={4096} value={newMessage} onChange={event => setNewMessage(event.target.value)} />
-            <button type="submit">Abrir chat</button>
-            <small>Los números nuevos se abren en WhatsApp.</small>
+            <button type="submit">Iniciar chat</button>
+            <small>El chat se crea en la bandeja. Podrás escribir el primer mensaje desde la conversación.</small>
             {newChatError && <p role="alert">{newChatError}</p>}
           </form>}
         </>}
