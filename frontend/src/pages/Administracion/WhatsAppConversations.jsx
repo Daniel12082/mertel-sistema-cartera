@@ -150,8 +150,8 @@ export default function WhatsAppConversations({ settings, chatOnly = false, pref
     const controller = new AbortController();
     Promise.allSettled([
       whatsappRequest('/messages', { params: { customer_id: customerId, page: 1 }, signal: controller.signal }),
-      !chatOnly && collectionResultsRequest(`/customers/${encodeURIComponent(customerId)}/context`, { signal: controller.signal }),
-      !chatOnly && whatsappRequest(`/customers/${encodeURIComponent(customerId)}/sequence`, { signal: controller.signal }),
+      collectionResultsRequest(`/customers/${encodeURIComponent(customerId)}/context`, { signal: controller.signal }),
+      whatsappRequest(`/customers/${encodeURIComponent(customerId)}/sequence`, { signal: controller.signal }),
     ]).then(([history, financial, sequence]) => {
       if (controller.signal.aborted) return;
       let context = null, next = null, rows = [], profileError = '', historyError = '', more = false;
@@ -268,7 +268,7 @@ export default function WhatsAppConversations({ settings, chatOnly = false, pref
       </aside>
       <main className="wa-chat" aria-label="Chat del cliente">
         {!conversation ? <div className="wa-chat-empty wa-chat-welcome"><MessageCircle size={44} /><h3>Tu bandeja de WhatsApp</h3><p>Selecciona una conversación para consultar los mensajes y la cartera del cliente.</p>{!metaConnected && <small>Sin conexión real con Meta</small>}</div> : <>
-          <header className="wa-chat-header"><button className="wa-inbox-back" aria-label="Volver a conversaciones" onClick={() => setMobile('list')}><ArrowLeft size={18} /></button><span className="wa-avatar">{conversation.name.slice(0, 2).toUpperCase()}</span><div><strong>{conversation.name}</strong><small>{conversation.phone || 'Sin teléfono registrado'}</small></div>{!chatOnly && <button className="wa-profile-toggle" onClick={() => setMobile(mobile === 'details' ? 'chat' : 'details')}><UserRound size={17} />{mobile === 'details' ? 'Volver al chat' : 'Ficha del cliente'}</button>}</header>
+          <header className="wa-chat-header"><button className="wa-inbox-back" aria-label="Volver a conversaciones" onClick={() => setMobile('list')}><ArrowLeft size={18} /></button><span className="wa-avatar">{conversation.name.slice(0, 2).toUpperCase()}</span><div><strong>{conversation.name}</strong><small>{conversation.phone || 'Sin teléfono registrado'}</small></div><button className="wa-profile-toggle" onClick={() => setMobile(mobile === 'details' ? 'chat' : 'details')}><UserRound size={17} />{mobile === 'details' ? 'Volver al chat' : 'Ficha del cliente'}</button></header>
           {chatOnly && <div className="wa-inbox-actions wa-chat-actions" aria-label="Acciones de la conversación">
             {preferences[selection]?.removed ? <button type="button" onClick={() => { updatePreference(selection, { removed: false }); setShowRemoved(false); }}>Restaurar chat</button> : <>
               <button type="button" onClick={() => updatePreference(selection, { pinned: !preferences[selection]?.pinned })}>{preferences[selection]?.pinned ? 'Desfijar' : 'Fijar'}</button>
@@ -309,7 +309,7 @@ export default function WhatsAppConversations({ settings, chatOnly = false, pref
           </form>}
         </>}
       </main>
-      {!chatOnly && <CustomerCard customer={conversation?.customer} context={detail.context} sequence={detail.sequence} lastContact={lastContact} error={detail.error} loading={detail.loading} retry={() => { setDetail(current => ({ ...current, loading: true, error: '' })); setRevision(value => value + 1); }} />}
+      <CustomerCard customer={conversation?.customer} context={detail.context} sequence={detail.sequence} lastContact={lastContact} error={detail.error} loading={detail.loading} retry={() => { setDetail(current => ({ ...current, loading: true, error: '' })); setRevision(value => value + 1); }} />
     </div>
   </section>;
 }
