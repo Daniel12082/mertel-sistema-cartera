@@ -62,7 +62,7 @@ export default function WhatsAppCenter({ chatOnly = false }) {
   const stages = data?.stage_catalog || []; const metaTestMode = settings?.provider === 'WHATSAPP_CLOUD_API' && settings?.test_mode;
   function changeFilter(key, value) { setFilters(current => ({ ...current, [key]: value, page: 1 })); }
   if (!authorized) return <section className="wa-center"><h1>Centro de WhatsApp MERTEL</h1><p role="alert">No tienes permiso para configurar WhatsApp.</p></section>;
-  if (chatOnly) return <section className="wa-center">
+  if (chatOnly) return <section className="wa-center wa-center-expanded">
     {error && <p role="alert" className="wa-error">{error}</p>}
     {settings ? <WhatsAppConversations key={`${mode}:${user?.id ?? 'admin'}`} settings={settings} chatOnly preferenceOwner={user?.id} /> : !error && <p role="status">Cargando WhatsApp…</p>}
   </section>;

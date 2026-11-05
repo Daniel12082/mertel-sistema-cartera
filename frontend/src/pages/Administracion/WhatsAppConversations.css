@@ -71,3 +71,50 @@
 .wa-chat-actions { padding: 8px 14px; border-bottom: 1px solid #dce5e9; }
 .wa-new-chat { display: grid; gap: 6px; }
 .wa-inbox-unread { color: #126858; font-weight: 700; }
+
+.wa-center.wa-center-expanded {
+  width: 100%;
+  max-width: none;
+  margin: 0;
+}
+
+.mertel-content:has(> .wa-center-expanded) {
+  padding: 12px;
+  background-image: none;
+}
+
+@media (min-width: 701px) {
+  .mertel-main:has(.wa-center-expanded) {
+    width: auto;
+    flex: 1;
+    min-width: 0;
+    height: 100dvh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .mertel-main:has(.wa-center-expanded) > .mertel-header {
+    flex-shrink: 0;
+  }
+
+  .mertel-content:has(> .wa-center-expanded),
+  .wa-center-expanded,
+  .wa-center-expanded > .wa-inbox {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-height: 0;
+  }
+
+  .wa-center-expanded .wa-inbox-layout.wa-chat-only {
+    flex: 1;
+    height: auto;
+    min-height: 320px;
+    grid-template-columns: clamp(230px, 26%, 400px) minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 700px) {
+  .mertel-content:has(> .wa-center-expanded) { padding: 8px; }
+  .wa-center-expanded .wa-inbox-layout.wa-chat-only { height: max(500px, 72dvh); }
+}
