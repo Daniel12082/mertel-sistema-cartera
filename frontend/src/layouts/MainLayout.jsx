@@ -41,6 +41,7 @@ function MainLayout() {
           <div className="mertel-brand-mark">{appearance.compactLogo ? <img src={appearance.compactLogo} alt="Logo compacto"/> : appearance.name.slice(0,1)}</div>
 
           <div className="mertel-brand-copy">
+            <span className="mertel-brand-kicker">Sistema operativo</span>
             <strong>{appearance.name}</strong>
             <span>{appearance.description}</span>
           </div>
@@ -96,6 +97,7 @@ function MainLayout() {
         <header className="mertel-header">
           <div>
             {appearance.logo && <img className="mertel-brand-main-logo" src={appearance.logo} alt="Logo principal"/>}
+            <span className="mertel-header-kicker">MERTEL IMPORTACIONES · CARTERA</span>
             <h1>{appearance.name}</h1>
             <span>{appearance.description}</span>
           </div>

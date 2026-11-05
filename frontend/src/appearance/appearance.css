@@ -7,15 +7,15 @@ html[data-mertel-theme] {
   --mertel-hover:color-mix(in srgb,var(--mertel-primary) 7%,var(--mertel-surface));
   --mertel-focus:var(--mertel-text);
 }
-html[data-mertel-theme] :is(.mertel-header,.ui-panel,.ui-stat,.bi-panel,.users-dialog,.collection-settings-section,.wa-card,.role-permissions table) { background:var(--mertel-surface);color:var(--mertel-text); }
+html[data-mertel-theme] :is(.ui-panel,.ui-stat,.bi-panel,.users-dialog,.collection-settings-section,.wa-card,.role-permissions table) { background:var(--mertel-surface);color:var(--mertel-text); }
 html[data-mertel-theme] :is(.cartera-panel,.cartera-modal,.cartera-summary-card,.dashboard-panel,.dashboard-card,.mertel-card,.mertel-panel) { background:var(--mertel-surface);color:var(--mertel-text); }
 html[data-mertel-theme] .mertel-content :is(input:not([type=checkbox],[type=color],[type=file]),select,textarea,th,td) { background:var(--mertel-surface);color:var(--mertel-text); }
-html[data-mertel-theme] .mertel-sidebar { background:var(--mertel-sidebar);color:var(--mertel-sidebar-foreground); }
+html[data-mertel-theme] :is(.mertel-sidebar,.mertel-header) { background:var(--mertel-sidebar);color:var(--mertel-sidebar-foreground); }
 html[data-mertel-theme] :is(.mertel-nav-item,.mertel-brand-copy span,.mertel-navigation-group>span,.mertel-sidebar-footer span,.mertel-sidebar-footer small) { color:var(--mertel-sidebar-foreground); }
-html[data-mertel-theme] .mertel-nav-item.active { background:var(--mertel-surface);color:var(--mertel-text); }
+html[data-mertel-theme] .mertel-nav-item.active { background:var(--mertel-accent);color:var(--mertel-accent-foreground); }
 html[data-mertel-theme] .mertel-sidebar a:focus-visible { outline-color:var(--mertel-sidebar-foreground); }
 html[data-mertel-theme] .mertel-sidebar a.active:focus-visible { outline-color:var(--mertel-text); }
-html[data-mertel-theme] .mertel-brand-mark { color:var(--mertel-text);background:var(--mertel-surface); }
+html[data-mertel-theme] .mertel-brand-mark { color:var(--mertel-accent-foreground);background:var(--mertel-accent); }
 html[data-mertel-theme] :is(.users-primary,.collection-settings-section button,.mertel-button-primary) { background:var(--mertel-primary);color:var(--mertel-primary-foreground); }
 .mertel-brand-mark img { width:32px;height:32px;object-fit:contain; }
 .mertel-brand-copy { min-width:0; }

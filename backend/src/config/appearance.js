@@ -3,7 +3,7 @@ export const MAX_LOGO_BYTES = 20 * 1024;
 export const DEFAULT_APPEARANCE = Object.freeze({
   name: 'MERTEL', description: 'Sistema de gestión de cartera',
   logo: null, compactLogo: null,
-  colors: Object.freeze({primary: '#172033', accent: '#e30613', sidebar: '#172033', background: '#f4f6f9', surface: '#ffffff', text: '#172033'}),
+  colors: Object.freeze({primary: '#070707', accent: '#e43134', sidebar: '#070707', background: '#f4f3f0', surface: '#ffffff', text: '#111318'}),
 });
 export function contrastRatio(a, b) {
   const luminance = hex => {

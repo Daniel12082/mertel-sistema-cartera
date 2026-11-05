@@ -1,25 +1,25 @@
 @import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap");
 
 :root {
-  font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  color: #172033;
-  background: #f4f6f9;
+  font-family: Inter, Arial, sans-serif;
+  color: #111318;
+  background: #f4f3f0;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
 
-  --mertel-navy: #172033;
-  --mertel-navy-soft: #202b42;
-  --mertel-red: #e30613;
-  --mertel-red-dark: #c90511;
-  --mertel-bg: #f4f6f9;
+  --mertel-navy: #070707;
+  --mertel-navy-soft: #171717;
+  --mertel-red: #e43134;
+  --mertel-red-dark: #bd2026;
+  --mertel-bg: #f4f3f0;
   --mertel-white: #ffffff;
-  --mertel-border: #e3e9f1;
-  --mertel-text: #172033;
-  --mertel-muted: #667085;
-  --mertel-hover: #eef1f6;
-  --mertel-shadow: 0 2px 6px rgba(16, 24, 40, 0.035);
-  --mertel-radius: 12px;
-  --mertel-focus: #365c91;
+  --mertel-border: #171717;
+  --mertel-text: #111318;
+  --mertel-muted: #5d6068;
+  --mertel-hover: #ededeb;
+  --mertel-shadow: 5px 5px 0 rgba(7, 7, 7, 0.95);
+  --mertel-radius: 0;
+  --mertel-focus: #e43134;
 }
 
 * {
@@ -81,12 +81,13 @@ a {
 .mertel-sidebar {
   position: fixed;
   inset: 0 auto 0 0;
-  width: 250px;
+  width: 270px;
   display: flex;
   flex-direction: column;
   background: var(--mertel-navy);
   color: #fff;
-  padding: 28px 16px 18px;
+  padding: 23px 16px 18px;
+  border-right: 3px solid var(--mertel-red);
   z-index: 20;
 }
 
@@ -94,7 +95,7 @@ a {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 0 10px 30px;
+  padding: 0 10px 27px;
 }
 
 .mertel-brand-mark {
@@ -103,9 +104,10 @@ a {
   flex: 0 0 38px;
   display: grid;
   place-items: center;
-  border-radius: 11px;
-  background: #fff;
-  color: var(--mertel-navy);
+  border-radius: 0;
+  background: var(--mertel-red);
+  color: #fff;
+  border: 2px solid #fff;
   font-size: 18px;
   font-weight: 800;
 }
@@ -117,13 +119,23 @@ a {
 }
 
 .mertel-brand-copy strong {
-  font-size: 16px;
-  letter-spacing: 0.5px;
+  font-size: 17px;
+  letter-spacing: -0.4px;
+  text-transform: uppercase;
 }
 
 .mertel-brand-copy span {
   color: #aeb8ca;
   font-size: 11px;
+}
+
+.mertel-brand-copy .mertel-brand-kicker,
+.mertel-header-kicker {
+  color: var(--mertel-red);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .12em;
+  text-transform: uppercase;
 }
 
 .mertel-navigation {
@@ -145,7 +157,7 @@ a {
   gap: 4px;
   margin-top: 13px;
   padding-top: 11px;
-  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  border-top: 1px solid rgba(255, 255, 255, 0.22);
 }
 
 .mertel-navigation-group > span {
@@ -163,7 +175,7 @@ a {
   align-items: center;
   gap: 13px;
   padding: 0 13px;
-  border-radius: 9px;
+  border-radius: 0;
   color: #d7ddea;
   font-size: 14px;
   font-weight: 500;
@@ -171,14 +183,15 @@ a {
 }
 
 .mertel-nav-item:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.13);
   color: #fff;
 }
 
 .mertel-nav-item.active {
-  background: #fff;
-  color: var(--mertel-navy);
+  background: var(--mertel-red);
+  color: #fff;
   font-weight: 600;
+  box-shadow: 4px 4px 0 #fff;
 }
 
 .mertel-sidebar-footer {
@@ -202,35 +215,39 @@ a {
 }
 
 .mertel-main {
-  width: calc(100% - 250px);
+  width: calc(100% - 270px);
   min-height: 100vh;
   margin-left: 250px;
 }
 
 .mertel-header {
-  height: 78px;
+  min-height: 82px;
   display: flex;
   align-items: center;
   padding: 0 32px;
-  background: #fff;
-  border-bottom: 1px solid var(--mertel-border);
+  background: #070707;
+  border-bottom: 3px solid var(--mertel-red);
+  color: #fff;
 }
 
 .mertel-header h1 {
   margin: 0 0 4px;
-  font-size: 18px;
+  font-size: 19px;
+  letter-spacing: -.5px;
+  text-transform: uppercase;
   line-height: 1;
   font-weight: 700;
 }
 
 .mertel-header span {
-  color: var(--mertel-muted);
+  color: #c5c5c5;
   font-size: 12px;
 }
 
 .mertel-content {
   min-height: calc(100vh - 78px);
-  padding: 32px;
+  padding: 34px;
+  background-image: linear-gradient(90deg, transparent 0 97%, rgba(228, 49, 52, .08) 97% 100%);
 }
 
 /* Contenido de páginas */
@@ -247,9 +264,10 @@ a {
 
 .mertel-page-header h2 {
   margin: 0 0 7px;
-  font-size: 28px;
-  line-height: 1.2;
-  letter-spacing: -0.5px;
+  font-size: 30px;
+  line-height: 1;
+  letter-spacing: -1px;
+  text-transform: uppercase;
 }
 
 .mertel-page-header p {
@@ -267,7 +285,7 @@ a {
   justify-content: center;
   gap: 8px;
   border: 1px solid transparent;
-  border-radius: 8px;
+  border-radius: 0;
   padding: 0 15px;
   font-size: 13px;
   font-weight: 600;
@@ -277,6 +295,8 @@ a {
 .mertel-button-primary {
   background: var(--mertel-red);
   color: #fff;
+  border-color: #070707;
+  box-shadow: 3px 3px 0 #070707;
 }
 
 .mertel-button-primary:hover {
@@ -286,7 +306,7 @@ a {
 .mertel-button-secondary {
   background: #fff;
   color: var(--mertel-text);
-  border-color: var(--mertel-border);
+  border-color: #070707;
 }
 
 .mertel-button-secondary:hover {
@@ -299,8 +319,8 @@ a {
 .mertel-select {
   width: 100%;
   min-height: 40px;
-  border: 1px solid #cfd6e2;
-  border-radius: 8px;
+  border: 1px solid #171717;
+  border-radius: 0;
   background: #fff;
   color: var(--mertel-text);
   padding: 0 12px;
@@ -319,8 +339,8 @@ a {
 
 .mertel-card {
   background: #fff;
-  border: 1px solid var(--mertel-border);
-  border-radius: 12px;
+  border: 2px solid var(--mertel-border);
+  border-radius: 0;
   box-shadow: var(--mertel-shadow);
 }
 
@@ -337,12 +357,12 @@ a {
 
 @media (max-width: 900px) {
   .mertel-sidebar {
-    width: 215px;
+    width: 230px;
   }
 
   .mertel-main {
-    width: calc(100% - 215px);
-    margin-left: 215px;
+    width: calc(100% - 230px);
+    margin-left: 230px;
   }
 
   .mertel-content {
