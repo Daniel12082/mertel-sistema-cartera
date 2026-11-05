@@ -59,10 +59,10 @@ export class MetaWhatsAppProvider extends WhatsAppProvider {
   }
 
   assertTestRecipient(value, { manual = false } = {}) {
-    if (this.env.WHATSAPP_TEST_MODE !== 'true') throw providerError('META_TEST_MODE_REQUIRED', 'El envío real está deshabilitado: activa el modo de pruebas en el backend.');
     const configured = String(this.env.WHATSAPP_TEST_ALLOWED_RECIPIENTS || '').split(',').map(item => item.trim()).filter(Boolean);
     let recipient;
     try { recipient = normalizePhone(value); } catch { throw providerError('META_RECIPIENT_INVALID', 'Destinatario inválido.'); }
+    if (this.env.WHATSAPP_TEST_MODE !== 'true') return recipient;
     let configuredRecipient = null;
     try { configuredRecipient = configured.length === 1 ? normalizePhone(configured[0]) : null; } catch { /* rejected below */ }
     const allowed = configuredRecipient === META_TEST_RECIPIENT;

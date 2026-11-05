@@ -274,7 +274,6 @@ export async function enqueueWhatsApp({ scope, actorId, body, now = new Date() }
   if (!body || Object.keys(body).some(key => !['customer_id', 'template_id', 'mode'].includes(key)) || !['MANUAL', 'AUTOMATICO'].includes(body.mode)) throw operationError(400, 'Modo o campos de mensaje inválidos.');
   const customerId = operationId(body.customer_id, 'customer_id');
   return transaction(scope, async (db, settings) => {
-    if (runtimeProvider(settings) === 'WHATSAPP_CLOUD_API') throw operationError(403, 'Durante las pruebas de Meta se bloquean los mensajes de cartera. Usa únicamente el envío manual de prueba autorizado.');
     if (body.mode === 'AUTOMATICO') return enqueueAutomatic(db, { ...scope, actorId: null }, settings, customerId, now);
     const stages = await stagesFor(db, scope);
     // Template, variables and stage are resolved from the collection engine inside the transaction.
@@ -316,7 +315,7 @@ export async function mockSendWhatsApp({ scope, actorId, messageId, customerId, 
     const message = await messageById(db, scope, id, true);
     if(customerId&&String(customerId)!==String(message.customer_id))throw operationError(404,'Mensaje no encontrado para este cliente.');
     if (message.message_mode === 'AUTOMATICO') return dispatchAutomatic(db, { ...scope, actorId: null }, settings, message, now, fail);
-    if (message.direction !== 'outbound' || message.provider !== 'MOCK' || !['PENDING', 'FAILED'].includes(message.status)) throw operationError(409, 'El mensaje no puede procesarse en MOCK.');
+    if (message.direction !== 'outbound' || !['MOCK', 'WHATSAPP_CLOUD_API'].includes(message.provider) || !['PENDING', 'FAILED'].includes(message.status)) throw operationError(409, 'El mensaje no puede procesarse.');
     if (message.attempts >= RETRY_POLICY.max_attempts) throw operationError(409, 'Máximo de intentos alcanzado.');
     if (message.next_attempt_at && new Date(message.next_attempt_at) > now) throw operationError(409, 'El reintento todavía no está disponible.');
     let rule = settings.rules.find(item => item.stage === message.stage && item.enabled && item.mode === message.message_mode && item.template_id === message.template_id);
@@ -336,12 +335,15 @@ export async function mockSendWhatsApp({ scope, actorId, messageId, customerId, 
     await enforceLimits(db, scope, settings, rule, message.customer_id, bogotaDate(now), id);
     const attempts = Number(message.attempts) + 1;
     await db.query("UPDATE messages SET status='PROCESSING',attempts=?,last_attempt_at=?,budget_date=? WHERE id=? AND company_id=?", [attempts, now, bogotaDate(now), id, scope.companyId]);
-    const result = await whatsappProvider('MOCK').sendTemplateMessage({ content: message.content, recipient: message.recipient, fail });
+    const provider = message.provider === 'WHATSAPP_CLOUD_API' ? whatsappProvider('WHATSAPP_CLOUD_API') : whatsappProvider('MOCK');
+    const result = message.provider === 'WHATSAPP_CLOUD_API'
+      ? await provider.sendTemplateMessage({ recipient: message.recipient, manual: true, template: { name: message.template_name, language: process.env.WHATSAPP_TEMPLATE_LANGUAGE || 'es' } })
+      : await provider.sendTemplateMessage({ content: message.content, recipient: message.recipient, fail });
     await db.query(`UPDATE messages SET status=?,provider_message_id=?,sent_at=?,error_code=?,error_message=?,next_attempt_at=? WHERE id=? AND company_id=?`,
       [result.status, result.provider_message_id ?? null, result.status === 'SENT' ? now : null, result.error_code ?? null,
         result.error_message ?? null, result.status === 'FAILED' ? retryAt(attempts, now) : null, id, scope.companyId]);
-    await audit(db, scope, actorId, result.status.toLowerCase(), 'whatsapp_message', id, { status: result.status, simulated: true, attempts });
-    return { message: await messageById(db, scope, id), simulated: true };
+    await audit(db, scope, actorId, result.status.toLowerCase(), 'whatsapp_message', id, { status: result.status, simulated: message.provider === 'MOCK', attempts });
+    return { message: await messageById(db, scope, id), ...(message.provider === 'MOCK' ? { simulated: true } : { accepted: true }) };
   }, dbPool);
 }
 export async function cancelWhatsAppMessage({ scope, actorId, messageId }, dbPool = pool) {
