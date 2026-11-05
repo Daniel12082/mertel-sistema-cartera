@@ -45,9 +45,28 @@ function ChatMessages({ messages }) {
   </div>;
 }
 
-export default function WhatsAppConversations({ settings }) {
+export default function WhatsAppConversations({ settings, chatOnly = false, preferenceOwner }) {
   const { mode } = useAppDataMode(); const simulated = mode === 'SIMULATION';
   const metaConnected = !simulated && settings?.provider === 'WHATSAPP_CLOUD_API' && settings?.connection_status === 'CONNECTED';
+  const preferenceKey = `mertel:wa-inbox:${mode}:${preferenceOwner ?? 'admin'}`;
+  const [preferences, setPreferences] = useState(() => {
+    if (!chatOnly) return {};
+    try { return JSON.parse(localStorage.getItem(preferenceKey)) || {}; }
+    catch { return {}; }
+  });
+  const [showRemoved, setShowRemoved] = useState(false);
+  const [newChat, setNewChat] = useState(false);
+  const [newNumber, setNewNumber] = useState('');
+  const [newMessage, setNewMessage] = useState('');
+  const [newChatError, setNewChatError] = useState('');
+  useEffect(() => {
+    if (chatOnly) {
+      try { localStorage.setItem(preferenceKey, JSON.stringify(preferences)); } catch { /* Storage can be disabled. */ }
+    }
+  }, [chatOnly, preferenceKey, preferences]);
+  function updatePreference(key, patch) {
+    setPreferences(current => ({ ...current, [key]: { ...current[key], ...patch } }));
+  }
   const [customers, setCustomers] = useState([]), [records, setRecords] = useState([]);
   const [selection, setSelection] = useState(''), [search, setSearch] = useState(''), [filter, setFilter] = useState(''), [customerFilter, setCustomerFilter] = useState('');
   const [loading, setLoading] = useState(true), [error, setError] = useState(''), [revision, setRevision] = useState(0);
@@ -63,8 +82,8 @@ export default function WhatsAppConversations({ settings }) {
   const conversations = useMemo(() => buildConversations(customers, records), [customers, records]);
   const conversation = conversations.find(row => row.key === selection) || null;
   const customerId = conversation?.customer ? String(conversation.customer.id) : '';
-  const filtered = conversations.filter(row => (!customerFilter || String(row.customer?.id) === customerFilter) && (!filter || (filter === 'empty' ? !row.last : filter === 'history' ? Boolean(row.last) : row.last?.status === filter)) &&
-    `${row.name} ${row.nit} ${row.phone}`.toLocaleLowerCase().includes(search.toLocaleLowerCase().trim()));
+  const filtered = conversations.filter(row => (!chatOnly || Boolean(preferences[row.key]?.removed) === showRemoved) && (!customerFilter || String(row.customer?.id) === customerFilter) && (!filter || (filter === 'empty' ? !row.last : filter === 'history' ? Boolean(row.last) : row.last?.status === filter)) &&
+    `${row.name} ${row.nit} ${row.phone}`.toLocaleLowerCase().includes(search.toLocaleLowerCase().trim())).sort((a, b) => Number(Boolean(preferences[b.key]?.pinned)) - Number(Boolean(preferences[a.key]?.pinned)));
   const messages = merge(conversation?.messages || [], detail.messages).sort((a, b) => (new Date(messageTime(a)).getTime() || 0) - (new Date(messageTime(b)).getTime() || 0));
   const latestContact = messages.filter(row => row.direction === 'inbound' ? Boolean(row.received_at) : Boolean(row.sent_at)).at(-1);
   const lastContact = latestContact ? { date: messageTime(latestContact), label: latestContact.direction === 'inbound' ? 'Mensaje recibido' : latestContact.template_name || 'WhatsApp' } : detail.sequence?.last_contact;
@@ -110,8 +129,8 @@ export default function WhatsAppConversations({ settings }) {
     const controller = new AbortController();
     Promise.allSettled([
       whatsappRequest('/messages', { params: { customer_id: customerId, page: 1 }, signal: controller.signal }),
-      collectionResultsRequest(`/customers/${encodeURIComponent(customerId)}/context`, { signal: controller.signal }),
-      whatsappRequest(`/customers/${encodeURIComponent(customerId)}/sequence`, { signal: controller.signal }),
+      !chatOnly && collectionResultsRequest(`/customers/${encodeURIComponent(customerId)}/context`, { signal: controller.signal }),
+      !chatOnly && whatsappRequest(`/customers/${encodeURIComponent(customerId)}/sequence`, { signal: controller.signal }),
     ]).then(([history, financial, sequence]) => {
       if (controller.signal.aborted) return;
       let context = null, next = null, rows = [], profileError = '', historyError = '', more = false;
@@ -124,9 +143,10 @@ export default function WhatsAppConversations({ settings }) {
       setDetail({ messages: rows, context, sequence: next, error: profileError, historyError, loading: false, page: 1, hasNext: more });
     });
     return () => controller.abort();
-  }, [customerId, revision]);
+  }, [customerId, revision, chatOnly]);
 
   function choose(key) {
+    if (chatOnly && preferences[key]?.unread) updatePreference(key, { unread: false });
     if (chosen.current === key) setRevision(value => value + 1);
     chosen.current = key; setSelection(key); setMobile('chat'); setNotice(''); setSendError(''); setAssociateId('');
     setQuickBusy(false);
@@ -178,21 +198,67 @@ export default function WhatsAppConversations({ settings }) {
     } catch (failure) { if (active.current) setSendError(failure.message); }
     finally { pending.current = false; if (active.current) setBusy(false); }
   }
+  function openNumber(event) {
+    event.preventDefault();
+    const phone = phoneKey(newNumber);
+    if (!phone) { setNewChatError('Escribe un número válido con código de país.'); return; }
+    const matches = conversations.filter(row => phoneKey(row.phone) === phone);
+    const match = matches.length === 1 ? matches[0] : matches.find(row => !row.customer);
+    if (match) {
+      setShowRemoved(Boolean(preferences[match.key]?.removed));
+      choose(match.key);
+      if (newMessage.trim()) setDrafts(current => ({ ...current, [match.key]: newMessage }));
+    } else if (!simulated) {
+      window.open(`https://wa.me/${phone}?text=${encodeURIComponent(newMessage.trim())}`, '_blank', 'noopener,noreferrer');
+    } else {
+      setNewChatError('En simulación puedes abrir los números de la bandeja.');
+      return;
+    }
+    setNewChat(false); setNewNumber(''); setNewMessage(''); setNewChatError('');
+  }
+  function removeConversation() {
+    if (!window.confirm('¿Quitar este chat de la bandeja? Podrás recuperarlo en Chats quitados.')) return;
+    updatePreference(selection, { removed: true, pinned: false });
+    choose(''); setMobile('list');
+  }
   return <section className="wa-inbox" aria-label="Bandeja de conversaciones">
-    <header className="wa-inbox-heading"><div><span className="wa-eyebrow">ATENCIÓN A CLIENTES · MERTEL</span><h2>Conversaciones</h2><p>Cada conversación, con el contexto de su cartera.</p></div><span className="wa-inbox-mode"><ShieldCheck size={16} />{simulated ? 'Demo local' : metaConnected ? 'Meta conectada · prueba controlada' : 'Proveedor MOCK · Meta pendiente'}</span></header>
+    <header className="wa-inbox-heading"><div><span className="wa-eyebrow">ATENCIÓN A CLIENTES · MERTEL</span><h2>{chatOnly ? "WhatsApp" : "Conversaciones"}</h2><p>{chatOnly ? "Bandeja de conversaciones" : "Cada conversación, con el contexto de su cartera."}</p></div><span className="wa-inbox-mode"><ShieldCheck size={16} />{simulated ? 'Demo local' : metaConnected ? 'Meta conectada · prueba controlada' : 'Proveedor MOCK · Meta pendiente'}</span></header>
     <p className="wa-inbox-warning">{simulated ? 'SIMULACIÓN — No se enviará ningún mensaje real' : metaConnected ? 'Meta está conectada. Puedes responder con texto al número de prueba autorizado dentro de las 24 horas siguientes a su último mensaje.' : 'Meta no está conectado. La redacción libre está disponible únicamente en Modo Simulación.'}</p>
     {error && <div className="wa-error" role="alert">{error}<button onClick={() => { setError(''); setLoading(true); setRevision(value => value + 1); }}>Reintentar conversaciones</button></div>}
-    <div className={`wa-inbox-layout mobile-${mobile}`}>
-      <aside className="wa-conversation-list" aria-label="Lista de conversaciones"><div className="wa-list-controls"><label className="wa-inbox-search"><Search size={17} /><input aria-label="Buscar conversaciones" placeholder="Nombre, NIT o teléfono" value={search} onChange={event => setSearch(event.target.value)} /></label>
+    <div className={`wa-inbox-layout mobile-${mobile}${chatOnly ? " wa-chat-only" : ""}`}>
+      <aside className="wa-conversation-list" aria-label="Lista de conversaciones"><div className="wa-list-controls">
+        {chatOnly && <>
+          <div className="wa-inbox-actions">
+            <button type="button" aria-expanded={newChat} onClick={() => { setNewChat(!newChat); setNewChatError(''); }}>Nuevo chat</button>
+            <button type="button" aria-pressed={showRemoved} onClick={() => { setShowRemoved(!showRemoved); choose(''); setMobile('list'); }}>{showRemoved ? 'Volver a la bandeja' : 'Chats quitados'}</button>
+          </div>
+          {newChat && <form className="wa-new-chat" onSubmit={openNumber}>
+            <label htmlFor="wa-new-number">Número de WhatsApp</label>
+            <input id="wa-new-number" type="tel" placeholder="+57…" value={newNumber} onChange={event => setNewNumber(event.target.value)} required />
+            <label htmlFor="wa-new-message">Mensaje (opcional)</label>
+            <textarea id="wa-new-message" maxLength={4096} value={newMessage} onChange={event => setNewMessage(event.target.value)} />
+            <button type="submit">Abrir chat</button>
+            <small>Los números nuevos se abren en WhatsApp.</small>
+            {newChatError && <p role="alert">{newChatError}</p>}
+          </form>}
+        </>}
+        <label className="wa-inbox-search"><Search size={17} /><input aria-label="Buscar conversaciones" placeholder="Nombre, NIT o teléfono" value={search} onChange={event => setSearch(event.target.value)} /></label>
         <div className="wa-inbox-filters"><label>Cliente<select aria-label="Filtrar conversaciones por cliente" value={customerFilter} onChange={event => setCustomerFilter(event.target.value)}><option value="">Todos los clientes</option>{customers.map(row => <option key={row.id} value={row.id}>{row.name}</option>)}</select></label>
           <label>Conversación<select aria-label="Filtrar conversaciones por estado" value={filter} onChange={event => setFilter(event.target.value)}><option value="">Todas</option><option value="history">Con mensajes recientes</option><option value="empty">Sin mensajes recientes</option>{Object.entries(conversationStatus).map(([key, label]) => <option key={key} value={key}>Último: {label}</option>)}</select></label></div></div>
         <div className="wa-conversation-scroll">{loading && <p role="status">Cargando conversaciones…</p>}{!loading && !filtered.length && <p className="wa-list-empty">No hay conversaciones para estos filtros.</p>}
-          {filtered.map(row => <button key={row.key} className={`wa-conversation-item ${row.key === selection ? 'selected' : ''}`} aria-label={`Abrir conversación ${row.name}`} aria-pressed={row.key === selection} onClick={() => choose(row.key)}><span className="wa-avatar">{row.name.slice(0, 2).toUpperCase()}</span><span className="wa-conversation-text"><strong>{row.name}</strong><small>{row.phone || 'Sin teléfono'}</small><span>{row.last?.content || 'Sin mensajes recientes'}</span><small>{row.last ? time(messageTime(row.last)) : 'Sin fecha de contacto'}</small></span></button>)}
+          {filtered.map(row => <button key={row.key} className={`wa-conversation-item ${row.key === selection ? 'selected' : ''}`} aria-label={`Abrir conversación ${row.name}`} aria-pressed={row.key === selection} onClick={() => choose(row.key)}><span className="wa-avatar">{row.name.slice(0, 2).toUpperCase()}</span><span className="wa-conversation-text"><strong>{row.name}</strong>{preferences[row.key]?.pinned && <small>Fijado</small>}{preferences[row.key]?.unread && <small className="wa-inbox-unread">No leído</small>}<small>{row.phone || 'Sin teléfono'}</small><span>{row.last?.content || 'Sin mensajes recientes'}</span><small>{row.last ? time(messageTime(row.last)) : 'Sin fecha de contacto'}</small></span></button>)}
           {hasNext && <button className="wa-list-more" disabled={loadingMore} onClick={() => loadMore(false)}>Cargar más conversaciones</button>}</div>
       </aside>
       <main className="wa-chat" aria-label="Chat del cliente">
-        {!conversation ? <div className="wa-chat-empty wa-chat-welcome"><MessageCircle size={44} /><h3>Tu bandeja de WhatsApp</h3><p>Selecciona una conversación para consultar los mensajes y la cartera del cliente.</p><small>Sin conexión real con Meta</small></div> : <>
-          <header className="wa-chat-header"><button className="wa-inbox-back" aria-label="Volver a conversaciones" onClick={() => setMobile('list')}><ArrowLeft size={18} /></button><span className="wa-avatar">{conversation.name.slice(0, 2).toUpperCase()}</span><div><strong>{conversation.name}</strong><small>{conversation.phone || 'Sin teléfono registrado'}</small></div><button className="wa-profile-toggle" onClick={() => setMobile(mobile === 'details' ? 'chat' : 'details')}><UserRound size={17} />{mobile === 'details' ? 'Volver al chat' : 'Ficha del cliente'}</button></header>
+        {!conversation ? <div className="wa-chat-empty wa-chat-welcome"><MessageCircle size={44} /><h3>Tu bandeja de WhatsApp</h3><p>Selecciona una conversación para consultar los mensajes y la cartera del cliente.</p>{!metaConnected && <small>Sin conexión real con Meta</small>}</div> : <>
+          <header className="wa-chat-header"><button className="wa-inbox-back" aria-label="Volver a conversaciones" onClick={() => setMobile('list')}><ArrowLeft size={18} /></button><span className="wa-avatar">{conversation.name.slice(0, 2).toUpperCase()}</span><div><strong>{conversation.name}</strong><small>{conversation.phone || 'Sin teléfono registrado'}</small></div>{!chatOnly && <button className="wa-profile-toggle" onClick={() => setMobile(mobile === 'details' ? 'chat' : 'details')}><UserRound size={17} />{mobile === 'details' ? 'Volver al chat' : 'Ficha del cliente'}</button>}</header>
+          {chatOnly && <div className="wa-inbox-actions wa-chat-actions" aria-label="Acciones de la conversación">
+            {preferences[selection]?.removed ? <button type="button" onClick={() => { updatePreference(selection, { removed: false }); setShowRemoved(false); }}>Restaurar chat</button> : <>
+              <button type="button" onClick={() => updatePreference(selection, { pinned: !preferences[selection]?.pinned })}>{preferences[selection]?.pinned ? 'Desfijar' : 'Fijar'}</button>
+              <button type="button" onClick={() => updatePreference(selection, { unread: !preferences[selection]?.unread })}>{preferences[selection]?.unread ? 'Marcar como leído' : 'Marcar como no leído'}</button>
+              <button type="button" onClick={removeConversation}>Quitar de la bandeja</button>
+            </>}
+          </div>}
           {!conversation.customer && <div className="wa-association"><p>{conversation.candidates.length > 1 ? 'Hay varios clientes con este teléfono. Selecciona explícitamente a quién pertenece esta conversación.' : 'No hay una identidad de cliente confirmada para esta conversación.'}</p>
             {simulated && conversation.candidates.length > 1 && <><label>Cliente para asociar<select aria-label="Cliente para asociar" value={associateId} onChange={event => setAssociateId(event.target.value)}><option value="">Seleccionar cliente</option>{conversation.candidates.map(row => <option key={row.id} value={row.id}>{row.name} · {row.nit}</option>)}</select></label><button disabled={busy || !associateId} onClick={associate}>Asociar en esta demo</button></>}
           </div>}
@@ -218,7 +284,7 @@ export default function WhatsAppConversations({ settings }) {
             <WhatsAppAttachmentPicker key={`media:${selection}:${mode}`} value={attachment} onChange={value => setAttachment(selection, value)} onPending={setMediaBusy} disabled={!conversation.customer || !phoneKey(conversation.customer.phone) || busy || quickBusy} />
             {attachment && <p className="wa-warning wa-media-notice">{simulated ? 'Archivo temporal · prueba local de preparación; sin envío ni entrega real.' : MEDIA_UNAVAILABLE}</p>}
             <label htmlFor="wa-conversation-draft">Mensaje {simulated ? 'de demostración' : '· plantilla manual MOCK'}</label><div>
-              <WhatsAppQuickReplies key={`${selection}:${mode}`} customerId={customerId} simulated={simulated} value={draft} disabled={!conversation.customer || !phoneKey(conversation.customer.phone) || Boolean(detail.error) || busy}
+              <WhatsAppQuickReplies key={`${selection}:${mode}`} customerId={customerId} simulated={simulated} value={draft} disabled={!conversation.customer || !phoneKey(conversation.customer.phone) || (!chatOnly && Boolean(detail.error)) || busy}
                 onPending={setQuickBusy} onChange={value => { setDrafts(current => ({ ...current, [selection]: value })); if (!value) setPreviews(current => ({ ...current, [selection]: null })); }}
                 onInsert={(value, rendered) => { setDrafts(current => ({ ...current, [selection]: value })); setAttachment(selection, rendered.attachment || null); setPreviews(current => ({ ...current, [selection]: rendered })); setSendError(''); }} />
               <button type="submit" aria-label={simulated ? 'Simular envío del mensaje' : 'Enviar mensaje con proveedor MOCK'} disabled={!canSend}><Send size={18} />{busy ? 'Enviando…' : simulated ? 'Simular envío' : 'Enviar con MOCK'}</button></div>
@@ -226,7 +292,7 @@ export default function WhatsAppConversations({ settings }) {
           </form>}
         </>}
       </main>
-      <CustomerCard customer={conversation?.customer} context={detail.context} sequence={detail.sequence} lastContact={lastContact} error={detail.error} loading={detail.loading} retry={() => { setDetail(current => ({ ...current, loading: true, error: '' })); setRevision(value => value + 1); }} />
+      {!chatOnly && <CustomerCard customer={conversation?.customer} context={detail.context} sequence={detail.sequence} lastContact={lastContact} error={detail.error} loading={detail.loading} retry={() => { setDetail(current => ({ ...current, loading: true, error: '' })); setRevision(value => value + 1); }} />}
     </div>
   </section>;
 }

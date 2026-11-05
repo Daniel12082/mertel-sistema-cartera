@@ -83,7 +83,7 @@ function App() {
         <Route path="/administracion" element={<AdminDashboard />} />
         <Route path="/administracion/dashboard-cobranza" element={<CollectionDashboard />} />
         <Route path="/administracion/historial-cobranza" element={<CollectionHistoryRoute />} />
-        <Route path="/administracion/whatsapp" element={<WhatsAppCenter />} />
+        <Route path="/administracion/whatsapp" element={<WhatsAppCenter chatOnly />} />
         <Route path="/administracion/pagos-reportados" element={<ReportedPayments />} />
         <Route path="/administracion/resolucion-clientes" element={<CustomerResolution />} />
 

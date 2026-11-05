@@ -137,3 +137,32 @@ it('replies through the real test flow after receiving a message from the author
     expect(confirm).toHaveBeenCalledOnce();
   } finally { confirm.mockRestore(); }
 });
+it('keeps a removed conversation and its history recoverable after remounting', async () => {
+  const storageKey = 'mertel:wa-inbox:SIMULATION:fixture';
+  localStorage.removeItem(storageKey);
+  const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+  const chat = () => render(<SimulationContext.Provider value={{ mode: 'SIMULATION' }}>
+    <WhatsAppConversations chatOnly preferenceOwner="fixture" />
+  </SimulationContext.Provider>);
+  try {
+    const user = userEvent.setup();
+    const first = chat();
+    await open(user);
+    await user.click(screen.getByRole('button', { name: 'Fijar', exact: true }));
+    expect(screen.getByText('Fijado')).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'Marcar como no leído' }));
+    expect(screen.getByText('No leído', { exact: true })).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'Quitar de la bandeja' }));
+    expect(screen.queryByRole('button', { name: 'Abrir conversación Distribuciones Andinas DEMO S.A.S.' })).toBeNull();
+    first.unmount();
+    chat();
+    await user.click(screen.getByRole('button', { name: 'Chats quitados' }));
+    await open(user);
+    expect(await screen.findByLabelText('Mensaje entrante 97005')).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'Restaurar chat' }));
+    expect(screen.getByRole('button', { name: 'Abrir conversación Distribuciones Andinas DEMO S.A.S.' })).toBeVisible();
+  } finally {
+    confirm.mockRestore();
+    localStorage.removeItem(storageKey);
+  }
+});
