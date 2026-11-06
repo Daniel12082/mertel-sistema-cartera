@@ -137,6 +137,32 @@ it('replies through the real test flow after receiving a message from the author
     expect(confirm).toHaveBeenCalledOnce();
   } finally { confirm.mockRestore(); }
 });
+it('replies to a regular number in production using the Meta reply route', async () => {
+  leaveSimulation();
+  const recipient = '+573000000001';
+  const incoming = { id: '11', recipient, provider: 'WHATSAPP_CLOUD_API', direction: 'inbound',
+    status: 'DELIVERED', content: 'Hola', received_at: new Date().toISOString() };
+  const outgoing = { ...incoming, id: '12', direction: 'outbound', status: 'SENT', content: 'Hola desde MERTEL' };
+  const respond = data => Promise.resolve({ status: 200, data: { success: true, data } });
+  network.mockImplementation(config => {
+    if (config.url === '/customers') return respond([]);
+    if (config.url === '/admin/whatsapp/messages') return respond({ messages: [incoming] });
+    if (config.url === '/admin/whatsapp/meta/replies') {
+      expect(JSON.parse(config.data)).toEqual({ recipient, content: outgoing.content });
+      return respond({ message: outgoing });
+    }
+    throw new Error('Unexpected request');
+  });
+  const user = userEvent.setup();
+  render(<SimulationContext.Provider value={{ mode: 'REAL' }}>
+    <WhatsAppConversations settings={{ provider: 'WHATSAPP_CLOUD_API', connection_status: 'CONNECTED', real_sending_enabled: true }} />
+  </SimulationContext.Provider>);
+  await open(user, 'Conversación sin asociar');
+  await user.type(screen.getByLabelText('Mensaje de WhatsApp'), outgoing.content);
+  await user.click(screen.getByRole('button', { name: 'Enviar mensaje' }));
+  expect(await screen.findByLabelText('Mensaje saliente 12')).toHaveTextContent(outgoing.content);
+});
+
 it('keeps a removed conversation and its history recoverable after remounting', async () => {
   const storageKey = 'mertel:wa-inbox:SIMULATION:fixture';
   localStorage.removeItem(storageKey);

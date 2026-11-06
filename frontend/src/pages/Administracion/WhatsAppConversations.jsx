@@ -48,6 +48,7 @@ function ChatMessages({ messages }) {
 export default function WhatsAppConversations({ settings, chatOnly = false, preferenceOwner }) {
   const { mode } = useAppDataMode(); const simulated = mode === 'SIMULATION';
   const metaConnected = !simulated && settings?.provider === 'WHATSAPP_CLOUD_API' && settings?.connection_status === 'CONNECTED';
+  const metaProduction = metaConnected && settings.real_sending_enabled && !settings.test_mode;
   const preferenceKey = `mertel:wa-inbox:${mode}:${preferenceOwner ?? 'admin'}`;
   const [preferences, setPreferences] = useState(() => {
     if (!chatOnly) return {};
@@ -108,18 +109,24 @@ export default function WhatsAppConversations({ settings, chatOnly = false, pref
   const messages = merge(conversation?.messages || [], detail.messages).sort((a, b) => (new Date(messageTime(a)).getTime() || 0) - (new Date(messageTime(b)).getTime() || 0));
   const latestContact = messages.filter(row => row.direction === 'inbound' ? Boolean(row.received_at) : Boolean(row.sent_at)).at(-1);
   const lastContact = latestContact ? { date: messageTime(latestContact), label: latestContact.direction === 'inbound' ? 'Mensaje recibido' : latestContact.template_name || 'WhatsApp' } : detail.sequence?.last_contact;
-  const metaTestChat = metaConnected && settings.test_mode && Boolean(phoneKey(settings.test_allowed_recipient)) &&
-    phoneKey(conversation?.phone) === phoneKey(settings.test_allowed_recipient);
+  const recipient = phoneKey(conversation?.phone);
+  const metaTestChat = metaConnected && settings.test_mode && Boolean(recipient) && recipient === phoneKey(settings.test_allowed_recipient);
   const draft = drafts[selection] || '';
   function hasOpenMetaWindow() {
     const now = Date.now();
     return messages.some(message => {
-      if (message.provider !== 'WHATSAPP_CLOUD_API' || message.direction !== 'inbound') return false;
+      if (message.provider !== 'WHATSAPP_CLOUD_API' || message.direction !== 'inbound' || phoneKey(message.recipient || message.phone) !== recipient) return false;
       const received = new Date(message.received_at).getTime();
       return received <= now && now - received < 24 * 60 * 60 * 1000;
     });
   }
-  const canReplyToMeta = metaTestChat && hasOpenMetaWindow();
+  const canReplyToMeta = Boolean(recipient && (metaTestChat || metaProduction) && hasOpenMetaWindow());
+  const modeLabel = simulated ? 'Demo local' : metaProduction ? 'Meta conectada' : metaConnected ? settings.test_mode ? 'Meta conectada · prueba controlada' : 'Meta conectada · envío desactivado' : 'Proveedor MOCK · Meta pendiente';
+  const modeNotice = simulated ? 'SIMULACIÓN — No se enviará ningún mensaje real'
+    : metaProduction ? 'Puedes responder con texto durante las 24 horas siguientes al último mensaje recibido.'
+    : metaConnected && settings.test_mode ? 'Puedes responder al número de prueba autorizado dentro de las 24 horas siguientes a su último mensaje.'
+    : metaConnected ? 'El envío de mensajes está desactivado en la configuración del servidor.'
+    : 'Meta no está conectado. La redacción libre está disponible únicamente en Modo Simulación.';
   const attachment = attachments[selection] || null;
   const preview = previews[selection];
   const unresolved = /\{\{[^}]*\}\}/.test(draft);
@@ -189,14 +196,16 @@ export default function WhatsAppConversations({ settings, chatOnly = false, pref
   async function send() {
     if (pending.current) return;
     if (metaConnected) {
-      if (!metaTestChat || !hasOpenMetaWindow() || !draft.trim() || draft.length > 4096) return;
-      if (!window.confirm('¿Enviar este mensaje real al número de prueba autorizado?')) return;
+      if (!canReplyToMeta || !draft.trim() || draft.length > 4096) return;
+      if (metaTestChat && !window.confirm('¿Enviar este mensaje real al número de prueba autorizado?')) return;
     } else if (!canSend) return;
     const key = selection, id = customerId, content = draft; pending.current = true; setBusy(true); setSendError(''); setNotice('');
     try {
       const message = metaTestChat
         ? (await sendMetaTestMessage(content)).message
-        : simulated
+        : metaProduction
+          ? (await whatsappRequest('/meta/replies', { method: 'post', body: { recipient: `+${recipient}`, content } })).message
+          : simulated
           ? await sendConversationSimulation(id, content, attachment)
           : await sendManualWhatsApp({ customer_id: id, template_id: String(preview.template.id) });
       if (!active.current) return;
@@ -205,8 +214,11 @@ export default function WhatsAppConversations({ settings, chatOnly = false, pref
         setDrafts(current => ({ ...current, [key]: '' }));
         setAttachment(key, null);
         setPreviews(current => ({ ...current, [key]: null }));
-        if (chosen.current === key) setNotice(metaTestChat ? 'Meta aceptó el mensaje. El estado de entrega se actualizará por webhook.' : attachment ? 'Mensaje multimedia simulado preparado correctamente. Ningún archivo fue enviado ni entregado realmente.' : simulated ? 'Mensaje simulado enviado correctamente. No se realizó ningún envío real.' : 'Mensaje enviado correctamente en el proveedor MOCK. No se realizó ningún envío real.');
-      } else if (chosen.current === key) setNotice(message.status === 'FAILED' ? 'El mensaje no se pudo enviar. Consulta el historial.' : 'El mensaje sigue pendiente. No se ha confirmado el envío.');
+        if (chosen.current === key) setNotice(metaConnected ? 'Meta aceptó el mensaje. El estado de entrega se actualizará por webhook.' : attachment ? 'Mensaje multimedia simulado preparado correctamente. Ningún archivo fue enviado ni entregado realmente.' : simulated ? 'Mensaje simulado enviado correctamente. No se realizó ningún envío real.' : 'Mensaje enviado correctamente en el proveedor MOCK. No se realizó ningún envío real.');
+      } else if (chosen.current === key) {
+        if (message.status === 'FAILED') setSendError(message.error_message || 'El mensaje no se pudo enviar. Consulta el historial.');
+        else setNotice('El mensaje sigue pendiente. No se ha confirmado el envío.');
+      }
     } catch (failure) { if (active.current && chosen.current === key) setSendError(failure.message); }
     finally { pending.current = false; if (active.current) setBusy(false); }
   }
@@ -241,8 +253,8 @@ export default function WhatsAppConversations({ settings, chatOnly = false, pref
     choose(''); setMobile('list');
   }
   return <section className="wa-inbox" aria-label="Bandeja de conversaciones">
-    <header className="wa-inbox-heading"><div><span className="wa-eyebrow">ATENCIÓN A CLIENTES · MERTEL</span><h2>{chatOnly ? "WhatsApp" : "Conversaciones"}</h2><p>{chatOnly ? "Bandeja de conversaciones" : "Cada conversación, con el contexto de su cartera."}</p></div><span className="wa-inbox-mode"><ShieldCheck size={16} />{simulated ? 'Demo local' : metaConnected ? 'Meta conectada · prueba controlada' : 'Proveedor MOCK · Meta pendiente'}</span></header>
-    <p className="wa-inbox-warning">{simulated ? 'SIMULACIÓN — No se enviará ningún mensaje real' : metaConnected ? 'Meta está conectada. Puedes responder con texto al número de prueba autorizado dentro de las 24 horas siguientes a su último mensaje.' : 'Meta no está conectado. La redacción libre está disponible únicamente en Modo Simulación.'}</p>
+    <header className="wa-inbox-heading"><div><span className="wa-eyebrow">ATENCIÓN A CLIENTES · MERTEL</span><h2>{chatOnly ? "WhatsApp" : "Conversaciones"}</h2><p>{chatOnly ? "Bandeja de conversaciones" : "Cada conversación, con el contexto de su cartera."}</p></div><span className="wa-inbox-mode"><ShieldCheck size={16} />{modeLabel}</span></header>
+    <p className="wa-inbox-warning">{modeNotice}</p>
     {error && <div className="wa-error" role="alert">{error}<button onClick={() => { setError(''); setLoading(true); setRevision(value => value + 1); }}>Reintentar conversaciones</button></div>}
     <div className={`wa-inbox-layout mobile-${mobile}${chatOnly ? " wa-chat-only" : ""}`}>
       <aside className="wa-conversation-list" aria-label="Lista de conversaciones"><div className="wa-list-controls">
@@ -286,14 +298,14 @@ export default function WhatsAppConversations({ settings, chatOnly = false, pref
             {notice && <p className="wa-success" role="status">{notice}</p>}
             {sendError && <p className="wa-error" role="alert">{sendError}</p>}
             {canReplyToMeta ? <>
-              <label htmlFor="wa-meta-reply">Respuesta de prueba por WhatsApp</label>
+              <label htmlFor="wa-meta-reply">{metaTestChat ? 'Respuesta de prueba por WhatsApp' : 'Mensaje de WhatsApp'}</label>
               <div>
                 <textarea id="wa-meta-reply" value={draft} maxLength={4096} disabled={busy}
                   onChange={event => setDrafts(current => ({ ...current, [selection]: event.target.value }))} />
-                <button type="submit" disabled={busy || !draft.trim()}><Send size={18} />{busy ? 'Enviando…' : 'Enviar prueba por WhatsApp'}</button>
+                <button type="submit" disabled={busy || !draft.trim()}><Send size={18} />{busy ? 'Enviando…' : metaTestChat ? 'Enviar prueba por WhatsApp' : 'Enviar mensaje'}</button>
               </div>
-              <small>Comparte el límite diario de 3 pruebas con la pestaña Conexión.</small>
-            </> : <p>{metaTestChat ? 'Pide al destinatario de prueba que escriba al número de MERTEL para abrir una ventana de respuesta.' : 'El envío real desde Conversaciones está disponible para el número de prueba autorizado.'}</p>}
+              {metaTestChat && <small>Comparte el límite diario de 3 pruebas con la pestaña Conexión.</small>}
+            </> : <p>{metaProduction ? 'Para iniciar o reabrir esta conversación, Meta requiere una plantilla aprobada. También puedes responder cuando el contacto te escriba.' : metaTestChat ? 'Pide al destinatario de prueba que escriba al número de MERTEL para abrir una ventana de respuesta.' : modeNotice}</p>}
           </form> : <form className="wa-chat-compose" onSubmit={event => { event.preventDefault(); void send(); }}>
             {conversation.customer && !phoneKey(conversation.customer.phone) && <p className="wa-warning">Este cliente no tiene un número de WhatsApp válido. No se puede simular el envío.</p>}
             {notice && <p className="wa-success" role="status">{notice}</p>}{sendError && <p className="wa-error" role="alert">{sendError}</p>}

@@ -159,6 +159,7 @@ describe('WhatsApp center HTTP / MySQL, no real sends', { skip: !(process.env.DB
     };
     const previous = Object.fromEntries(Object.keys(env).map(key => [key, process.env[key]]));
     Object.assign(process.env, env);
+    const realFetch = globalThis.fetch;
     try {
       await db.query("UPDATE settings SET setting_value=JSON_SET(setting_value,'$.provider','WHATSAPP_CLOUD_API') WHERE company_id=? AND setting_key='whatsapp_center'", [companyId]);
       const path = '/admin/whatsapp/meta/test-messages';
@@ -169,7 +170,36 @@ describe('WhatsApp center HTTP / MySQL, no real sends', { skip: !(process.env.DB
       assert.equal(copies[0].body.data.message.id, first.body.data.message.id);
       assert.equal(copies[0].body.data.duplicate, true);
       assert.deepEqual(copies.slice(1).map(result => result.status).sort(), [200, 200, 429]);
+
+      const replyPath = '/admin/whatsapp/meta/replies';
+      const recipient = '+573000000001';
+      const reply = { recipient, content: 'Respuesta a un cliente' };
+      assert.equal((await request('POST', replyPath, reply)).status, 409);
+      process.env.WHATSAPP_TEST_MODE = 'false';
+      assert.equal((await queue('Prueba desactivada')).status, 409);
+      assert.equal((await request('POST', replyPath, reply, collector)).status, 403);
+      assert.equal((await request('POST', replyPath, reply)).status, 409);
+
+      await services.receiveMetaWebhook({ events: [{ kind: 'message', phone: recipient, provider_message_id: 'wamid.incoming-reply', content: 'Hola', timestamp: new Date() }] });
+      let providerCalls = 0;
+      globalThis.fetch = (url, options) => {
+        if (!String(url).startsWith('https://graph.facebook.com/')) return realFetch(url, options);
+        providerCalls += 1;
+        const payload = JSON.parse(options.body);
+        assert.equal(payload.to, recipient.slice(1));
+        assert.equal(payload.text.body, reply.content);
+        return Promise.resolve(new Response(JSON.stringify({ messages: [{ id: 'wamid.real-reply-fixture' }] })));
+      };
+      const results = await Promise.all([request('POST', replyPath, reply), request('POST', replyPath, reply)]);
+      assert.ok(results.every(result => result.status === 200), JSON.stringify(results));
+      assert.equal(providerCalls, 1);
+      const accepted = results.find(result => result.body.data.accepted).body.data.message;
+      assert.equal(accepted.customer_id, customerId);
+      assert.equal(accepted.status, 'SENT');
+      await services.receiveMetaWebhook({ events: [{ kind: 'status', provider_message_id: accepted.provider_message_id, status: 'DELIVERED', timestamp: new Date() }] });
+      assert.equal((await request('GET', `/admin/whatsapp/messages?customer_id=${customerId}`)).body.data.messages.find(row => row.id === accepted.id).status, 'DELIVERED');
     } finally {
+      globalThis.fetch = realFetch;
       for (const [key, value] of Object.entries(previous)) {
         if (value === undefined) delete process.env[key];
         else process.env[key] = value;

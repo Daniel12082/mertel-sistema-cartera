@@ -171,6 +171,7 @@ async function messageById(db, scope, id, lock = false) {
 }
 
 export async function enqueueMetaTestMessage({ scope, actorId, body, now = new Date() }, dbPool = pool) {
+  if (process.env.WHATSAPP_TEST_MODE !== 'true') throw operationError(409, 'El modo de pruebas está desactivado.');
   if (!body || Object.keys(body).some(key => !['recipient', 'content', 'confirmed'].includes(key)) || body.confirmed !== true ||
       typeof body.content !== 'string' || !body.content.trim() || body.content.length > 4096) throw operationError(400, 'Confirma un mensaje de prueba de texto válido.');
   return transaction(scope, async (db, settings) => {
@@ -197,6 +198,7 @@ export async function enqueueMetaTestMessage({ scope, actorId, body, now = new D
 }
 
 export async function sendMetaTestMessage({ scope, actorId, messageId, body, now = new Date() }, dbPool = pool) {
+  if (process.env.WHATSAPP_TEST_MODE !== 'true') throw operationError(409, 'El modo de pruebas está desactivado.');
   if (!body || Object.keys(body).some(key => key !== 'confirmed') || body.confirmed !== true) throw operationError(400, 'Confirma explícitamente el envío de prueba antes de continuar.');
   const id = operationId(messageId, 'message_id');
   const claimed = await transaction(scope, async (db, settings) => {
@@ -213,21 +215,70 @@ export async function sendMetaTestMessage({ scope, actorId, messageId, body, now
     await audit(db, scope, actorId, 'meta_request', 'whatsapp_message', id, { recipient: message.recipient, attempts, test_mode: true });
     return { message: { ...message, attempts } };
   }, dbPool);
+  return deliverMetaText({ scope, actorId, message: claimed.message, now, testMode: true }, dbPool);
+}
+
+async function deliverMetaText({ scope, actorId, message, now, testMode }, dbPool) {
+  const { id, recipient, content } = message;
+  let result;
   try {
-    const result = await whatsappProvider('WHATSAPP_CLOUD_API').sendMessage({ recipient: claimed.message.recipient, manual: true, payload: { type: 'text', text: { preview_url: false, body: claimed.message.content } } });
-    return transaction(scope, async db => {
-      await db.query("UPDATE messages SET status='SENT',provider_message_id=?,sent_at=?,error_code=NULL,error_message=NULL,next_attempt_at=NULL WHERE id=? AND company_id=? AND status='PROCESSING'", [result.provider_message_id, now, id, scope.companyId]);
-      await audit(db, scope, actorId, 'meta_accepted', 'whatsapp_message', id, { provider_message_id: result.provider_message_id, accepted_at: now, test_mode: true });
-      return { message: await messageById(db, scope, id), accepted: true };
-    }, dbPool);
+    result = await whatsappProvider('WHATSAPP_CLOUD_API').sendMessage({ recipient, manual: true, payload: { type: 'text', text: { preview_url: false, body: content } } });
   } catch (error) {
     return transaction(scope, async db => {
       const code = String(error?.code || 'META_SEND_FAILED').slice(0, 100);
       await db.query("UPDATE messages SET status='FAILED',error_code=?,error_message=?,next_attempt_at=NULL WHERE id=? AND company_id=? AND status='PROCESSING'", [code, String(error?.message || 'Meta rechazó el envío.').slice(0, 500), id, scope.companyId]);
-      await audit(db, scope, actorId, 'meta_failed', 'whatsapp_message', id, { error_code: code, test_mode: true });
+      await audit(db, scope, actorId, 'meta_failed', 'whatsapp_message', id, { error_code: code, test_mode: testMode });
       return { message: await messageById(db, scope, id), accepted: false };
     }, dbPool);
   }
+  return transaction(scope, async db => {
+    await db.query("UPDATE messages SET status='SENT',provider_message_id=?,sent_at=?,error_code=NULL,error_message=NULL,next_attempt_at=NULL WHERE id=? AND company_id=? AND status='PROCESSING'", [result.provider_message_id, now, id, scope.companyId]);
+    await audit(db, scope, actorId, 'meta_accepted', 'whatsapp_message', id, { provider_message_id: result.provider_message_id, accepted_at: now, test_mode: testMode });
+    return { message: await messageById(db, scope, id), accepted: true };
+  }, dbPool);
+}
+
+export async function replyToMetaConversation({ scope, actorId, body, now = new Date() }, dbPool = pool) {
+  if (process.env.WHATSAPP_TEST_MODE !== 'false') throw operationError(409, 'El envío normal de WhatsApp está desactivado.');
+  if (!body || Object.keys(body).some(key => !['recipient', 'content'].includes(key)) ||
+      typeof body.content !== 'string' || !body.content.trim() || body.content.length > 4096) {
+    throw operationError(400, 'Escribe un mensaje de hasta 4.096 caracteres.');
+  }
+  let recipient;
+  try { recipient = normalizePhone(body.recipient); }
+  catch { throw operationError(400, 'Número de WhatsApp inválido.'); }
+  const content = body.content.trim();
+  const day = bogotaDate(now);
+  const claimed = await transaction(scope, async (db, settings) => {
+    if (runtimeProvider(settings) !== 'WHATSAPP_CLOUD_API' || settings.connection_status !== 'CONNECTED') {
+      throw operationError(409, 'WhatsApp Cloud API no está conectada.');
+    }
+    const [[incoming]] = await db.query(`SELECT CAST(id AS CHAR) id FROM messages
+      WHERE company_id=? AND channel='whatsapp' AND provider='WHATSAPP_CLOUD_API' AND direction='inbound'
+      AND recipient=? AND received_at>? AND received_at<=? ORDER BY received_at DESC,id DESC LIMIT 1`,
+    [scope.companyId, recipient, new Date(now.getTime() - 86_400_000), now]);
+    if (!incoming) throw operationError(409, 'La ventana de respuesta de 24 horas está cerrada.');
+    const [customers] = await db.query("SELECT CAST(id AS CHAR) id,phone FROM customers WHERE company_id=? AND status='active' AND deleted_at IS NULL AND phone IS NOT NULL", [scope.companyId]);
+    const matching = customers.filter(customer => { try { return normalizePhone(customer.phone) === recipient; } catch { return false; } });
+    const customerId = matching.length === 1 ? matching[0].id : null;
+    const key = createHash('sha256').update(JSON.stringify(['meta-reply', scope.companyId, recipient, content, incoming.id, now.toISOString().slice(0, 16)])).digest('hex');
+    const [[duplicate]] = await db.query('SELECT CAST(id AS CHAR) id FROM messages WHERE company_id=? AND idempotency_key=?', [scope.companyId, key]);
+    if (duplicate) return { message: await messageById(db, scope, duplicate.id), duplicate: true };
+    const [[counts]] = await db.query(`SELECT COUNT(*) AS total, COALESCE(SUM(recipient=?),0) AS per_number
+      FROM messages WHERE company_id=? AND direction='outbound' AND budget_date=? AND UPPER(status)<>'CANCELLED'`, [recipient, scope.companyId, day]);
+    if ((settings.global_daily_limit && Number(counts.total) >= settings.global_daily_limit) ||
+        (settings.customer_daily_limit && Number(counts.per_number) >= settings.customer_daily_limit)) {
+      throw operationError(429, 'Límite diario alcanzado.');
+    }
+    const [inserted] = await db.query(`INSERT INTO messages(company_id,customer_id,created_by,channel,recipient,content,status,provider,direction,message_mode,idempotency_key,scheduled_at,budget_date,attempts,last_attempt_at)
+      VALUES (?,?,?,'whatsapp',?,?,'PROCESSING','WHATSAPP_CLOUD_API','outbound','MANUAL',?,?,?,1,?)`,
+    [scope.companyId, customerId, actorId, recipient, content, key, now, day, now]);
+    const id = String(inserted.insertId);
+    await audit(db, scope, actorId, 'meta_request', 'whatsapp_message', id, { recipient, attempts: 1, test_mode: false });
+    return { message: { id, recipient, content } };
+  }, dbPool);
+  if (claimed.duplicate) return { ...claimed, accepted: ['SENT', 'DELIVERED', 'READ'].includes(claimed.message.status) };
+  return deliverMetaText({ scope, actorId, message: claimed.message, now, testMode: false }, dbPool);
 }
 
 export async function listMetaMessageTemplates({ scope }, dbPool = pool) {
