@@ -50,7 +50,7 @@ async function saveSettings(db, scope, actorId, settings, action) {
 }
 async function stagesFor(db, scope) { return collectionStageCatalog(await loadCompanyCollectionRules(scope.companyId, db)); }
 function connected(settings) {
-  if (settings.provider !== 'MOCK' || settings.connection_status !== 'CONNECTED') throw operationError(409, 'Automatización no disponible: WhatsApp no está conectado. En esta fase solo se admite conexión MOCK.');
+  if (runtimeProvider(settings) !== 'MOCK' || settings.connection_status !== 'CONNECTED') throw operationError(409, 'Esta operación de prueba requiere una conexión MOCK.');
 }
 
 function runtimeProvider(settings) {
@@ -537,6 +537,7 @@ export async function mockDeliveryWhatsApp({ scope, actorId, messageId, status }
 export async function mockIncomingWhatsApp({ scope, actorId, body }, dbPool = pool) {
   let dto; try { dto = whatsappProvider('MOCK').handleIncomingWebhook(body); } catch { throw operationError(400, 'Mensaje entrante inválido.'); }
   return transaction(scope, async (db, settings) => {
+    if (runtimeProvider(settings) === 'WHATSAPP_CLOUD_API') throw operationError(409, 'Las respuestas reales se reciben desde WhatsApp.');
     const [[existing]] = await db.query("SELECT CAST(id AS CHAR) AS id FROM messages WHERE company_id=? AND provider='MOCK' AND provider_message_id=?", [scope.companyId, dto.provider_message_id]);
     if (existing) return { message: await messageById(db, scope, existing.id), duplicate: true };
     const [customers] = await db.query("SELECT CAST(id AS CHAR) AS id,phone FROM customers WHERE company_id=? AND status='active' AND deleted_at IS NULL AND phone IS NOT NULL", [scope.companyId]);
