@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import pool from '../config/database.js';
-import {buildWhatsAppSequence,automaticSelection,automaticNotices,automaticContent,automaticDayAllowed,noticeContext,validMobile,automaticWindow,renderAutomaticNotice,MERTEL_CONTACTS} from './whatsappSequence.js';
+import {buildWhatsAppSequence,automaticSelection,automaticNotices,automaticContent,automaticDayAllowed,automaticHours,noticeContext,validMobile,automaticWindow,renderAutomaticNotice,MERTEL_CONTACTS} from './whatsappSequence.js';
 import {dateDay,dateFromDay} from './promptPayment.service.js';
 import { validCompanyId } from '../utils/companyScope.js';
 import { operationError, operationId } from './collectionOperations.validation.js';
@@ -170,6 +170,39 @@ export async function saveWhatsAppRule({ scope, actorId, stage, body }, dbPool =
     await saveSettings(db, scope, actorId, settings, 'automation_update'); return rule;
   }, dbPool);
 }
+export async function getMetaAutomationLimit({ scope }, dbPool = pool) {
+  await transaction(scope, async (db, settings) => {
+    if (runtimeProvider(settings) !== 'WHATSAPP_CLOUD_API') throw operationError(409, 'WhatsApp Cloud API no está configurada.');
+  }, dbPool);
+  try {
+    return { meta_limit: await whatsappProvider('WHATSAPP_CLOUD_API').getMessagingLimit() };
+  } catch (error) {
+    throw operationError(409, error.message || 'No se pudo consultar el cupo de Meta.');
+  }
+}
+export async function configureAutomaticSchedule({ scope, actorId, body }, dbPool = pool) {
+  if (!body || Object.keys(body).some(key => key !== 'daily_limit')) throw operationError(400, 'Indica el cupo diario.');
+  const dailyLimit = positiveLimit(body.daily_limit, 'Cupo diario', false);
+  const { meta_limit: metaLimit } = await getMetaAutomationLimit({ scope }, dbPool);
+  if (metaLimit !== null && dailyLimit > metaLimit) throw operationError(400, `El cupo de MERTEL debe ser de máximo ${metaLimit}, según el límite actual del portafolio Meta.`);
+  return transaction(scope, async (db, settings) => {
+    if (requireAutomationProvider(settings) !== 'WHATSAPP_CLOUD_API') throw operationError(409, 'Conecta el canal real de WhatsApp.');
+    const stages = await stagesFor(db, scope);
+    const [[template]] = await db.query(`SELECT CAST(id AS CHAR) id,content FROM message_templates WHERE company_id=? AND
+      channel='whatsapp' AND name=? AND status='active' AND stage IS NULL ORDER BY id LIMIT 1`, [scope.companyId, MERTEL_INVOICE_TEMPLATE]);
+    if (!template) throw operationError(409, 'Activa la plantilla general de estado de facturas en MERTEL.');
+    validateTemplateContent(template.content);
+    const rules = MERTEL_CONTACTS.filter(step => stages.some(stage => stage.key === step.stage)).map(step =>
+      validateRule({ stage: step.stage, mode: 'AUTOMATICO', enabled: true, template_id: template.id,
+        start_time: '07:00', end_time: '17:00', weekdays: [1, 2, 3, 4, 5, 6], daily_limit: dailyLimit, interval_hours: 1 }, stages));
+    if (!rules.length) throw operationError(409, 'Activa al menos una etapa en las reglas de cobranza.');
+    settings.global_daily_limit = dailyLimit;
+    settings.customer_daily_limit = 1;
+    settings.rules = [...settings.rules.filter(rule => !rules.some(item => item.stage === rule.stage)), ...rules];
+    await saveSettings(db, scope, actorId, settings, 'automatic_schedule_configured');
+    return { ...publicWhatsAppSettings(settings), meta_limit: metaLimit };
+  }, dbPool);
+}
 function validateTemplateContent(content) {
   const rendered = renderMessageTemplate(content || '', {});
   if (!content?.trim() || rendered.unsupported_variables.length || rendered.malformed_variables) throw operationError(409, 'La plantilla tiene contenido o variables inválidas.');
@@ -252,19 +285,20 @@ export async function sendMetaTestMessage({ scope, actorId, messageId, body, now
   return deliverMetaText({ scope, actorId, message: claimed.message, now, testMode: true }, dbPool);
 }
 
-async function deliverMetaText({ scope, actorId, message, now, testMode, template }, dbPool) {
+async function deliverMetaText({ scope, actorId, message, now, testMode, template, sendBefore, clock }, dbPool) {
   const { id, recipient, content } = message;
   let result;
   try {
     const provider = whatsappProvider('WHATSAPP_CLOUD_API');
     result = template
       ? await provider.sendTemplateMessage({ recipient, manual: message.message_mode !== 'AUTOMATICO', template, expectedBody: MERTEL_INVOICE_BODY,
-        callbackId: `mertel-invoice:${id}` })
+        callbackId: `mertel-invoice:${id}`, sendBefore, clock })
       : await provider.sendMessage({ recipient, manual: true, payload: { type: 'text', text: { preview_url: false, body: content } } });
   } catch (error) {
     return transaction(scope, async db => {
       const code = String(error?.code || 'META_SEND_FAILED').slice(0, 100);
-      const retry = message.message_mode === 'AUTOMATICO' && error.httpStatus === 429 ? retryAt(Number(message.attempts), now) : null;
+      const retry = message.message_mode === 'AUTOMATICO' && (error.httpStatus === 429 || code === 'META_SCHEDULE_CLOSED')
+        ? retryAt(Number(message.attempts), now) : null;
       const [updated] = await db.query("UPDATE messages SET status='FAILED',error_code=?,error_message=?,next_attempt_at=? WHERE id=? AND company_id=? AND status='PROCESSING'", [code, String(error?.message || 'Meta rechazó el envío.').slice(0, 500), retry, id, scope.companyId]);
       if (updated.affectedRows) await audit(db, scope, actorId, 'meta_failed', 'whatsapp_message', id, { error_code: code, test_mode: testMode });
       const saved = await messageById(db, scope, id);
@@ -429,11 +463,11 @@ export async function receiveMetaWebhook({ events }, dbPool = pool) {
   } catch (error) { try { await db.rollback(); } catch { /* preserve original */ } throw error; }
   finally { db.release(); }
 }
-export async function enqueueWhatsApp({ scope, actorId, body, now = new Date() }, dbPool = pool) {
+export async function enqueueWhatsApp({ scope, actorId, body, now = new Date(), metaLimit }, dbPool = pool) {
   if (!body || Object.keys(body).some(key => !['customer_id', 'template_id', 'mode'].includes(key)) || !['MANUAL', 'AUTOMATICO'].includes(body.mode)) throw operationError(400, 'Modo o campos de mensaje inválidos.');
   const customerId = operationId(body.customer_id, 'customer_id');
   return transaction(scope, async (db, settings) => {
-    if (body.mode === 'AUTOMATICO') return enqueueAutomatic(db, { ...scope, actorId: null }, settings, customerId, now);
+    if (body.mode === 'AUTOMATICO') return enqueueAutomatic(db, { ...scope, actorId: null }, settings, customerId, now, metaLimit);
     if (runtimeProvider(settings) === 'WHATSAPP_CLOUD_API') throw operationError(409, 'Para un aviso de facturas real, usa Enviar aviso de facturas en el chat del cliente.');
     const stages = await stagesFor(db, scope);
     // Template, variables and stage are resolved from the collection engine inside the transaction.
@@ -584,21 +618,23 @@ export async function listWhatsAppAudit({ scope }, dbPool = pool) {
   }, dbPool);
 }
 
-export async function processWhatsAppAutomations({scope,actorId,now=new Date()},dbPool=pool){
+export async function processWhatsAppAutomations({ scope, actorId, now, clock = () => now || new Date() }, dbPool = pool) {
   const systemScope={...scope,actorId:null};
   const provider=await transaction(systemScope,async(db,settings)=>settings.automations_enabled && automationProvider(settings),dbPool);
   if(!provider)return {queued:0,sent:0,cancelled:0,skipped:0,enabled:false};
+  const metaLimit = provider === 'WHATSAPP_CLOUD_API' ? (await getMetaAutomationLimit({ scope }, dbPool)).meta_limit : null;
   const result={queued:0,sent:0,cancelled:0,skipped:0,enabled:true};
   const [customers]=await dbPool.query("SELECT CAST(id AS CHAR) id FROM customers WHERE company_id=? AND status='active' AND deleted_at IS NULL ORDER BY id",[scope.companyId]);
   for(const customer of customers){
-    try{const value=await enqueueWhatsApp({scope:systemScope,body:{customer_id:customer.id,mode:'AUTOMATICO'},now},dbPool);if(!value.duplicate)result.queued++;}
+    try{const value=await enqueueWhatsApp({scope:systemScope,body:{customer_id:customer.id,mode:'AUTOMATICO'},now:clock(),metaLimit},dbPool);if(!value.duplicate)result.queued++;}
     catch(error){if(![400,403,404,409].includes(error.status))throw error;result.skipped++;}
   }
   const [messages]=await dbPool.query(`SELECT CAST(id AS CHAR) id FROM messages WHERE company_id=? AND provider=? AND message_mode='AUTOMATICO'
-    AND attempts<3 AND (UPPER(status)='PENDING' OR (UPPER(status)='FAILED' AND next_attempt_at<=?)) ORDER BY scheduled_at,id`,[scope.companyId,provider,now]);
+    AND attempts<3 AND (UPPER(status)='PENDING' OR (UPPER(status)='FAILED' AND next_attempt_at<=?))
+    AND (scheduled_at IS NULL OR scheduled_at<=?) ORDER BY scheduled_at,id`,[scope.companyId,provider,clock(),clock()]);
   for(const message of messages){
     try {
-      const args = { scope: systemScope, messageId: message.id, now };
+      const args = { scope: systemScope, messageId: message.id, now: clock(), metaLimit, clock };
       const value = provider === 'MOCK' ? await mockSendWhatsApp(args,dbPool) : await sendAutomaticMeta(args,dbPool);
       if(!value.duplicate && ['SENT', 'DELIVERED', 'READ'].includes(value.message.status))result.sent++;
       if(value.cancelled)result.cancelled++;
@@ -636,7 +672,58 @@ async function oneAutomaticPerDay(db, scope, customerId, day, excludeId = null) 
 function renderAutomatic(notice, day) {
   try { return renderAutomaticNotice(notice, day); } catch (error) { throw operationError(409, error.message); }
 }
-async function enqueueAutomatic(db, scope, settings, customerId, now) {
+async function realAutomaticSlot(db, scope, input, notice, now, { message = null, metaLimit = null } = {}) {
+  const { settings, customer } = input;
+  if (!settings.global_daily_limit || !settings.customer_daily_limit) throw operationError(409, 'Configura el cupo diario antes de programar avisos.');
+  const dailyLimit = Math.min(settings.global_daily_limit, metaLimit ?? Infinity);
+  const recipient = normalizePhone(customer.phone);
+  const today = bogotaDate(now);
+  let cursor = new Date(Math.max(now.getTime(), message?.scheduled_at ? new Date(message.scheduled_at).getTime() : 0));
+  for (;;) {
+    const slot = automaticWindow(notice, input.rules, cursor, input.messages, true);
+    if (!slot) return null;
+    const date = bogotaDate(slot);
+    const { start, end } = automaticHours(notice, date, true);
+    const midnight = new Date(`${date}T00:00:00-05:00`);
+    const tomorrow = new Date(midnight.getTime() + 86_400_000);
+    // During reservation, count future work. During today's dispatch, count only claims already made.
+    const reserve = !message || date !== today;
+    const [[usage]] = await db.query(`SELECT COUNT(*) AS total,
+      COALESCE(SUM(recipient=?),0) AS recipient_count, COALESCE(SUM(stage=?),0) AS stage_count,
+      MAX(CASE WHEN message_mode='AUTOMATICO' THEN
+        CASE WHEN last_attempt_at>=? AND last_attempt_at<? THEN last_attempt_at ELSE scheduled_at END END) AS last_slot
+      FROM messages WHERE company_id=? AND provider='WHATSAPP_CLOUD_API' AND direction='outbound'
+      AND (? IS NULL OR id<>?) AND UPPER(status)<>'CANCELLED'
+      AND ((last_attempt_at>=? AND last_attempt_at<?) OR
+        (? AND budget_date=? AND (UPPER(status)='PENDING' OR (UPPER(status)='FAILED' AND next_attempt_at IS NOT NULL))))`,
+    [recipient, notice.stage, midnight, tomorrow, scope.companyId, message?.id ?? null, message?.id ?? null, midnight, tomorrow, reserve, date]);
+    if (Number(usage.total) >= dailyLimit || Number(usage.recipient_count) >= 1 || Number(usage.stage_count) >= notice.rule.daily_limit) {
+      cursor = tomorrow;
+      continue;
+    }
+    // The worker ticks each minute, so align the spacing to complete minutes.
+    const spacing = Math.max(1, Math.floor((end - start) / (dailyLimit * 60_000))) * 60_000;
+    const planned = new Date(Math.max(slot.getTime(), usage.last_slot ? new Date(usage.last_slot).getTime() + spacing : 0));
+    if (planned >= end) {
+      cursor = tomorrow;
+      continue;
+    }
+    if (message && metaLimit !== null && date === today) {
+      const [[rolling]] = await db.query(`SELECT COUNT(*) AS recipients, MIN(last_contact) AS earliest FROM (
+        SELECT recipient, MAX(COALESCE(sent_at,last_attempt_at)) AS last_contact FROM messages
+        WHERE company_id=? AND provider='WHATSAPP_CLOUD_API' AND direction='outbound' AND template_id IS NOT NULL
+        AND recipient<>? AND COALESCE(sent_at,last_attempt_at)>? AND COALESCE(sent_at,last_attempt_at)<=?
+        AND (sent_at IS NOT NULL OR UPPER(status)='PROCESSING' OR (UPPER(status)='FAILED' AND next_attempt_at IS NULL))
+        GROUP BY recipient) AS recent`, [scope.companyId, recipient, new Date(planned.getTime() - 86_400_000), planned]);
+      if (Number(rolling.recipients) >= metaLimit) {
+        cursor = new Date(new Date(rolling.earliest).getTime() + 86_400_000);
+        continue;
+      }
+    }
+    return planned;
+  }
+}
+async function enqueueAutomatic(db, scope, settings, customerId, now, metaLimit) {
   const provider = requireAutomationProvider(settings);
   if (!settings.automations_enabled) throw operationError(409, 'Automatizaciones desactivadas.');
   const input = await automaticInput(db, scope, settings, customerId, bogotaDate(now));
@@ -649,11 +736,12 @@ async function enqueueAutomatic(db, scope, settings, customerId, now) {
   const key = createHash('sha256').update(JSON.stringify([String(scope.companyId), customerId, provider === 'MOCK' ? 'AVISO_MERTEL' : 'AVISO_MERTEL_META', notice.stage, notice.date])).digest('hex');
   const [[duplicate]] = await db.query('SELECT CAST(id AS CHAR) id FROM messages WHERE company_id=? AND idempotency_key=?', [scope.companyId, key]);
   if (duplicate) return { message: await messageById(db, scope, duplicate.id), duplicate: true };
-  const scheduled = automaticWindow(notice, input.rules, now, input.messages);
+  const scheduled = provider === 'MOCK' ? automaticWindow(notice, input.rules, now, input.messages)
+    : await realAutomaticSlot(db, scope, input, notice, now, { metaLimit });
   const context = { notice_date: notice.date, expires_on: notice.expires_on, invoice_ids: notice.invoice_ids, reason: notice.description,
-    cancellation_reason: scheduled ? null : 'No hay día permitido dentro del plazo máximo del aviso.' };
+    cancellation_reason: scheduled ? null : 'No hay horario o cupo disponible dentro del plazo máximo del aviso.' };
   const content = provider === 'MOCK' ? renderAutomatic(notice, input.referenceDate) : realAutomaticMessage(notice, input.referenceDate).content;
-  if (scheduled) {
+  if (scheduled && provider === 'MOCK') {
     await oneAutomaticPerDay(db, scope, customerId, bogotaDate(scheduled));
     await enforceLimits(db, scope, settings, notice.rule, customerId, bogotaDate(scheduled));
   }
@@ -664,7 +752,7 @@ async function enqueueAutomatic(db, scope, settings, customerId, now) {
   await audit(db, scope, null, scheduled ? 'queued' : 'cancelled', 'whatsapp_message', inserted.insertId, { ...context, actor_type: 'SYSTEM' });
   return { message: await messageById(db, scope, inserted.insertId), duplicate: false };
 }
-async function dispatchAutomatic(db, scope, settings, message, now, fail) {
+async function dispatchAutomatic(db, scope, settings, message, now, fail, metaLimit) {
   const simulated = message.provider === 'MOCK';
   if (message.sent_at || ['SENT', 'DELIVERED', 'READ'].includes(message.status)) return { message, duplicate: true, simulated };
   if (!['PENDING', 'FAILED'].includes(message.status)) throw operationError(409, 'El mensaje automático no puede enviarse.');
@@ -687,12 +775,15 @@ async function dispatchAutomatic(db, scope, settings, message, now, fail) {
   if (winner && MERTEL_CONTACTS.findIndex(row => row.stage === winner.stage) > MERTEL_CONTACTS.findIndex(row => row.stage === notice.stage)) return cancel('Se priorizó un aviso de mayor urgencia.');
   if (message.attempts >= RETRY_POLICY.max_attempts) return cancel('Se agotaron los intentos del aviso.');
   if (message.next_attempt_at && new Date(message.next_attempt_at) > now) return { message, simulated };
-  const scheduled = automaticWindow(notice, input.rules, now, input.messages);
-  if (!scheduled) return cancel('No hay día permitido dentro del plazo máximo.');
+  const scheduled = simulated ? automaticWindow(notice, input.rules, now, input.messages)
+    : await realAutomaticSlot(db, scope, input, notice, now, { message, metaLimit });
+  if (!scheduled) return cancel('No hay horario o cupo disponible dentro del plazo máximo.');
   const prepared = simulated ? null : realAutomaticMessage(notice, day);
   const content = prepared?.content ?? renderAutomatic(notice, day), recipient = normalizePhone(input.customer.phone);
-  await oneAutomaticPerDay(db, scope, message.customer_id, bogotaDate(scheduled), message.id);
-  await enforceLimits(db, scope, settings, notice.rule, message.customer_id, bogotaDate(scheduled), message.id);
+  if (simulated) {
+    await oneAutomaticPerDay(db, scope, message.customer_id, bogotaDate(scheduled), message.id);
+    await enforceLimits(db, scope, settings, notice.rule, message.customer_id, bogotaDate(scheduled), message.id);
+  }
   if (scheduled > now) {
     await db.query('UPDATE messages SET scheduled_at=?,budget_date=?,content=?,recipient=? WHERE id=? AND company_id=?', [scheduled, bogotaDate(scheduled), content, recipient, message.id, scope.companyId]);
     return { message: await messageById(db, scope, message.id), scheduled: true, simulated };
@@ -701,7 +792,7 @@ async function dispatchAutomatic(db, scope, settings, message, now, fail) {
   await db.query("UPDATE messages SET status='PROCESSING',content=?,recipient=?,attempts=?,last_attempt_at=?,budget_date=? WHERE id=? AND company_id=?", [content, recipient, attempts, now, day, message.id, scope.companyId]);
   if (prepared) {
     await audit(db, scope, null, 'meta_request', 'whatsapp_message', message.id, { notice_date: context.notice_date, attempts, test_mode: false });
-    return { message: { ...message, recipient, content, attempts }, template: prepared.template };
+    return { message: { ...message, recipient, content, attempts }, template: prepared.template, sendBefore: automaticHours(notice, day, true).end };
   }
   const result = await whatsappProvider(settings.provider).sendTemplateMessage({ content, recipient, fail });
   await db.query('UPDATE messages SET status=?,provider_message_id=?,sent_at=?,error_code=?,error_message=?,next_attempt_at=? WHERE id=? AND company_id=?',
@@ -716,16 +807,16 @@ function realAutomaticMessage(notice, day) {
   return buildMertelInvoiceMessage(notice.current.evaluated.customer, notice.matched, promptPayment);
 }
 
-async function sendAutomaticMeta({ scope, messageId, now }, dbPool) {
+async function sendAutomaticMeta({ scope, messageId, now, metaLimit, clock }, dbPool) {
   const claimed = await transaction(scope, async (db, settings) => {
     if (requireAutomationProvider(settings) !== 'WHATSAPP_CLOUD_API') throw operationError(409, 'El canal real de WhatsApp no está activo.');
     const message = await messageById(db, scope, messageId, true);
     if (message.provider !== 'WHATSAPP_CLOUD_API' || message.direction !== 'outbound' || message.message_mode !== 'AUTOMATICO' ||
         (message.status === 'FAILED' && !message.next_attempt_at)) throw operationError(409, 'El aviso no está pendiente de envío real.');
-    return dispatchAutomatic(db, scope, settings, message, now, false);
+    return dispatchAutomatic(db, scope, settings, message, now, false, metaLimit);
   }, dbPool);
   if (!claimed.template) return claimed;
-  return deliverMetaText({ scope, message: claimed.message, now, testMode: false, template: claimed.template }, dbPool);
+  return deliverMetaText({ scope, message: claimed.message, now, testMode: false, template: claimed.template, sendBefore: claimed.sendBefore, clock }, dbPool);
 }
 
 export async function getCustomerWhatsAppSequence({ scope, customerId, filters = {}, now = new Date() }, dbPool = pool) {

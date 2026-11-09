@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { MERTEL_CONTACTS } from '../../../../backend/src/services/whatsappSequence';
 import { MERTEL_INVOICE_TEMPLATE } from '../../../../backend/src/services/mertelInvoiceWhatsApp';
 import { whatsappRequest } from '../../services/whatsappCenter.service';
@@ -25,18 +25,49 @@ function AutomaticRule({ step, rule, templates, busy, act }) {
   </form>;
 }
 export default function WhatsAppAutomationPreview({ settings, templates, busy, act, revision }) {
-  const [daily, setDaily] = useState(settings.global_daily_limit ?? '');
   const real = settings.provider === 'WHATSAPP_CLOUD_API';
+  const [daily, setDaily] = useState(settings.global_daily_limit ?? (real ? 40 : ''));
+  const [metaLimit, setMetaLimit] = useState({ loading: true });
+  useEffect(() => {
+    if (!real) return;
+    const controller = new AbortController();
+    whatsappRequest('/automations/limit', { signal: controller.signal })
+      .then(result => { if (!controller.signal.aborted) setMetaLimit({ value: result.meta_limit }); })
+      .catch(() => { if (!controller.signal.aborted) setMetaLimit({ error: true }); });
+    return () => controller.abort();
+  }, [real]);
+  if (real) return <article className="wa-card">
+    <h2>Programación automática por WhatsApp</h2>
+    <p>Lunes a viernes de 7:00 a. m. a 5:00 p. m. y sábados de 8:00 a. m. a 3:00 p. m., hora de Colombia. Sin envíos los domingos ni festivos.</p>
+    <p>El sistema calcula cada fecha y distribuye los envíos durante el día. Si se llena el cupo, reserva el siguiente día permitido dentro de la vigencia del aviso.</p>
+    <p>Cupo de Meta: {metaLimit.loading ? 'Consultando…' : metaLimit.error ? 'No se pudo consultar' : metaLimit.value == null ? 'Sin límite de destinatarios' : `${metaLimit.value} destinatarios distintos en 24 horas móviles`}.</p>
+    <form onSubmit={event => {
+      event.preventDefault();
+      void act(() => whatsappRequest('/automations/schedule', { method: 'put', body: { daily_limit: Number(daily) } }), 'Programación guardada.');
+    }}>
+      <label>Cupo diario de MERTEL<input required type="number" min="1" max={metaLimit.value ?? 1000000} value={daily} onChange={event => setDaily(event.target.value)} /></label>
+      <button disabled={busy || metaLimit.loading || metaLimit.error}>Guardar programación</button>
+    </form>
+    <h3>Fechas de los avisos</h3>
+    <ul>{MERTEL_CONTACTS.map(step => <li key={step.stage}><strong>{step.label}</strong> · {step.description}</li>)}</ul>
+    <p>Plantilla: <code>{MERTEL_INVOICE_TEMPLATE}</code>. Los clientes deben tener autorización registrada en Timeline.</p>
+    <p>{settings.automations_enabled ? 'Envíos automáticos activos.' : 'Envíos automáticos desactivados.'}</p>
+    <button disabled={busy || settings.connection_status !== 'CONNECTED' || !settings.real_sending_enabled || !settings.rules.some(rule => rule.enabled && rule.mode === 'AUTOMATICO')}
+      onClick={() => act(() => whatsappRequest('/settings', { method: 'patch', body: { automations_enabled: !settings.automations_enabled } }),
+        settings.automations_enabled ? 'Automatización desactivada.' : 'Automatización activada.')}>
+      {settings.automations_enabled ? 'Desactivar envíos automáticos' : 'Activar envíos automáticos por WhatsApp'}
+    </button>
+  </article>;
   return <>
     <article className="wa-card"><span className="wa-eyebrow">AUTOMATIZACIÓN MERTEL</span><h2>Automatización de mensajes</h2><p>Configuración automática</p>
       <p className="wa-banner">Mora → Vence hoy → Recordatorio → Pronto pago. Un aviso enviado no se repite. Sin domingos ni festivos; aplazamiento máximo de 3 días y pronto pago hasta el día calendario 10.</p>
       <p>Estado: {settings.automations_enabled ? 'Automatización activa' : settings.rules.some(rule => rule.mode === 'AUTOMATICO') ? 'Automatización configurada' : 'Automatización desactivada'}</p>
-      <p>{real ? 'Canal real de WhatsApp. Requiere la plantilla aprobada por Meta y clientes con autorización registrada en Timeline.' : 'Proveedor MOCK: esta configuración no envía WhatsApp real.'}</p>
+      <p>Proveedor MOCK: esta configuración no envía WhatsApp real.</p>
       <form onSubmit={event => { event.preventDefault(); void act(() => whatsappRequest('/settings', { method: 'patch', body: { global_daily_limit: Number(daily), customer_daily_limit: settings.customer_daily_limit || 1 } }), 'Límite diario guardado.'); }}>
         <label>Límite global diario<input required type="number" min="1" value={daily} onChange={event => setDaily(event.target.value)} /></label><button disabled={busy}>Guardar límite diario</button>
       </form>
-      <button disabled={busy || settings.connection_status !== 'CONNECTED' || (real && !settings.real_sending_enabled)} onClick={() => act(() => whatsappRequest('/settings', { method: 'patch', body: { automations_enabled: !settings.automations_enabled } }), settings.automations_enabled ? 'Automatización desactivada.' : 'Automatización activada.')}>{settings.automations_enabled ? 'Desactivar automatización' : real ? 'Activar envíos automáticos por WhatsApp' : 'Activar automatización MOCK'}</button>
+      <button disabled={busy || settings.connection_status !== 'CONNECTED'} onClick={() => act(() => whatsappRequest('/settings', { method: 'patch', body: { automations_enabled: !settings.automations_enabled } }), settings.automations_enabled ? 'Automatización desactivada.' : 'Automatización activada.')}>{settings.automations_enabled ? 'Desactivar automatización' : 'Activar automatización MOCK'}</button>
     </article>
-    {MERTEL_CONTACTS.map(step => <AutomaticRule key={`${step.stage}:${revision}`} step={real ? { ...step, template_name: MERTEL_INVOICE_TEMPLATE } : step} rule={settings.rules.find(row => row.stage === step.stage && row.mode === 'AUTOMATICO')} templates={templates} busy={busy} act={act} />)}
+    {MERTEL_CONTACTS.map(step => <AutomaticRule key={`${step.stage}:${revision}`} step={step} rule={settings.rules.find(row => row.stage === step.stage && row.mode === 'AUTOMATICO')} templates={templates} busy={busy} act={act} />)}
   </>;
 }

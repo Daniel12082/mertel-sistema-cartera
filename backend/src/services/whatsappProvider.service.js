@@ -77,6 +77,14 @@ export class MetaWhatsAppProvider extends WhatsAppProvider {
   }
 
   async getConnectionStatus() { return this.validateConnection(); }
+  async getMessagingLimit() {
+    const data = await this.request(`${this.config.phoneNumberId}?fields=whatsapp_business_manager_messaging_limit`);
+    const tier = data.whatsapp_business_manager_messaging_limit;
+    if (tier === 'TIER_UNLIMITED') return null;
+    const limit = typeof tier === 'number' ? tier : Number(/^TIER_(\d+)$/.exec(tier)?.[1]);
+    if (!Number.isSafeInteger(limit) || limit < 1) throw providerError('META_MESSAGING_LIMIT_UNKNOWN', 'Meta no devolvió el cupo de mensajería del portafolio.');
+    return limit;
+  }
 
   async listMessageTemplates() {
     const rows = [];
@@ -104,7 +112,7 @@ export class MetaWhatsAppProvider extends WhatsAppProvider {
       response: { messaging_product: data.messaging_product || 'whatsapp', contacts: data.contacts || [], messages: [message] } };
   }
 
-  async sendTemplateMessage({ recipient, manual = false, template, expectedBody, callbackId, signal } = {}) {
+  async sendTemplateMessage({ recipient, manual = false, template, expectedBody, callbackId, sendBefore, clock = () => new Date(), signal } = {}) {
     const to = this.assertTestRecipient(recipient, { manual });
     const approved = (await this.listMessageTemplates()).find(row => row.name === template?.name && row.language === template?.language && row.status === 'APPROVED');
     if (!approved) throw providerError('META_TEMPLATE_NOT_APPROVED', 'La plantilla no está aprobada por Meta para este idioma.');
@@ -113,6 +121,7 @@ export class MetaWhatsAppProvider extends WhatsAppProvider {
       throw providerError('META_TEMPLATE_CHANGED', 'La plantilla aprobada en Meta cambió de contenido o categoría.');
     }
     validateTemplateParameters(approved, template.components || []);
+    if (sendBefore && clock() >= sendBefore) throw providerError('META_SCHEDULE_CLOSED', 'Terminó el horario de envío antes de contactar a Meta.');
     return this.sendMessage({ recipient: to, manual, payload: { type: 'template', ...(callbackId ? { biz_opaque_callback_data: callbackId } : {}),
       template: { name: approved.name, language: { code: approved.language }, ...(template.components?.length ? { components: template.components } : {}) } }, signal });
   }

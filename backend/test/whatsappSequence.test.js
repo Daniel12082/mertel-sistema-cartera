@@ -8,6 +8,12 @@ const input = (invoices = [invoice()], referenceDate = '2026-10-08') => ({ custo
   templates: MERTEL_CONTACTS.map((step, index) => ({ id: String(index + 1), name: step.template_name, stage: step.stage, channel: 'whatsapp', status: 'active', content: 'Hola {{cliente_nombre}}.' })),
   settings: { automations_enabled: true, excluded_customers: {}, rules: MERTEL_CONTACTS.map((step, index) => ({ stage: step.stage, template_id: String(index + 1), enabled: true, mode: 'AUTOMATICO', weekdays: [1,2,3,4,5,6], start_time: '08:00', end_time: '18:00', daily_limit: 100, interval_hours: 1 })) } });
 
+test('real schedule starts Saturday at 8, closes at 15 and skips Sunday and holiday', () => {
+  const notice = { expires_on: '2026-10-13', rule: { weekdays: [1, 2, 3, 4, 5, 6], start_time: '07:00', end_time: '17:00' } };
+  assert.equal(automaticWindow(notice, rules, new Date('2026-10-10T12:00:00Z'), [], true).toISOString(), '2026-10-10T13:00:00.000Z');
+  assert.equal(automaticWindow(notice, rules, new Date('2026-10-10T20:00:00Z'), [], true).toISOString(), '2026-10-13T12:00:00.000Z');
+});
+
 test('pronto pago is day business 7, before calendar 10; uses complete portfolio and only base before VAT', () => {
   const source = input([invoice(), invoice({ id: '2', invoice_id: '2', invoice_number: 'DEMO-2', issue_date: '2026-09-30' })]);
   const copy = structuredClone(source), notice = automaticSelection(source), body = automaticContent(notice, source.referenceDate);

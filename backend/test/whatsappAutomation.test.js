@@ -58,7 +58,8 @@ describe('MERTEL automation authority on an isolated MySQL schema', { skip: !(pr
     const queued = await Promise.all([enqueue(), enqueue(), enqueue()]);
     assert.equal(new Set(queued.map(row => row.message.id)).size, 1); assert.equal(queued.filter(row => !row.duplicate).length, 1);
     const sent = await Promise.all([dispatch(queued[0].message.id), dispatch(queued[0].message.id)]);
-    assert.equal(sent[0].message.status, 'SENT'); assert.equal(sent[1].duplicate, true);
+    assert.ok(sent.every(row => row.message.status === 'SENT'));
+    assert.equal(sent.filter(row => row.duplicate).length, 1);
     assert.equal((await db.query("SELECT COUNT(*) count FROM messages WHERE direction='outbound'"))[0][0].count, 1);
     await assert.rejects(enqueue(), /No hay un aviso/);
     await db.query("UPDATE message_templates SET content='Plantilla editada {{cliente_nombre}}.' WHERE id=2");
@@ -141,13 +142,14 @@ describe('MERTEL automation authority on an isolated MySQL schema', { skip: !(pr
     const requests = [];
     t.mock.method(globalThis, 'fetch', async (url, options) => {
       assert.equal(new URL(url).hostname, 'graph.facebook.com');
+      if (String(url).includes('fields=whatsapp_business_manager_messaging_limit')) return Response.json({ whatsapp_business_manager_messaging_limit: 'TIER_250' });
       if (options.method === 'GET') return Response.json({ data: [{ name: MERTEL_INVOICE_TEMPLATE, language: 'es',
         status: templateStatus, category: 'UTILITY', components: [{ type: 'BODY', text: MERTEL_INVOICE_BODY }] }] });
       requests.push(JSON.parse(options.body));
       const providerId = `wamid.notice${requests.length}`;
       const callback = requests.at(-1).biz_opaque_callback_data;
       await service.receiveMetaWebhook({ events: [{ kind: 'status', provider_message_id: providerId, status: 'DELIVERED', timestamp: now,
-        recipient: '+573001234567', callback_id: callback.split(':')[1] }] }, pool);
+        recipient: `+${requests.at(-1).to}`, callback_id: callback.split(':')[1] }] }, pool);
       return Response.json({ messages: [{ id: providerId }] });
     });
     const [template] = await db.query("INSERT INTO message_templates(company_id,name,channel,content,status) VALUES (1,?,'whatsapp','Hola {{cliente_nombre}}.','active')", [MERTEL_INVOICE_TEMPLATE]);
@@ -177,5 +179,37 @@ describe('MERTEL automation authority on an isolated MySQL schema', { skip: !(pr
     await service.receiveMetaWebhook({ events: [{ kind: 'message', provider_message_id: 'wamid.stop', phone: '+573001234567',
       timestamp: now, type: 'text', content: 'BAJA' }] }, pool);
     assert.equal((await service.getCustomerWhatsAppSequence({ scope, customerId: '1', now }, pool)).contact_authorized, false);
+
+    // Production reserves 40 slots 15 minutes apart and carries the other 10 to Friday.
+    await db.query('DELETE FROM messages');
+    const authorized = {};
+    for (let id = 1; id <= 50; id++) {
+      const phone = `310000${String(id).padStart(4, '0')}`;
+      if (id === 1) await db.query('UPDATE customers SET phone=? WHERE id=1', [phone]);
+      else {
+        await db.query('INSERT INTO customers(id,company_id,nit,name,phone) VALUES (?,1,?,?,?)', [id, `AUTO-${id}`, `Cliente ${id}`, phone]);
+        await db.query(`INSERT INTO invoices(company_id,customer_id,invoice_number,issue_date,due_date,document_value,base_value,iva_value,balance)
+          VALUES (1,?,?,'2026-09-01','2026-10-13',1190,1000,190,1190)`, [id, `AVISO-${id}`]);
+      }
+      authorized[id] = { recipient: `+57${phone}` };
+    }
+    await freeze();
+    await db.query("UPDATE settings SET setting_value=? WHERE setting_key='whatsapp_center'", [JSON.stringify({ ...configured, authorized_recipients: authorized })]);
+    await assert.rejects(service.configureAutomaticSchedule({ scope, body: { daily_limit: 251 } }, pool), /máximo 250/);
+    const savedSchedule = await service.configureAutomaticSchedule({ scope, body: { daily_limit: 40 } }, pool);
+    assert.equal(savedSchedule.rules.filter(rule => rule.mode === 'AUTOMATICO').length, 4);
+    await activate();
+    const opening = new Date('2026-10-08T12:00:00Z');
+    await service.processWhatsAppAutomations({ scope, now: new Date(opening.getTime() - 60_000) }, pool);
+    const [batches] = await db.query(`SELECT DATE_FORMAT(budget_date,'%Y-%m-%d') day, COUNT(*) total,
+      MIN(scheduled_at) first_slot,MAX(scheduled_at) last_slot FROM messages GROUP BY budget_date ORDER BY budget_date`);
+    assert.deepEqual(batches.map(row => [row.day, row.total]), [['2026-10-08', 40], ['2026-10-09', 10]]);
+    assert.equal(batches[0].first_slot.toISOString(), opening.toISOString());
+    assert.equal(batches[0].last_slot.toISOString(), '2026-10-08T21:45:00.000Z');
+    assert.equal(batches[1].first_slot.toISOString(), '2026-10-09T12:00:00.000Z');
+    assert.equal(requests.length, 2, 'Scheduling before opening must not send anything');
+    assert.equal((await service.processWhatsAppAutomations({ scope, now: opening }, pool)).sent, 1);
+    assert.equal((await service.processWhatsAppAutomations({ scope, now: new Date(opening.getTime() + 60_000) }, pool)).sent, 0);
+    assert.equal((await service.processWhatsAppAutomations({ scope, now: new Date(opening.getTime() + 15 * 60_000) }, pool)).sent, 1);
   });
 });

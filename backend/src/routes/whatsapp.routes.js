@@ -29,6 +29,8 @@ adminWhatsAppRoutes.post('/meta/test-messages', respond(center.enqueueMetaTestMe
 adminWhatsAppRoutes.post('/meta/test-messages/:messageId/send', respond(args => center.sendMetaTestMessage({ ...args, body: args.body })));
 adminWhatsAppRoutes.post('/disconnect', respond(center.disconnectWhatsApp));
 adminWhatsAppRoutes.get('/automations', respond(center.getWhatsAppCenter));
+adminWhatsAppRoutes.get('/automations/limit', respond(center.getMetaAutomationLimit));
+adminWhatsAppRoutes.put('/automations/schedule', respond(center.configureAutomaticSchedule));
 adminWhatsAppRoutes.get('/customers/:customerId/sequence', respond(center.getCustomerWhatsAppSequence));
 adminWhatsAppRoutes.put('/automations/:stage', respond(center.saveWhatsAppRule));
 adminWhatsAppRoutes.get('/messages', respond(center.listWhatsAppMessages));

@@ -199,7 +199,14 @@ export function buildWhatsAppSequence(input, render = renderAutomaticNotice) {
     excluded: Boolean(input.settings.excluded_customers?.[String(input.customer.id)]), notice: 'Fechas calculadas con cartera vigente; los avisos enviados no se repiten.' };
 }
 
-export function automaticWindow(notice, rules, now, previousMessages = []) {
+export function automaticHours(notice, date, production = false) {
+  const saturday = new Date(dateDay(date) * 86400000).getUTCDay() === 6;
+  const startTime = production ? [notice.rule.start_time, saturday ? '08:00' : '07:00'].sort().at(-1) : notice.rule.start_time;
+  const endTime = production ? [notice.rule.end_time, saturday ? '15:00' : '17:00'].sort()[0] : notice.rule.end_time;
+  return { start: new Date(`${date}T${startTime}:00-05:00`), end: new Date(`${date}T${endTime}:00-05:00`) };
+}
+
+export function automaticWindow(notice, rules, now, previousMessages = [], production = false) {
   const latest = previousMessages.filter(row => row.message_mode === 'AUTOMATICO' && row.sent_at).reduce((last, row) => Math.max(last, new Date(row.sent_at).getTime()), 0);
   if (latest) now = new Date(Math.max(now.getTime(), latest + Number(notice.rule.interval_hours || 0) * 3600000));
   const day = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Bogota', year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);
@@ -208,8 +215,8 @@ export function automaticWindow(notice, rules, now, previousMessages = []) {
     if (date > notice.expires_on) return null;
     const weekday = new Date(dateDay(date) * 86400000).getUTCDay() || 7;
     if (!automaticDayAllowed(date, rules) || !notice.rule.weekdays.includes(weekday)) continue;
-    const start = new Date(`${date}T${notice.rule.start_time}:00-05:00`), end = new Date(`${date}T${notice.rule.end_time}:00-05:00`);
-    if (now >= end) continue;
+    const { start, end } = automaticHours(notice, date, production);
+    if (now >= end || start >= end) continue;
     const scheduled = new Date(Math.max(start.getTime(), now.getTime())); scheduled.setUTCMilliseconds(0); return scheduled;
   }
   return null;

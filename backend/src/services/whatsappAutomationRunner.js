@@ -11,7 +11,7 @@ export function startWhatsAppAutomationRunner({ dbPool = pool, intervalMs = 6000
     running = true;
     try {
       const company = await resolveMertelCompany(dbPool);
-      if (!stopped) await processWhatsAppAutomations({ scope: { companyId: String(company.id), companyName: company.name, actorId: null }, now: clock() }, dbPool);
+      if (!stopped) await processWhatsAppAutomations({ scope: { companyId: String(company.id), companyName: company.name, actorId: null }, clock }, dbPool);
     } catch (error) { report('Automatización WhatsApp: evaluación no disponible.', error.code || 'INTERNAL'); }
     finally { running = false; }
   }
