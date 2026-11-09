@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import { getCollectionMessageTemplates, previewCollectionMessage, prepareCollectionMessage } from "../../services/collectionMessages.service";
 import { useAuth } from "../../auth/useAuth";
 import { queueCustomerWhatsApp } from "../../services/whatsappCenter.service";
+import { simulationAvailable } from "../../simulation/store";
 
 export default function CollectionMessages({ customer, referenceDate, autoOpen = false }) {
   const { permissions = [] } = useAuth();
@@ -55,8 +57,10 @@ export default function CollectionMessages({ customer, referenceDate, autoOpen =
   }
   const phoneAvailable = typeof customer.phone === "string" && customer.phone.trim().length > 0;
   return <section className="cobranza-whatsapp" id="cobranza-whatsapp" aria-label="WhatsApp del cliente">
-    <h3 ref={heading} data-message-start tabIndex={-1}>WhatsApp</h3><p className="cobranza-note">Selecciona una plantilla y prepara el contenido. El envío real todavía no está habilitado.</p>
-    <button className="cartera-reset cobranza-whatsapp-button" disabled={!allowed} onClick={open}>Enviar mensaje a WhatsApp</button>
+    <h3 ref={heading} data-message-start tabIndex={-1}>WhatsApp</h3><p className="cobranza-note">{simulationAvailable ? "Selecciona una plantilla y prepara el contenido. El envío real todavía no está habilitado." : "Prepara el contenido aquí o envía un aviso de facturas desde el chat."}</p>
+    {!simulationAvailable && permissions.includes("settings.manage") && phoneAvailable &&
+      <Link className="cartera-reset cobranza-whatsapp-button" to={`/administracion/whatsapp?cliente=${encodeURIComponent(customer.id)}`}>Abrir chat de este cliente</Link>}
+    <button className="cartera-reset cobranza-whatsapp-button" disabled={!allowed} onClick={open}>{simulationAvailable ? "Enviar mensaje a WhatsApp" : "Preparar mensaje de cobranza"}</button>
     {!allowed && <p>No tienes permiso para preparar mensajes.</p>}
     {!phoneAvailable && <p role="status">Este cliente no tiene un número de WhatsApp registrado.</p>}
     {opened && allowed && <div className="cobranza-message-panel" aria-label="Selector de mensajes">
@@ -75,7 +79,7 @@ export default function CollectionMessages({ customer, referenceDate, autoOpen =
           {message.empty_content && <p role="alert">La plantilla no tiene contenido.</p>}
           <p role="status">{message.notice}</p>
           <button className="cartera-reset" disabled={!message.can_prepare || !phoneAvailable || loading || message.prepared} onClick={() => generate(true)}>Preparar mensaje</button>
-          <button className="cartera-reset" disabled={!message.can_prepare || loading || Boolean(queued)} onClick={queue}>Guardar en cola WhatsApp</button>
+          {simulationAvailable && <button className="cartera-reset" disabled={!message.can_prepare || loading || Boolean(queued)} onClick={queue}>Guardar en cola WhatsApp</button>}
           {queued && <p role="status">{queued}</p>}
         </div>}
       </>}

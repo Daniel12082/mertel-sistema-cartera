@@ -434,6 +434,7 @@ export async function enqueueWhatsApp({ scope, actorId, body, now = new Date() }
   const customerId = operationId(body.customer_id, 'customer_id');
   return transaction(scope, async (db, settings) => {
     if (body.mode === 'AUTOMATICO') return enqueueAutomatic(db, { ...scope, actorId: null }, settings, customerId, now);
+    if (runtimeProvider(settings) === 'WHATSAPP_CLOUD_API') throw operationError(409, 'Para un aviso de facturas real, usa Enviar aviso de facturas en el chat del cliente.');
     const stages = await stagesFor(db, scope);
     // Template, variables and stage are resolved from the collection engine inside the transaction.
     let templateId = body.template_id;

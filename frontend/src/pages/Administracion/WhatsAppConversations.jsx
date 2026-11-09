@@ -99,6 +99,8 @@ export default function WhatsAppConversations({ settings, chatOnly = false, pref
   const [busy, setBusy] = useState(false), [mobile, setMobile] = useState('list'), [associateId, setAssociateId] = useState('');
   const [loadingMore, setLoadingMore] = useState(false); const pagePending = useRef(false);
   const pending = useRef(false), active = useRef(true), chosen = useRef('');
+  const [initialCustomer] = useState(() => new URLSearchParams(window.location.search).get('cliente'));
+  const openedInitialCustomer = useRef(false);
   const conversations = useMemo(() => {
     const newPhones = new Set(newChats.map(row => phoneKey(row.phone)).filter(Boolean));
     const rows = buildConversations(customers, records).map(row => {
@@ -158,11 +160,20 @@ export default function WhatsAppConversations({ settings, chatOnly = false, pref
     Promise.all([getCustomers(), whatsappRequest('/messages', { params: { page: 1 }, signal: controller.signal })]).then(([response, history]) => {
       if (!response.success || !Array.isArray(response.data) || response.data.some(row => !row || row.id == null)) throw new Error('No se pudieron interpretar los clientes.');
       checkMessages(history);
-      if (!controller.signal.aborted) { setCustomers(response.data.filter(row => row.status === 'active' && !row.deleted_at)); setRecords(history.messages); setHasNext(Boolean(history.has_next)); setPage(1); }
+      if (!controller.signal.aborted) {
+        const activeCustomers = response.data.filter(row => row.status === 'active' && !row.deleted_at);
+        setCustomers(activeCustomers); setRecords(history.messages); setHasNext(Boolean(history.has_next)); setPage(1);
+        if (!openedInitialCustomer.current && initialCustomer && activeCustomers.some(row => String(row.id) === initialCustomer)) {
+          openedInitialCustomer.current = true;
+          chosen.current = `customer:${initialCustomer}`;
+          setSelection(chosen.current);
+          setMobile('chat');
+        }
+      }
     }).catch(() => { if (!controller.signal.aborted) setError('No se pudieron cargar las conversaciones. Revisa tu acceso e intenta nuevamente.'); })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
-  }, [revision]);
+  }, [initialCustomer, revision]);
   useEffect(() => {
     if (!customerId) return;
     const controller = new AbortController();
