@@ -26,7 +26,7 @@ function AutomaticRule({ step, rule, templates, busy, act }) {
 }
 export default function WhatsAppAutomationPreview({ settings, templates, busy, act, revision }) {
   const real = settings.provider === 'WHATSAPP_CLOUD_API';
-  const [daily, setDaily] = useState(settings.global_daily_limit ?? (real ? 40 : ''));
+  const [daily, setDaily] = useState(real ? settings.automatic_daily_limit ?? settings.global_daily_limit ?? 40 : settings.global_daily_limit ?? '');
   const [metaLimit, setMetaLimit] = useState({ loading: true });
   useEffect(() => {
     if (!real) return;

@@ -118,7 +118,10 @@ export async function updateWhatsAppSettings({ scope, actorId, body }, dbPool = 
       if (typeof body.automations_enabled !== 'boolean') throw operationError(400, 'Estado de automatizaciones inválido.');
       if (body.automations_enabled) {
         const provider = requireAutomationProvider(settings);
-        if (!settings.global_daily_limit || !settings.customer_daily_limit || !settings.rules.some(rule => rule.enabled && rule.mode === 'AUTOMATICO')) throw operationError(409, 'Define límites y una regla automática activa antes de activar automatizaciones.');
+        const configuredLimit = provider === 'WHATSAPP_CLOUD_API'
+          ? settings.automatic_daily_limit ?? settings.global_daily_limit
+          : settings.global_daily_limit && settings.customer_daily_limit;
+        if (!configuredLimit || !settings.rules.some(rule => rule.enabled && rule.mode === 'AUTOMATICO')) throw operationError(409, 'Define el cupo y una regla automática activa antes de activar automatizaciones.');
         const stages = await stagesFor(db, scope);
         for (const rule of settings.rules.filter(item => item.enabled && item.mode === 'AUTOMATICO')) {
           validateRule(rule, stages);
@@ -196,8 +199,7 @@ export async function configureAutomaticSchedule({ scope, actorId, body }, dbPoo
       validateRule({ stage: step.stage, mode: 'AUTOMATICO', enabled: true, template_id: template.id,
         start_time: '07:00', end_time: '17:00', weekdays: [1, 2, 3, 4, 5, 6], daily_limit: dailyLimit, interval_hours: 1 }, stages));
     if (!rules.length) throw operationError(409, 'Activa al menos una etapa en las reglas de cobranza.');
-    settings.global_daily_limit = dailyLimit;
-    settings.customer_daily_limit = 1;
+    settings.automatic_daily_limit = dailyLimit;
     settings.rules = [...settings.rules.filter(rule => !rules.some(item => item.stage === rule.stage)), ...rules];
     await saveSettings(db, scope, actorId, settings, 'automatic_schedule_configured');
     return { ...publicWhatsAppSettings(settings), meta_limit: metaLimit };
@@ -674,8 +676,9 @@ function renderAutomatic(notice, day) {
 }
 async function realAutomaticSlot(db, scope, input, notice, now, { message = null, metaLimit = null } = {}) {
   const { settings, customer } = input;
-  if (!settings.global_daily_limit || !settings.customer_daily_limit) throw operationError(409, 'Configura el cupo diario antes de programar avisos.');
-  const dailyLimit = Math.min(settings.global_daily_limit, metaLimit ?? Infinity);
+  const configuredLimit = settings.automatic_daily_limit ?? settings.global_daily_limit;
+  if (!configuredLimit) throw operationError(409, 'Configura el cupo diario antes de programar avisos.');
+  const dailyLimit = Math.min(configuredLimit, metaLimit ?? Infinity);
   const recipient = normalizePhone(customer.phone);
   const today = bogotaDate(now);
   let cursor = new Date(Math.max(now.getTime(), message?.scheduled_at ? new Date(message.scheduled_at).getTime() : 0));
@@ -688,11 +691,11 @@ async function realAutomaticSlot(db, scope, input, notice, now, { message = null
     const tomorrow = new Date(midnight.getTime() + 86_400_000);
     // During reservation, count future work. During today's dispatch, count only claims already made.
     const reserve = !message || date !== today;
-    const [[usage]] = await db.query(`SELECT COUNT(*) AS total,
+    const [[usage]] = await db.query(`SELECT COUNT(CASE WHEN message_mode='AUTOMATICO' THEN 1 END) AS total,
       COALESCE(SUM(recipient=?),0) AS recipient_count, COALESCE(SUM(stage=?),0) AS stage_count,
       MAX(CASE WHEN message_mode='AUTOMATICO' THEN
         CASE WHEN last_attempt_at>=? AND last_attempt_at<? THEN last_attempt_at ELSE scheduled_at END END) AS last_slot
-      FROM messages WHERE company_id=? AND provider='WHATSAPP_CLOUD_API' AND direction='outbound'
+      FROM messages WHERE company_id=? AND provider='WHATSAPP_CLOUD_API' AND direction='outbound' AND template_id IS NOT NULL
       AND (? IS NULL OR id<>?) AND UPPER(status)<>'CANCELLED'
       AND ((last_attempt_at>=? AND last_attempt_at<?) OR
         (? AND budget_date=? AND (UPPER(status)='PENDING' OR (UPPER(status)='FAILED' AND next_attempt_at IS NOT NULL))))`,

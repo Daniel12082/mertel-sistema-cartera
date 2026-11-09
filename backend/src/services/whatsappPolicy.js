@@ -5,7 +5,7 @@ export const CONNECTION_STATES = ['NOT_CONFIGURED', 'CONFIGURED', 'CONNECTED', '
 export const MESSAGE_STATES = ['PENDING', 'PROCESSING', 'SENT', 'DELIVERED', 'READ', 'FAILED', 'CANCELLED'];
 export const RETRY_POLICY = Object.freeze({ max_attempts: 3, delay_minutes: 15 });
 export const defaultWhatsAppSettings = () => ({ provider: null, number: '', phone_number_id: '', business_account_id: '',
-  connection_status: 'NOT_CONFIGURED', automations_enabled: false, global_daily_limit: null,
+  connection_status: 'NOT_CONFIGURED', automations_enabled: false, automatic_daily_limit: null, global_daily_limit: null,
   customer_daily_limit: null, rules: [], excluded_customers: {}, authorized_recipients: {}, retry: { ...RETRY_POLICY } });
 export function publicWhatsAppSettings(settings) {
   const { encrypted_credentials, authorized_recipients: _authorizedRecipients, ...safe } = settings;

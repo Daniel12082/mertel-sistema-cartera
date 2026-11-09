@@ -197,6 +197,9 @@ describe('MERTEL automation authority on an isolated MySQL schema', { skip: !(pr
     await db.query("UPDATE settings SET setting_value=? WHERE setting_key='whatsapp_center'", [JSON.stringify({ ...configured, authorized_recipients: authorized })]);
     await assert.rejects(service.configureAutomaticSchedule({ scope, body: { daily_limit: 251 } }, pool), /máximo 250/);
     const savedSchedule = await service.configureAutomaticSchedule({ scope, body: { daily_limit: 40 } }, pool);
+    assert.equal(savedSchedule.automatic_daily_limit, 40);
+    assert.equal(savedSchedule.global_daily_limit, defaults.global_daily_limit);
+    assert.equal(savedSchedule.customer_daily_limit, defaults.customer_daily_limit);
     assert.equal(savedSchedule.rules.filter(rule => rule.mode === 'AUTOMATICO').length, 4);
     await activate();
     const opening = new Date('2026-10-08T12:00:00Z');
