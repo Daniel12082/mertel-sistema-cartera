@@ -42,11 +42,11 @@ async function audit(db, scope, actorId, action, entityType, entityId, data) {
   await db.query('INSERT INTO audit_logs (company_id,user_id,action,entity_type,entity_id,new_values) VALUES (?,?,?,?,?,?)',
     [scope.companyId, actorId ?? scope.actorId ?? null, action, entityType, entityId ?? null, JSON.stringify({...data,actor_type:actorId??scope.actorId?'USER':'SYSTEM'})]);
 }
-async function saveSettings(db, scope, actorId, settings, action) {
+async function saveSettings(db, scope, actorId, settings, action, details = {}) {
   await db.query(`INSERT INTO settings (company_id,setting_key,setting_value,value_type,description) VALUES (?,?,?,'json','Centro WhatsApp MERTEL')
     ON DUPLICATE KEY UPDATE setting_value=VALUES(setting_value)`, [scope.companyId, SETTING, JSON.stringify(settings)]);
   const [[row]] = await db.query('SELECT id FROM settings WHERE company_id=? AND setting_key=?', [scope.companyId, SETTING]);
-  await audit(db, scope, actorId, action, 'whatsapp_setting', row.id, publicWhatsAppSettings(settings));
+  await audit(db, scope, actorId, action, 'whatsapp_setting', row.id, { ...publicWhatsAppSettings(settings), ...details });
 }
 async function stagesFor(db, scope) { return collectionStageCatalog(await loadCompanyCollectionRules(scope.companyId, db)); }
 function connected(settings) {
@@ -87,7 +87,49 @@ async function requireApprovedInvoiceTemplate() {
 }
 
 export async function getWhatsAppCenter({ scope }, dbPool = pool) {
-  return transaction(scope, async (db, settings) => ({ settings: publicWhatsAppSettings({ ...settings, provider: runtimeProvider(settings) }), stage_catalog: await stagesFor(db, scope),contact_rules:MERTEL_CONTACTS }), dbPool);
+  return transaction(scope, async (db, settings) => {
+    const provider = runtimeProvider(settings);
+    return {
+      settings: publicWhatsAppSettings({ ...settings, provider }), stage_catalog: await stagesFor(db, scope), contact_rules: MERTEL_CONTACTS,
+      ...(provider === 'WHATSAPP_CLOUD_API' ? { conversation_customers: settings.conversation_customers } : {}),
+    };
+  }, dbPool);
+}
+
+async function customersAtNumber(db, scope, recipient) {
+  const [customers] = await db.query("SELECT CAST(id AS CHAR) id,phone FROM customers WHERE company_id=? AND status='active' AND deleted_at IS NULL AND phone IS NOT NULL", [scope.companyId]);
+  return customers.filter(customer => { try { return normalizePhone(customer.phone) === recipient; } catch { return false; } });
+}
+
+async function metaConversationCustomer(db, scope, settings, recipient) {
+  const matches = await customersAtNumber(db, scope, recipient);
+  const confirmed = settings.conversation_customers?.[recipient];
+  return matches.find(customer => customer.id === confirmed)?.id ?? (matches.length === 1 ? matches[0].id : null);
+}
+
+export async function associateMetaConversation({ scope, actorId, body }, dbPool = pool) {
+  if (!body || Object.keys(body).some(key => !['recipient', 'customer_id'].includes(key))) throw operationError(400, 'Selecciona el número y el cliente.');
+  const customerId = operationId(body.customer_id, 'customer_id');
+  let recipient;
+  try { recipient = normalizePhone(body.recipient); }
+  catch { throw operationError(400, 'Número de WhatsApp inválido.'); }
+  return transaction(scope, async (db, settings) => {
+    if (automationProvider(settings) !== 'WHATSAPP_CLOUD_API') throw operationError(409, 'Conecta el canal real de WhatsApp.');
+    const matches = await customersAtNumber(db, scope, recipient);
+    if (!matches.some(customer => customer.id === customerId)) throw operationError(409, 'El número no corresponde a ese cliente activo.');
+    const confirmed = settings.conversation_customers[recipient];
+    if (confirmed !== customerId && matches.some(customer => customer.id === confirmed)) {
+      throw operationError(409, 'Otro administrador ya vinculó esta conversación. Actualiza la bandeja.');
+    }
+    const [updated] = await db.query(`UPDATE messages SET customer_id=? WHERE company_id=? AND recipient=?
+      AND channel='whatsapp' AND provider='WHATSAPP_CLOUD_API' AND customer_id IS NULL`, [customerId, scope.companyId, recipient]);
+    if (confirmed !== customerId || updated.affectedRows) {
+      settings.conversation_customers[recipient] = customerId;
+      await saveSettings(db, scope, actorId, settings, 'conversation_associated',
+        { recipient, customer_id: customerId, messages_linked: updated.affectedRows });
+    }
+    return { customer_id: customerId, recipient, messages_linked: updated.affectedRows };
+  }, dbPool);
 }
 function requireContactTemplate(rule,template,provider){
   const expected=MERTEL_CONTACTS.find(step=>step.stage===rule.stage);
@@ -321,27 +363,27 @@ async function deliverMetaText({ scope, actorId, message, now, testMode, templat
 
 export async function replyToMetaConversation({ scope, actorId, body, now = new Date() }, dbPool = pool) {
   if (process.env.WHATSAPP_TEST_MODE !== 'false') throw operationError(409, 'El envío normal de WhatsApp está desactivado.');
-  if (!body || Object.keys(body).some(key => !['recipient', 'content'].includes(key)) ||
+  if (!body || Object.keys(body).some(key => !['recipient', 'content', 'customer_id'].includes(key)) ||
       typeof body.content !== 'string' || !body.content.trim() || body.content.length > 4096) {
     throw operationError(400, 'Escribe un mensaje de hasta 4.096 caracteres.');
   }
   let recipient;
   try { recipient = normalizePhone(body.recipient); }
   catch { throw operationError(400, 'Número de WhatsApp inválido.'); }
+  const selectedCustomer = body.customer_id === undefined ? null : operationId(body.customer_id, 'customer_id');
   const content = body.content.trim();
   const day = bogotaDate(now);
   const claimed = await transaction(scope, async (db, settings) => {
     if (runtimeProvider(settings) !== 'WHATSAPP_CLOUD_API' || settings.connection_status !== 'CONNECTED') {
       throw operationError(409, 'WhatsApp Cloud API no está conectada.');
     }
-    const [[incoming]] = await db.query(`SELECT CAST(id AS CHAR) id FROM messages
+    const [[incoming]] = await db.query(`SELECT CAST(m.id AS CHAR) id FROM messages m
       WHERE company_id=? AND channel='whatsapp' AND provider='WHATSAPP_CLOUD_API' AND direction='inbound'
-      AND recipient=? AND received_at>? AND received_at<=? ORDER BY received_at DESC,id DESC LIMIT 1`,
+      AND recipient=? AND received_at>? AND received_at<=? ORDER BY m.received_at DESC,m.id DESC LIMIT 1`,
     [scope.companyId, recipient, new Date(now.getTime() - 86_400_000), now]);
     if (!incoming) throw operationError(409, 'La ventana de respuesta de 24 horas está cerrada.');
-    const [customers] = await db.query("SELECT CAST(id AS CHAR) id,phone FROM customers WHERE company_id=? AND status='active' AND deleted_at IS NULL AND phone IS NOT NULL", [scope.companyId]);
-    const matching = customers.filter(customer => { try { return normalizePhone(customer.phone) === recipient; } catch { return false; } });
-    const customerId = matching.length === 1 ? matching[0].id : null;
+    const customerId = await metaConversationCustomer(db, scope, settings, recipient);
+    if (selectedCustomer && customerId !== selectedCustomer) throw operationError(409, 'El número no está vinculado al cliente seleccionado. Actualiza la bandeja.');
     const key = createHash('sha256').update(JSON.stringify(['meta-reply', scope.companyId, recipient, content, incoming.id, now.toISOString().slice(0, 16)])).digest('hex');
     const [[duplicate]] = await db.query('SELECT CAST(id AS CHAR) id FROM messages WHERE company_id=? AND idempotency_key=?', [scope.companyId, key]);
     if (duplicate) return { message: await messageById(db, scope, duplicate.id), duplicate: true };
@@ -421,6 +463,8 @@ export async function receiveMetaWebhook({ events }, dbPool = pool) {
     const [companies] = await db.query("SELECT id FROM companies WHERE status='active' AND deleted_at IS NULL ORDER BY id LIMIT 2 FOR UPDATE");
     if (companies.length !== 1) throw new Error('El webhook requiere una única compañía activa de MERTEL.');
     const scope = { companyId: String(companies[0].id), actorId: null };
+    let settings;
+    let hasStoredSettings;
     for (const event of events) {
       if (event.kind === 'status') {
         let [[message]] = await db.query("SELECT CAST(id AS CHAR) id,UPPER(status) status FROM messages WHERE company_id=? AND provider='WHATSAPP_CLOUD_API' AND provider_message_id=? FOR UPDATE", [scope.companyId, event.provider_message_id]);
@@ -445,23 +489,22 @@ export async function receiveMetaWebhook({ events }, dbPool = pool) {
       } else if (event.kind === 'message') {
         const [[duplicate]] = await db.query("SELECT id FROM messages WHERE company_id=? AND provider='WHATSAPP_CLOUD_API' AND provider_message_id=?", [scope.companyId, event.provider_message_id]);
         if (duplicate) continue;
-        const [customers] = await db.query("SELECT CAST(id AS CHAR) id,phone FROM customers WHERE company_id=? AND status='active' AND deleted_at IS NULL AND phone IS NOT NULL", [scope.companyId]);
-        const matching = customers.filter(customer => { try { return normalizePhone(customer.phone) === event.phone; } catch { return false; } });
-        const customerId = matching.length === 1 ? matching[0].id : null;
+        if (!settings) {
+          const [[stored]] = await db.query('SELECT setting_value FROM settings WHERE company_id=? AND setting_key=?', [scope.companyId, SETTING]);
+          hasStoredSettings = Boolean(stored);
+          settings = { ...defaultWhatsAppSettings(), ...(stored ? JSON.parse(stored.setting_value) : {}) };
+        }
+        const customerId = await metaConversationCustomer(db, scope, settings, event.phone);
         const content = event.content || `[${event.type || 'media'} recibido · id ${event.media?.id || 'sin identificador'}]`;
         const [result] = await db.query("INSERT INTO messages(company_id,customer_id,channel,recipient,content,status,provider,provider_message_id,direction,received_at) VALUES (?,?,'whatsapp',? ,?,'DELIVERED','WHATSAPP_CLOUD_API',?,'inbound',?)", [scope.companyId, customerId, event.phone, content.slice(0, 16000), event.provider_message_id, event.timestamp]);
         await audit(db, scope, null, 'meta_incoming', 'whatsapp_message', result.insertId, { provider_message_id: event.provider_message_id, type: event.type, linked_customer: Boolean(customerId) });
-        if (['BAJA', 'STOP', 'CANCELAR'].includes(String(event.content || '').trim().toUpperCase())) {
-          const [[stored]] = await db.query('SELECT setting_value FROM settings WHERE company_id=? AND setting_key=?', [scope.companyId, SETTING]);
-          if (stored) {
-            const settings = { ...defaultWhatsAppSettings(), ...JSON.parse(stored.setting_value) };
-            for (const [id, contact] of Object.entries(settings.authorized_recipients)) {
-              if (contact.recipient !== event.phone) continue;
-              delete settings.authorized_recipients[id];
-              await audit(db, scope, null, 'whatsapp_opt_out', 'customer', id, { recipient: event.phone, provider_message_id: event.provider_message_id });
-            }
-            await saveSettings(db, scope, null, settings, 'customer_opt_out');
+        if (hasStoredSettings && ['BAJA', 'STOP', 'CANCELAR'].includes(String(event.content || '').trim().toUpperCase())) {
+          for (const [id, contact] of Object.entries(settings.authorized_recipients)) {
+            if (contact.recipient !== event.phone) continue;
+            delete settings.authorized_recipients[id];
+            await audit(db, scope, null, 'whatsapp_opt_out', 'customer', id, { recipient: event.phone, provider_message_id: event.provider_message_id });
           }
+          await saveSettings(db, scope, null, settings, 'customer_opt_out');
         }
       }
     }

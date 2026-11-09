@@ -47,7 +47,7 @@ function ChatMessages({ messages }) {
   </div>;
 }
 
-export default function WhatsAppConversations({ settings, chatOnly = false, preferenceOwner }) {
+export default function WhatsAppConversations({ settings, conversationCustomers, chatOnly = false, preferenceOwner }) {
   const { mode } = useAppDataMode(); const simulated = mode === 'SIMULATION';
   const metaConnected = !simulated && settings?.provider === 'WHATSAPP_CLOUD_API' && settings?.connection_status === 'CONNECTED';
   const metaProduction = metaConnected && settings.real_sending_enabled && !settings.test_mode;
@@ -89,6 +89,7 @@ export default function WhatsAppConversations({ settings, chatOnly = false, pref
     setPreferences(current => ({ ...current, [key]: { ...current[key], ...patch } }));
   }
   const [customers, setCustomers] = useState([]), [records, setRecords] = useState([]);
+  const [confirmedOwners, setConfirmedOwners] = useState({});
   const [selection, setSelection] = useState(''), [search, setSearch] = useState(''), [filter, setFilter] = useState(''), [customerFilter, setCustomerFilter] = useState('');
   const [loading, setLoading] = useState(true), [error, setError] = useState(''), [revision, setRevision] = useState(0);
   const [page, setPage] = useState(1), [hasNext, setHasNext] = useState(false);
@@ -111,11 +112,15 @@ export default function WhatsAppConversations({ settings, chatOnly = false, pref
     });
     const existing = new Set(rows.map(row => phoneKey(row.phone)));
     for (const phone of newPhones) {
-      if (existing.has(phone)) continue;
-      rows.push({ key: `unlinked:new:${phone}`, customer: null, name: 'Nuevo chat', phone: `+${phone}`, nit: '', candidates: [], messages: [], last: null });
+      const number = `+${phone}`;
+      const candidates = metaProduction ? customers.filter(row => phoneKey(row.phone) === phone) : [];
+      const assigned = confirmedOwners[number] ?? conversationCustomers?.[number];
+      const ambiguous = candidates.length > 1 && !candidates.some(row => String(row.id) === assigned);
+      if (existing.has(phone) && (!ambiguous || rows.some(row => !row.customer && phoneKey(row.phone) === phone))) continue;
+      rows.push({ key: `unlinked:new:${phone}`, customer: null, name: ambiguous ? 'Asociación ambigua' : 'Nuevo chat', phone: number, nit: '', candidates, messages: [], last: null });
     }
     return rows;
-  }, [customers, records, newChats]);
+  }, [customers, records, newChats, metaProduction, confirmedOwners, conversationCustomers]);
   const conversation = conversations.find(row => row.key === selection) || null;
   const customerId = conversation?.customer ? String(conversation.customer.id) : '';
   const filtered = conversations.filter(row => (!chatOnly || Boolean(preferences[row.key]?.removed) === showRemoved) && (!customerFilter || String(row.customer?.id) === customerFilter) && (!filter || (filter === 'empty' ? !row.last : filter === 'history' ? Boolean(row.last) : row.last?.status === filter)) &&
@@ -124,6 +129,9 @@ export default function WhatsAppConversations({ settings, chatOnly = false, pref
   const latestContact = messages.filter(row => row.direction === 'inbound' ? Boolean(row.received_at) : Boolean(row.sent_at)).at(-1);
   const lastContact = latestContact ? { date: messageTime(latestContact), label: latestContact.direction === 'inbound' ? 'Mensaje recibido' : latestContact.template_name || 'WhatsApp' } : detail.sequence?.last_contact;
   const recipient = phoneKey(conversation?.phone);
+  const assignedCustomer = confirmedOwners[`+${recipient}`] ?? conversationCustomers?.[`+${recipient}`];
+  const otherCustomerOwnsChat = Boolean(metaProduction && customerId && assignedCustomer && assignedCustomer !== customerId &&
+    customers.some(row => String(row.id) === assignedCustomer && phoneKey(row.phone) === recipient));
   const metaTestChat = metaConnected && settings.test_mode && Boolean(recipient) && recipient === phoneKey(settings.test_allowed_recipient);
   const draft = drafts[selection] || '';
   function hasOpenMetaWindow(now) {
@@ -133,7 +141,7 @@ export default function WhatsAppConversations({ settings, chatOnly = false, pref
       return received <= now && now - received < 24 * 60 * 60 * 1000;
     });
   }
-  const canReplyToMeta = Boolean(recipient && (metaTestChat || metaProduction) && hasOpenMetaWindow(windowClock));
+  const canReplyToMeta = Boolean(recipient && !otherCustomerOwnsChat && (metaTestChat || metaProduction) && hasOpenMetaWindow(windowClock));
   const canWriteMetaDraft = canReplyToMeta || (metaProduction && Boolean(recipient));
   const modeLabel = simulated ? 'Demo local' : metaProduction ? 'Meta conectada' : metaConnected ? settings.test_mode ? 'Meta conectada · prueba controlada' : 'Meta conectada · envío desactivado' : simulationAvailable ? 'Proveedor MOCK · Meta pendiente' : 'Meta no disponible';
   const modeNotice = simulated ? 'SIMULACIÓN — No se enviará ningún mensaje real'
@@ -227,7 +235,7 @@ export default function WhatsAppConversations({ settings, chatOnly = false, pref
       const message = metaTestChat
         ? (await sendMetaTestMessage(content)).message
         : metaProduction
-          ? (await whatsappRequest('/meta/replies', { method: 'post', body: { recipient: `+${recipient}`, content } })).message
+          ? (await whatsappRequest('/meta/replies', { method: 'post', body: { recipient: `+${recipient}`, content, ...(customerId ? { customer_id: customerId } : {}) } })).message
           : simulated
           ? await sendConversationSimulation(id, content, attachment)
           : await sendManualWhatsApp({ customer_id: id, template_id: String(preview.template.id) });
@@ -246,11 +254,23 @@ export default function WhatsAppConversations({ settings, chatOnly = false, pref
     finally { pending.current = false; if (active.current) setBusy(false); }
   }
   async function associate() {
-    if (pending.current || !conversation || !associateId || !simulated) return;
+    if (pending.current || !conversation || !associateId || (!simulated && !metaProduction)) return;
     const key = selection; pending.current = true; setBusy(true); setSendError('');
     try {
-      await associateConversationSimulation(conversation.messages.map(row => row.id), associateId);
-      if (active.current && chosen.current === key) { choose(`customer:${associateId}`); setRevision(value => value + 1); }
+      if (simulated) await associateConversationSimulation(conversation.messages.map(row => row.id), associateId);
+      else {
+        const result = await whatsappRequest('/meta/conversations/association', {
+          method: 'put', body: { recipient: `+${recipient}`, customer_id: associateId },
+        });
+        if (active.current) setConfirmedOwners(current => ({ ...current, [result.recipient]: result.customer_id }));
+      }
+      if (active.current && chosen.current === key) {
+        const nextKey = `customer:${associateId}`;
+        if (draft && !drafts[nextKey]) setDrafts(current => ({ ...current, [nextKey]: draft }));
+        choose(nextKey);
+        if (!simulated) setNotice('Conversación vinculada al cliente. La decisión quedó registrada en el Historial de WhatsApp.');
+        setRevision(value => value + 1);
+      }
     } catch (failure) { if (active.current) setSendError(failure.message); }
     finally { pending.current = false; if (active.current) setBusy(false); }
   }
@@ -259,7 +279,9 @@ export default function WhatsAppConversations({ settings, chatOnly = false, pref
     const phone = phoneKey(newNumber);
     if (!phone) { setNewChatError('Escribe un número válido con código de país.'); return; }
     const matches = conversations.filter(row => phoneKey(row.phone) === phone);
-    const match = matches.length === 1 ? matches[0] : matches.find(row => !row.customer);
+    const assigned = metaProduction && (confirmedOwners[`+${phone}`] ?? conversationCustomers?.[`+${phone}`]);
+    const match = (assigned && matches.find(row => row.customer && String(row.customer.id) === assigned)) ||
+      (matches.length === 1 ? matches[0] : matches.find(row => !row.customer));
     if (match) {
       setShowRemoved(Boolean(preferences[match.key]?.removed));
       choose(match.key);
@@ -312,7 +334,11 @@ export default function WhatsAppConversations({ settings, chatOnly = false, pref
             </>}
           </div>}
           {!conversation.customer && <div className="wa-association"><p>{conversation.candidates.length > 1 ? 'Hay varios clientes con este teléfono. Selecciona explícitamente a quién pertenece esta conversación.' : 'No hay una identidad de cliente confirmada para esta conversación.'}</p>
-            {simulated && conversation.candidates.length > 1 && <><label>Cliente para asociar<select aria-label="Cliente para asociar" value={associateId} onChange={event => setAssociateId(event.target.value)}><option value="">Seleccionar cliente</option>{conversation.candidates.map(row => <option key={row.id} value={row.id}>{row.name} · {row.nit}</option>)}</select></label><button disabled={busy || !associateId} onClick={associate}>Asociar en esta demo</button></>}
+            {(simulated || metaProduction) && conversation.candidates.length > 1 && <>
+              {metaProduction && <p>Confirma quién usa este chat. Se vincularán sus mensajes pendientes de asignación.</p>}
+              <label>Cliente para asociar<select aria-label="Cliente para asociar" value={associateId} onChange={event => setAssociateId(event.target.value)}><option value="">Seleccionar cliente</option>{conversation.candidates.map(row => <option key={row.id} value={row.id}>{row.name} · {row.nit}</option>)}</select></label>
+              <button disabled={busy || !associateId} onClick={associate}>{simulated ? 'Asociar en esta demo' : 'Vincular conversación'}</button>
+            </>}
           </div>}
           {detail.historyError && <p className="wa-warning" role="alert">{detail.historyError}<button onClick={() => setRevision(value => value + 1)}>Reintentar historial</button></p>}
           {detail.hasNext && <button className="wa-chat-more" disabled={loadingMore} onClick={() => loadMore(true)}>Cargar mensajes anteriores</button>}
@@ -331,7 +357,9 @@ export default function WhatsAppConversations({ settings, chatOnly = false, pref
                   onChange={event => setDrafts(current => ({ ...current, [selection]: event.target.value }))} />
                 <button type="submit" disabled={busy || !canReplyToMeta || !draft.trim()}><Send size={18} />{busy ? 'Enviando…' : metaTestChat ? 'Enviar prueba por WhatsApp' : 'Enviar mensaje'}</button>
               </div>
-              {!canReplyToMeta && <small id="wa-meta-draft-note">Puedes dejar el mensaje escrito. Cuando el contacto te escriba, actualiza la conversación para enviarlo. Para iniciar el chat, Meta requiere una plantilla aprobada.</small>}
+              {!canReplyToMeta && <small id="wa-meta-draft-note">{otherCustomerOwnsChat
+                ? 'Este número está vinculado a otro cliente. Abre el chat vinculado para responder.'
+                : 'Puedes dejar el mensaje escrito. Cuando el contacto te escriba, actualiza la conversación para enviarlo. Para iniciar el chat, Meta requiere una plantilla aprobada.'}</small>}
               {!canReplyToMeta && <div className="wa-chat-draft-actions">
                 <button type="button" disabled={loading} onClick={() => { setError(''); setLoading(true); setRevision(value => value + 1); }}>
                   {loading ? 'Actualizando…' : 'Actualizar conversación'}

@@ -163,6 +163,40 @@ it('replies to a regular number in production using the Meta reply route', async
   expect(await screen.findByLabelText('Mensaje saliente 12')).toHaveTextContent(outgoing.content);
 });
 
+it('links an ambiguous real conversation to the explicitly selected customer', async () => {
+  leaveSimulation();
+  const recipient = '+573000000001';
+  const customers = [
+    { id: '41', name: 'Cliente Uno', nit: '1001', phone: recipient, status: 'active' },
+    { id: '42', name: 'Cliente Dos', nit: '1002', phone: '3000000001', status: 'active' },
+  ];
+  const incoming = { id: '13', recipient, customer_id: null, provider: 'WHATSAPP_CLOUD_API', direction: 'inbound',
+    status: 'DELIVERED', content: 'Mensaje de número compartido', received_at: new Date().toISOString() };
+  const respond = data => Promise.resolve({ status: 200, data: { success: true, data } });
+  network.mockImplementation(config => {
+    if (config.url === '/customers') return respond(customers);
+    if (config.url === '/admin/whatsapp/messages') return respond({ messages: [incoming] });
+    if (config.url.endsWith('/sequence')) return respond({ customer: customers[1], steps: [] });
+    if (config.url.endsWith('/context')) return respond({ customer: customers[1], total_balance: '0.00', open_invoices: [] });
+    if (config.url.endsWith('/meta/conversations/association')) {
+      expect(JSON.parse(config.data)).toEqual({ recipient, customer_id: '42' });
+      incoming.customer_id = '42';
+      return respond({ recipient, customer_id: '42', messages_linked: 1 });
+    }
+    throw new Error('Unexpected request');
+  });
+  const user = userEvent.setup();
+  render(<SimulationContext.Provider value={{ mode: 'REAL' }}>
+    <WhatsAppConversations settings={{ provider: 'WHATSAPP_CLOUD_API', connection_status: 'CONNECTED', real_sending_enabled: true }} />
+  </SimulationContext.Provider>);
+  await open(user, 'Asociación ambigua');
+  await user.selectOptions(screen.getByLabelText('Cliente para asociar'), '42');
+  await user.click(screen.getByRole('button', { name: 'Vincular conversación' }));
+  expect(await screen.findByText(/Conversación vinculada al cliente/)).toBeVisible();
+  expect(screen.getByRole('button', { name: 'Abrir conversación Cliente Dos' })).toHaveAttribute('aria-pressed', 'true');
+  expect(screen.getByRole('log')).toHaveTextContent(incoming.content);
+});
+
 it('keeps a new chat draft when the first incoming message opens the Meta reply window', async () => {
   leaveSimulation();
   const owner = 'meta-draft-test';

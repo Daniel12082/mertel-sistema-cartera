@@ -189,7 +189,7 @@ describe('WhatsApp center HTTP / MySQL, no real sends', { skip: !(process.env.DB
         const payload = JSON.parse(options.body);
         assert.equal(payload.to, recipient.slice(1));
         assert.equal(payload.text.body, reply.content);
-        return Promise.resolve(new Response(JSON.stringify({ messages: [{ id: 'wamid.real-reply-fixture' }] })));
+        return Promise.resolve(new Response(JSON.stringify({ messages: [{ id: `wamid.real-reply-fixture-${providerCalls}` }] })));
       };
       const results = await Promise.all([request('POST', replyPath, reply), request('POST', replyPath, reply)]);
       assert.ok(results.every(result => result.status === 200), JSON.stringify(results));
@@ -199,6 +199,26 @@ describe('WhatsApp center HTTP / MySQL, no real sends', { skip: !(process.env.DB
       assert.equal(accepted.status, 'SENT');
       await services.receiveMetaWebhook({ events: [{ kind: 'status', provider_message_id: accepted.provider_message_id, status: 'DELIVERED', timestamp: new Date() }] });
       assert.equal((await request('GET', `/admin/whatsapp/messages?customer_id=${customerId}`)).body.data.messages.find(row => row.id === accepted.id).status, 'DELIVERED');
+
+      await db.query("UPDATE customers SET phone='3000000001' WHERE id=?", [customer2]);
+      const receive = id => services.receiveMetaWebhook({ events: [{ kind: 'message', phone: recipient, provider_message_id: id, content: 'Hola', timestamp: receivedAt }] });
+      await receive('wamid.shared-before');
+      const assocPath = '/admin/whatsapp/meta/conversations/association';
+      const association = { recipient, customer_id: customer2 };
+      assert.equal((await request('PUT', assocPath, association, collector)).status, 403);
+      const linked = await request('PUT', assocPath, association);
+      assert.equal(linked.status, 200);
+      assert.equal(linked.body.data.messages_linked, 1);
+      assert.equal((await request('PUT', assocPath, association)).body.data.messages_linked, 0);
+      assert.equal((await request('PUT', assocPath, { ...association, customer_id: customerId })).status, 409);
+      await receive('wamid.shared-after');
+      const [inbound] = await db.query("SELECT CAST(customer_id AS CHAR) AS customer_id FROM messages WHERE provider_message_id IN ('wamid.incoming-reply','wamid.shared-before','wamid.shared-after') ORDER BY id");
+      assert.deepEqual(inbound.map(row => row.customer_id), [customerId, customer2, customer2]);
+      assert.equal((await request('POST', replyPath, { ...reply, customer_id: customerId })).status, 409);
+      const newReply = await request('POST', replyPath, { ...reply, customer_id: customer2 });
+      assert.equal(newReply.body.data.message.customer_id, customer2);
+      const [events] = await db.query("SELECT CAST(user_id AS CHAR) AS actor, JSON_UNQUOTE(JSON_EXTRACT(new_values,'$.customer_id')) AS customer FROM audit_logs WHERE action='conversation_associated'");
+      assert.deepEqual(events, [{ actor: admin.id, customer: customer2 }]);
     } finally {
       globalThis.fetch = realFetch;
       for (const [key, value] of Object.entries(previous)) {

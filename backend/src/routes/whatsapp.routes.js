@@ -24,6 +24,7 @@ adminWhatsAppRoutes.patch('/settings', respond(center.updateWhatsAppSettings));
 adminWhatsAppRoutes.post('/test', respond(center.testWhatsAppConnection));
 adminWhatsAppRoutes.get('/meta/templates', respond(center.listMetaMessageTemplates));
 adminWhatsAppRoutes.post('/meta/replies', respond(center.replyToMetaConversation));
+adminWhatsAppRoutes.put('/meta/conversations/association', respond(center.associateMetaConversation));
 adminWhatsAppRoutes.post('/meta/invoice-notices', respond(center.sendMetaInvoiceNotice));
 adminWhatsAppRoutes.post('/meta/test-messages', respond(center.enqueueMetaTestMessage));
 adminWhatsAppRoutes.post('/meta/test-messages/:messageId/send', respond(args => center.sendMetaTestMessage({ ...args, body: args.body })));
