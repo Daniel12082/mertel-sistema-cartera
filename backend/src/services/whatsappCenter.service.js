@@ -54,9 +54,11 @@ function connected(settings) {
 }
 
 function runtimeProvider(settings) {
-  if (process.env.WHATSAPP_TEST_MODE === 'false' && String(process.env.WHATSAPP_PROVIDER || '').toLowerCase() === 'meta') return 'WHATSAPP_CLOUD_API';
+  const meta = String(process.env.WHATSAPP_PROVIDER || '').toLowerCase() === 'meta';
+  if (process.env.NODE_ENV === 'production') return meta ? 'WHATSAPP_CLOUD_API' : null;
+  if (process.env.WHATSAPP_TEST_MODE === 'false' && meta) return 'WHATSAPP_CLOUD_API';
   if (settings?.provider === 'MOCK') return 'MOCK';
-  return String(process.env.WHATSAPP_PROVIDER || '').toLowerCase() === 'meta' ? 'WHATSAPP_CLOUD_API' : settings.provider;
+  return meta ? 'WHATSAPP_CLOUD_API' : settings.provider;
 }
 function automationProvider(settings) {
   if (settings.connection_status !== 'CONNECTED') return null;
@@ -100,8 +102,10 @@ export async function updateWhatsAppSettings({ scope, actorId, body }, dbPool = 
     for (const key of ['provider', 'number', 'phone_number_id', 'business_account_id']) {
       if (!Object.hasOwn(body, key)) continue;
       if (key === 'provider' ? ![null, 'MOCK', 'WHATSAPP_CLOUD_API'].includes(body[key]) : typeof body[key] !== 'string' || body[key].length > 100) throw operationError(400, 'Proveedor o identificador inválido.');
-      if (key === 'provider' && body[key] === 'MOCK' && process.env.WHATSAPP_TEST_MODE === 'false' &&
-          String(process.env.WHATSAPP_PROVIDER || '').toLowerCase() === 'meta') throw operationError(409, 'El servidor está configurado para el canal real de WhatsApp.');
+      if (key === 'provider' && body[key] === 'MOCK' &&
+          (process.env.NODE_ENV === 'production' || runtimeProvider(settings) === 'WHATSAPP_CLOUD_API' && process.env.WHATSAPP_TEST_MODE === 'false')) {
+        throw operationError(409, 'El servidor está configurado para el canal real de WhatsApp.');
+      }
       if (key === 'number' && body[key]) { try { body[key] = normalizePhone(body[key]); } catch { throw operationError(400, 'Número inválido.'); } }
       if (settings[key] !== body[key]) changedConnection = true;
       settings[key] = body[key];
@@ -216,7 +220,7 @@ export async function previewWhatsApp({ scope, body }, dbPool = pool) {
 }
 export async function testWhatsAppConfiguration({ scope, body }, dbPool = pool) {
   return transaction(scope, async (db, settings) => {
-    if (settings.provider !== 'MOCK') throw operationError(409, 'Configura un proveedor MOCK para probar la configuración.');
+    if (runtimeProvider(settings) !== 'MOCK') throw operationError(409, 'Esta validación requiere el proveedor de pruebas local.');
     const validation = await whatsappProvider(settings.provider).validateConnection();
     const preview = await collectionMessage({ scope, customerId: body?.customer_id, templateId: body?.template_id,
       referenceDate: bogotaDate(), step: 'preview', transactionDb: db }, dbPool);
@@ -556,6 +560,7 @@ export async function cancelWhatsAppMessage({ scope, actorId, messageId }, dbPoo
   }, dbPool);
 }
 export async function mockDeliveryWhatsApp({ scope, actorId, messageId, status }, dbPool = pool) {
+  if (process.env.NODE_ENV === 'production') throw operationError(409, 'La entrega real se registra desde Meta.');
   const id = operationId(messageId, 'message_id');
   let dto; try { dto = whatsappProvider('MOCK').handleDeliveryStatus({ status }); } catch { throw operationError(400, 'Estado inválido.'); }
   return transaction(scope, async (db) => {
@@ -574,7 +579,7 @@ export async function mockDeliveryWhatsApp({ scope, actorId, messageId, status }
 export async function mockIncomingWhatsApp({ scope, actorId, body }, dbPool = pool) {
   let dto; try { dto = whatsappProvider('MOCK').handleIncomingWebhook(body); } catch { throw operationError(400, 'Mensaje entrante inválido.'); }
   return transaction(scope, async (db, settings) => {
-    if (runtimeProvider(settings) === 'WHATSAPP_CLOUD_API') throw operationError(409, 'Las respuestas reales se reciben desde WhatsApp.');
+    if (process.env.NODE_ENV === 'production' || runtimeProvider(settings) === 'WHATSAPP_CLOUD_API') throw operationError(409, 'Las respuestas reales se reciben desde WhatsApp.');
     const [[existing]] = await db.query("SELECT CAST(id AS CHAR) AS id FROM messages WHERE company_id=? AND provider='MOCK' AND provider_message_id=?", [scope.companyId, dto.provider_message_id]);
     if (existing) return { message: await messageById(db, scope, existing.id), duplicate: true };
     const [customers] = await db.query("SELECT CAST(id AS CHAR) AS id,phone FROM customers WHERE company_id=? AND status='active' AND deleted_at IS NULL AND phone IS NOT NULL", [scope.companyId]);

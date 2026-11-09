@@ -8,6 +8,7 @@ import { WhatsAppAttachmentPicker, WhatsAppMediaPreview } from './WhatsAppMedia'
 import { discardDraftMedia, temporaryWhatsAppMedia, MEDIA_UNAVAILABLE } from '../../services/whatsappMedia.service';
 import { collectionResultsRequest } from '../../services/collectionResults.service';
 import { useAppDataMode } from '../../simulation/useAppDataMode';
+import { simulationAvailable } from '../../simulation/store';
 import { buildConversations, conversationMessageStatus, messageTime, phoneKey, conversationStatus } from './whatsappConversation.presentation';
 import './WhatsAppConversations.css';
 
@@ -134,12 +135,12 @@ export default function WhatsAppConversations({ settings, chatOnly = false, pref
   }
   const canReplyToMeta = Boolean(recipient && (metaTestChat || metaProduction) && hasOpenMetaWindow(windowClock));
   const canWriteMetaDraft = canReplyToMeta || (metaProduction && Boolean(recipient));
-  const modeLabel = simulated ? 'Demo local' : metaProduction ? 'Meta conectada' : metaConnected ? settings.test_mode ? 'Meta conectada · prueba controlada' : 'Meta conectada · envío desactivado' : 'Proveedor MOCK · Meta pendiente';
+  const modeLabel = simulated ? 'Demo local' : metaProduction ? 'Meta conectada' : metaConnected ? settings.test_mode ? 'Meta conectada · prueba controlada' : 'Meta conectada · envío desactivado' : simulationAvailable ? 'Proveedor MOCK · Meta pendiente' : 'Meta no disponible';
   const modeNotice = simulated ? 'SIMULACIÓN — No se enviará ningún mensaje real'
     : metaProduction ? 'Puedes responder con texto durante las 24 horas siguientes al último mensaje recibido.'
     : metaConnected && settings.test_mode ? 'Puedes responder al número de prueba autorizado dentro de las 24 horas siguientes a su último mensaje.'
     : metaConnected ? 'El envío de mensajes está desactivado en la configuración del servidor.'
-    : 'Meta no está conectado. La redacción libre está disponible únicamente en Modo Simulación.';
+    : simulationAvailable ? 'Meta no está conectado. La redacción libre está disponible únicamente en Modo Simulación.' : 'Revisa la conexión real en Configuración → WhatsApp → Conexión.';
   const attachment = attachments[selection] || null;
   const preview = previews[selection];
   const unresolved = /\{\{[^}]*\}\}/.test(draft);
@@ -338,7 +339,7 @@ export default function WhatsAppConversations({ settings, chatOnly = false, pref
               </div>}
               {metaTestChat && <small>Comparte el límite diario de 3 pruebas con la pestaña Conexión.</small>}
             </> : <p>{metaProduction ? 'Esta conversación no tiene un número de WhatsApp válido.' : metaTestChat ? 'Pide al destinatario de prueba que escriba al número de MERTEL para abrir una ventana de respuesta.' : modeNotice}</p>}
-          </form> : <form className="wa-chat-compose" onSubmit={event => { event.preventDefault(); void send(); }}>
+          </form> : !simulationAvailable ? <p className="wa-chat-compose">{modeNotice}</p> : <form className="wa-chat-compose" onSubmit={event => { event.preventDefault(); void send(); }}>
             {conversation.customer && !phoneKey(conversation.customer.phone) && <p className="wa-warning">Este cliente no tiene un número de WhatsApp válido. No se puede simular el envío.</p>}
             {notice && <p className="wa-success" role="status">{notice}</p>}{sendError && <p className="wa-error" role="alert">{sendError}</p>}
             {draftProblem && <p className="wa-warning" role="alert">{draftProblem}</p>}{realProblem && <p className="wa-warning" role="alert">{realProblem}</p>}

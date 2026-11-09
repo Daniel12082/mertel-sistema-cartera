@@ -58,6 +58,10 @@ export default function WhatsAppAutomationPreview({ settings, templates, busy, a
       {settings.automations_enabled ? 'Desactivar envíos automáticos' : 'Activar envíos automáticos por WhatsApp'}
     </button>
   </article>;
+  if (import.meta.env.PROD) return <article className="wa-card">
+    <h2>Programación automática por WhatsApp</h2>
+    <p role="alert">La conexión real con Meta no está disponible. Revisa la pestaña Conexión para poder activar los envíos.</p>
+  </article>;
   return <>
     <article className="wa-card"><span className="wa-eyebrow">AUTOMATIZACIÓN MERTEL</span><h2>Automatización de mensajes</h2><p>Configuración automática</p>
       <p className="wa-banner">Mora → Vence hoy → Recordatorio → Pronto pago. Un aviso enviado no se repite. Sin domingos ni festivos; aplazamiento máximo de 3 días y pronto pago hasta el día calendario 10.</p>

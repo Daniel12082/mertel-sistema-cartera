@@ -10,10 +10,11 @@ export const defaultWhatsAppSettings = () => ({ provider: null, number: '', phon
 export function publicWhatsAppSettings(settings) {
   const { encrypted_credentials, authorized_recipients: _authorizedRecipients, ...safe } = settings;
   const meta = String(process.env.WHATSAPP_PROVIDER || '').toLowerCase() === 'meta';
-  return { ...safe, provider: meta ? 'WHATSAPP_CLOUD_API' : safe.provider, credentials_configured: Boolean(encrypted_credentials),
+  const production = process.env.NODE_ENV === 'production';
+  return { ...safe, provider: meta ? 'WHATSAPP_CLOUD_API' : production ? null : safe.provider, credentials_configured: Boolean(encrypted_credentials),
     real_sending_enabled: meta && process.env.WHATSAPP_TEST_MODE === 'false', test_mode: meta && process.env.WHATSAPP_TEST_MODE === 'true',
     test_allowed_recipient: meta && process.env.WHATSAPP_TEST_MODE === 'true' ? '+573173697659' : null,
-    notice: meta ? 'WhatsApp Cloud API configurada en el servidor.' : 'Solo MOCK. No se realizan envíos reales.' };
+    notice: meta ? 'WhatsApp Cloud API configurada en el servidor.' : production ? 'Conexión real con Meta no disponible.' : 'Solo MOCK. No se realizan envíos reales.' };
 }
 export function encryptCredentials(input, keyValue = process.env.WHATSAPP_ENCRYPTION_KEY) {
   if (!keyValue || !/^[a-f\d]{64}$/i.test(keyValue)) throw operationError(409, 'Configura WHATSAPP_ENCRYPTION_KEY en el servidor antes de guardar credenciales.');

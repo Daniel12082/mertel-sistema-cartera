@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { AuthContext } from '../src/auth/auth.context';
 import WhatsAppCenter from '../src/pages/Administracion/WhatsAppCenter';
+import WhatsAppAutomationPreview from '../src/pages/Administracion/WhatsAppAutomationPreview';
 import { whatsappRequest } from '../src/services/whatsappCenter.service';
 import { getCustomers } from '../src/services/customer.service';
 import { getMessageTemplateAdminData } from '../src/services/messageTemplatesAdmin.service';
@@ -20,6 +21,15 @@ beforeEach(() => {
   whatsappRequest.mockImplementation(path => Promise.resolve(path === '/messages' ? { messages: [], page: 1 } : path === '/audit' ? [] : center));
 });
 describe('WhatsApp administrative center', () => {
+  it('does not offer test automation when production cannot resolve the Meta provider', () => {
+    vi.stubEnv('PROD', true);
+    try {
+      render(<WhatsAppAutomationPreview settings={{ ...center.settings, provider: 'MOCK' }} />);
+      expect(screen.getByRole('alert')).toHaveTextContent('La conexión real con Meta no está disponible');
+      expect(screen.queryByRole('button', { name: /MOCK/i })).not.toBeInTheDocument();
+      expect(whatsappRequest).not.toHaveBeenCalled();
+    } finally { vi.unstubAllEnvs(); }
+  });
   it('shows disconnected status, no real sending and masks credentials', async () => {
     view(); await userEvent.click(await screen.findByRole('button', { name: 'Conexión', exact: true })); expect(await screen.findByText('No conectado')).toBeVisible(); expect(screen.getByText(/ningún envío real/)).toBeVisible();
     expect(screen.getByRole('button', { name: 'Probar conexión MOCK' })).toBeDisabled();
