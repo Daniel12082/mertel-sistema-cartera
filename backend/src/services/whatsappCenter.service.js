@@ -9,6 +9,7 @@ import { collectionStageCatalog } from './collectionPolicy.js';
 import { collectionMessage } from './collectionMessages.service.js';
 import { renderMessageTemplate } from '../utils/messageTemplate.js';
 import { normalizePhone, whatsappProvider } from './whatsappProvider.service.js';
+import { buildMertelInvoiceMessage, isMertelInvoiceTemplate, MERTEL_INVOICE_BODY, MERTEL_INVOICE_TEMPLATE } from './mertelInvoiceWhatsApp.js';
 import { defaultWhatsAppSettings, publicWhatsAppSettings, encryptCredentials, positiveLimit, validateRule,
   bogotaDate, nextWindow, idempotencyKey, retryAt, deliveryTransition, MESSAGE_STATES, RETRY_POLICY } from './whatsappPolicy.js';
 
@@ -53,16 +54,43 @@ function connected(settings) {
 }
 
 function runtimeProvider(settings) {
+  if (process.env.WHATSAPP_TEST_MODE === 'false' && String(process.env.WHATSAPP_PROVIDER || '').toLowerCase() === 'meta') return 'WHATSAPP_CLOUD_API';
   if (settings?.provider === 'MOCK') return 'MOCK';
   return String(process.env.WHATSAPP_PROVIDER || '').toLowerCase() === 'meta' ? 'WHATSAPP_CLOUD_API' : settings.provider;
+}
+function automationProvider(settings) {
+  if (settings.connection_status !== 'CONNECTED') return null;
+  const provider = runtimeProvider(settings);
+  if (provider === 'MOCK') return provider;
+  return provider === 'WHATSAPP_CLOUD_API' && process.env.WHATSAPP_TEST_MODE === 'false' ? provider : null;
+}
+function requireAutomationProvider(settings) {
+  const provider = automationProvider(settings);
+  if (!provider) throw operationError(409, 'Conecta WhatsApp Cloud API y habilita el envío real antes de automatizar.');
+  return provider;
+}
+function hasWhatsAppConsent(settings, customer) {
+  return validMobile(customer.phone) && settings.authorized_recipients?.[String(customer.id)]?.recipient === normalizePhone(customer.phone);
+}
+async function hasSharedWhatsAppNumber(db, scope, customer) {
+  const phone = normalizePhone(customer.phone);
+  const [others] = await db.query("SELECT phone FROM customers WHERE company_id=? AND id<>? AND status='active' AND deleted_at IS NULL AND phone IS NOT NULL", [scope.companyId, customer.id]);
+  return others.some(row => {
+    try { return normalizePhone(row.phone) === phone; } catch { return false; }
+  });
+}
+async function requireApprovedInvoiceTemplate() {
+  const templates = await whatsappProvider('WHATSAPP_CLOUD_API').listMessageTemplates();
+  if (!templates.some(isMertelInvoiceTemplate)) throw operationError(409, 'Meta todavía no tiene aprobada la plantilla de estado de facturas en español con el formato esperado.');
 }
 
 export async function getWhatsAppCenter({ scope }, dbPool = pool) {
   return transaction(scope, async (db, settings) => ({ settings: publicWhatsAppSettings({ ...settings, provider: runtimeProvider(settings) }), stage_catalog: await stagesFor(db, scope),contact_rules:MERTEL_CONTACTS }), dbPool);
 }
-function requireContactTemplate(rule,template){
+function requireContactTemplate(rule,template,provider){
   const expected=MERTEL_CONTACTS.find(step=>step.stage===rule.stage);
-  if(rule.mode==='AUTOMATICO'&&(!expected||template.name!==expected.template_name))throw operationError(409,'Selecciona la plantilla MERTEL correspondiente a esta regla automática.');
+  const name = provider === 'WHATSAPP_CLOUD_API' ? MERTEL_INVOICE_TEMPLATE : expected?.template_name;
+  if(rule.mode==='AUTOMATICO'&&(!expected||template.name!==name))throw operationError(409,'Selecciona la plantilla MERTEL correspondiente a esta regla automática.');
 }
 export async function updateWhatsAppSettings({ scope, actorId, body }, dbPool = pool) {
   const allowed = ['provider', 'number', 'phone_number_id', 'business_account_id', 'credentials', 'global_daily_limit', 'customer_daily_limit', 'automations_enabled'];
@@ -72,6 +100,8 @@ export async function updateWhatsAppSettings({ scope, actorId, body }, dbPool = 
     for (const key of ['provider', 'number', 'phone_number_id', 'business_account_id']) {
       if (!Object.hasOwn(body, key)) continue;
       if (key === 'provider' ? ![null, 'MOCK', 'WHATSAPP_CLOUD_API'].includes(body[key]) : typeof body[key] !== 'string' || body[key].length > 100) throw operationError(400, 'Proveedor o identificador inválido.');
+      if (key === 'provider' && body[key] === 'MOCK' && process.env.WHATSAPP_TEST_MODE === 'false' &&
+          String(process.env.WHATSAPP_PROVIDER || '').toLowerCase() === 'meta') throw operationError(409, 'El servidor está configurado para el canal real de WhatsApp.');
       if (key === 'number' && body[key]) { try { body[key] = normalizePhone(body[key]); } catch { throw operationError(400, 'Número inválido.'); } }
       if (settings[key] !== body[key]) changedConnection = true;
       settings[key] = body[key];
@@ -87,7 +117,7 @@ export async function updateWhatsAppSettings({ scope, actorId, body }, dbPool = 
     if (Object.hasOwn(body, 'automations_enabled')) {
       if (typeof body.automations_enabled !== 'boolean') throw operationError(400, 'Estado de automatizaciones inválido.');
       if (body.automations_enabled) {
-        connected(settings);
+        const provider = requireAutomationProvider(settings);
         if (!settings.global_daily_limit || !settings.customer_daily_limit || !settings.rules.some(rule => rule.enabled && rule.mode === 'AUTOMATICO')) throw operationError(409, 'Define límites y una regla automática activa antes de activar automatizaciones.');
         const stages = await stagesFor(db, scope);
         for (const rule of settings.rules.filter(item => item.enabled && item.mode === 'AUTOMATICO')) {
@@ -95,8 +125,9 @@ export async function updateWhatsAppSettings({ scope, actorId, body }, dbPool = 
           const [[template]] = await db.query("SELECT name,stage,status,content FROM message_templates WHERE id=? AND company_id=? AND channel='whatsapp'", [rule.template_id, scope.companyId]);
           if (!template || template.status !== 'active' || (template.stage && template.stage !== rule.stage)) throw operationError(409, 'La automatización requiere una plantilla activa y compatible.');
           validateTemplateContent(template.content);
-          requireContactTemplate(rule,template);
+          requireContactTemplate(rule,template,provider);
         }
+        if (provider === 'WHATSAPP_CLOUD_API') await requireApprovedInvoiceTemplate();
       }
       settings.automations_enabled = body.automations_enabled;
     }
@@ -129,9 +160,12 @@ export async function saveWhatsAppRule({ scope, actorId, stage, body }, dbPool =
     const rule = validateRule({ ...body, stage }, await stagesFor(db, scope));
     const [[template]] = await db.query("SELECT name,stage,status,content FROM message_templates WHERE id=? AND company_id=? AND channel='whatsapp'", [rule.template_id, scope.companyId]);
     if (!template || (template.stage && template.stage !== stage) || (rule.enabled && template.status !== 'active')) throw operationError(400, 'Plantilla no disponible o incompatible con la etapa.');
-    if (rule.enabled) connected(settings);
+    if (rule.enabled) {
+      if (rule.mode === 'AUTOMATICO') requireAutomationProvider(settings);
+      else connected(settings);
+    }
     if (rule.enabled) validateTemplateContent(template.content);
-    requireContactTemplate(rule,template);
+    requireContactTemplate(rule,template,runtimeProvider(settings));
     settings.rules = [...settings.rules.filter(item => item.stage !== stage), rule];
     await saveSettings(db, scope, actorId, settings, 'automation_update'); return rule;
   }, dbPool);
@@ -218,23 +252,30 @@ export async function sendMetaTestMessage({ scope, actorId, messageId, body, now
   return deliverMetaText({ scope, actorId, message: claimed.message, now, testMode: true }, dbPool);
 }
 
-async function deliverMetaText({ scope, actorId, message, now, testMode }, dbPool) {
+async function deliverMetaText({ scope, actorId, message, now, testMode, template }, dbPool) {
   const { id, recipient, content } = message;
   let result;
   try {
-    result = await whatsappProvider('WHATSAPP_CLOUD_API').sendMessage({ recipient, manual: true, payload: { type: 'text', text: { preview_url: false, body: content } } });
+    const provider = whatsappProvider('WHATSAPP_CLOUD_API');
+    result = template
+      ? await provider.sendTemplateMessage({ recipient, manual: message.message_mode !== 'AUTOMATICO', template, expectedBody: MERTEL_INVOICE_BODY,
+        callbackId: `mertel-invoice:${id}` })
+      : await provider.sendMessage({ recipient, manual: true, payload: { type: 'text', text: { preview_url: false, body: content } } });
   } catch (error) {
     return transaction(scope, async db => {
       const code = String(error?.code || 'META_SEND_FAILED').slice(0, 100);
-      await db.query("UPDATE messages SET status='FAILED',error_code=?,error_message=?,next_attempt_at=NULL WHERE id=? AND company_id=? AND status='PROCESSING'", [code, String(error?.message || 'Meta rechazó el envío.').slice(0, 500), id, scope.companyId]);
-      await audit(db, scope, actorId, 'meta_failed', 'whatsapp_message', id, { error_code: code, test_mode: testMode });
-      return { message: await messageById(db, scope, id), accepted: false };
+      const retry = message.message_mode === 'AUTOMATICO' && error.httpStatus === 429 ? retryAt(Number(message.attempts), now) : null;
+      const [updated] = await db.query("UPDATE messages SET status='FAILED',error_code=?,error_message=?,next_attempt_at=? WHERE id=? AND company_id=? AND status='PROCESSING'", [code, String(error?.message || 'Meta rechazó el envío.').slice(0, 500), retry, id, scope.companyId]);
+      if (updated.affectedRows) await audit(db, scope, actorId, 'meta_failed', 'whatsapp_message', id, { error_code: code, test_mode: testMode });
+      const saved = await messageById(db, scope, id);
+      return { message: saved, accepted: ['SENT', 'DELIVERED', 'READ'].includes(saved.status) };
     }, dbPool);
   }
   return transaction(scope, async db => {
-    await db.query("UPDATE messages SET status='SENT',provider_message_id=?,sent_at=?,error_code=NULL,error_message=NULL,next_attempt_at=NULL WHERE id=? AND company_id=? AND status='PROCESSING'", [result.provider_message_id, now, id, scope.companyId]);
-    await audit(db, scope, actorId, 'meta_accepted', 'whatsapp_message', id, { provider_message_id: result.provider_message_id, accepted_at: now, test_mode: testMode });
-    return { message: await messageById(db, scope, id), accepted: true };
+    const [updated] = await db.query("UPDATE messages SET status='SENT',provider_message_id=?,sent_at=?,error_code=NULL,error_message=NULL,next_attempt_at=NULL WHERE id=? AND company_id=? AND status='PROCESSING'", [result.provider_message_id, now, id, scope.companyId]);
+    if (updated.affectedRows) await audit(db, scope, actorId, 'meta_accepted', 'whatsapp_message', id, { provider_message_id: result.provider_message_id, accepted_at: now, test_mode: testMode });
+    const saved = await messageById(db, scope, id);
+    return { message: saved, accepted: ['SENT', 'DELIVERED', 'READ'].includes(saved.status) };
   }, dbPool);
 }
 
@@ -289,6 +330,49 @@ export async function listMetaMessageTemplates({ scope }, dbPool = pool) {
   }, dbPool);
 }
 
+export async function sendMetaInvoiceNotice({ scope, actorId, body, now = new Date() }, dbPool = pool) {
+  if (!body || Object.keys(body).some(key => !['customer_id', 'invoice_ids', 'preview_token'].includes(key)) ||
+      !Array.isArray(body.invoice_ids) || !body.invoice_ids.length || body.invoice_ids.length > 25 ||
+      (body.preview_token !== undefined && !/^[a-f0-9]{64}$/.test(body.preview_token))) {
+    throw operationError(400, 'Selecciona entre 1 y 25 facturas y revisa el aviso.');
+  }
+  const customerId = operationId(body.customer_id, 'customer_id');
+  const invoiceIds = [...new Set(body.invoice_ids.map(id => operationId(id, 'invoice_id')))].sort();
+  const day = bogotaDate(now);
+  const claimed = await transaction(scope, async (db, settings) => {
+    if (requireAutomationProvider(settings) !== 'WHATSAPP_CLOUD_API') throw operationError(409, 'El canal real de WhatsApp no está activo.');
+    const input = await automaticInput(db, scope, settings, customerId, day);
+    if (!input.contactAuthorized || settings.excluded_customers?.[customerId]) throw operationError(409, 'El cliente no está habilitado para recibir avisos por WhatsApp.');
+    if (await hasSharedWhatsAppNumber(db, scope, input.customer)) throw operationError(409, 'El teléfono está asociado a más de un cliente.');
+    const invoices = input.invoices.filter(invoice => invoiceIds.includes(String(invoice.id)) && Number(invoice.balance) > 0);
+    if (invoices.length !== invoiceIds.length) throw operationError(409, 'Una factura seleccionada ya no tiene saldo o no pertenece al cliente.');
+    const prepared = buildMertelInvoiceMessage(input.customer, invoices);
+    const recipient = normalizePhone(input.customer.phone);
+    const previewToken = createHash('sha256').update(JSON.stringify([String(scope.companyId), customerId, recipient, invoiceIds, prepared.content])).digest('hex');
+    if (!body.preview_token) return { content: prepared.content, preview_token: previewToken };
+    if (previewToken !== body.preview_token) throw operationError(409, 'La cartera cambió. Vuelve a revisar el aviso antes de enviarlo.');
+    const local = input.templates.find(row => row.name === MERTEL_INVOICE_TEMPLATE && row.status === 'active');
+    if (!local) throw operationError(409, 'Activa la plantilla de estado de facturas en MERTEL.');
+    const key = createHash('sha256').update(JSON.stringify(['meta-invoice-manual', day, previewToken])).digest('hex');
+    const [[duplicate]] = await db.query('SELECT CAST(id AS CHAR) id FROM messages WHERE company_id=? AND idempotency_key=?', [scope.companyId, key]);
+    if (duplicate) return { message: await messageById(db, scope, duplicate.id), duplicate: true };
+    await requireApprovedInvoiceTemplate();
+    const [[counts]] = await db.query(`SELECT COUNT(*) AS total, COALESCE(SUM(recipient=?),0) AS per_number
+      FROM messages WHERE company_id=? AND direction='outbound' AND budget_date=? AND UPPER(status)<>'CANCELLED'`, [recipient, scope.companyId, day]);
+    if ((settings.global_daily_limit && Number(counts.total) >= settings.global_daily_limit) ||
+        (settings.customer_daily_limit && Number(counts.per_number) >= settings.customer_daily_limit)) throw operationError(429, 'Límite diario alcanzado.');
+    const [inserted] = await db.query(`INSERT INTO messages(company_id,customer_id,invoice_id,template_id,created_by,channel,recipient,content,status,provider,direction,message_mode,idempotency_key,scheduled_at,budget_date,attempts,last_attempt_at)
+      VALUES (?,?,?,?,?,'whatsapp',?,?,'PROCESSING','WHATSAPP_CLOUD_API','outbound','MANUAL',?,?,?,1,?)`,
+    [scope.companyId, customerId, invoices.length === 1 ? invoices[0].id : null, local.id, actorId, recipient, prepared.content, key, now, day, now]);
+    const id = String(inserted.insertId);
+    await audit(db, scope, actorId, 'meta_request', 'whatsapp_message', id, { recipient, invoice_ids: invoiceIds, attempts: 1, test_mode: false });
+    return { message: { id, recipient, content: prepared.content }, template: prepared.template };
+  }, dbPool);
+  if (!claimed.message) return claimed;
+  if (claimed.duplicate) return { ...claimed, accepted: ['SENT', 'DELIVERED', 'READ'].includes(claimed.message.status) };
+  return deliverMetaText({ scope, actorId, message: claimed.message, now, testMode: false, template: claimed.template }, dbPool);
+}
+
 export async function receiveMetaWebhook({ events }, dbPool = pool) {
   if (!Array.isArray(events)) throw new Error('Eventos Meta inválidos.');
   const db = await dbPool.getConnection();
@@ -299,7 +383,19 @@ export async function receiveMetaWebhook({ events }, dbPool = pool) {
     const scope = { companyId: String(companies[0].id), actorId: null };
     for (const event of events) {
       if (event.kind === 'status') {
-        const [[message]] = await db.query("SELECT CAST(id AS CHAR) id,UPPER(status) status FROM messages WHERE company_id=? AND provider='WHATSAPP_CLOUD_API' AND provider_message_id=? FOR UPDATE", [scope.companyId, event.provider_message_id]);
+        let [[message]] = await db.query("SELECT CAST(id AS CHAR) id,UPPER(status) status FROM messages WHERE company_id=? AND provider='WHATSAPP_CLOUD_API' AND provider_message_id=? FOR UPDATE", [scope.companyId, event.provider_message_id]);
+        if (!message && event.callback_id && event.recipient) {
+          // A signed receipt can arrive before the HTTP response or after an ambiguous network failure.
+          [[message]] = await db.query(`SELECT CAST(id AS CHAR) id FROM messages WHERE company_id=? AND id=? AND recipient=?
+            AND provider='WHATSAPP_CLOUD_API' AND direction='outbound' AND template_id IS NOT NULL AND provider_message_id IS NULL
+            AND status IN ('PROCESSING','FAILED') FOR UPDATE`, [scope.companyId, event.callback_id, event.recipient]);
+          if (message) {
+            await db.query("UPDATE messages SET status='SENT',provider_message_id=?,sent_at=COALESCE(last_attempt_at,?),error_code=NULL,error_message=NULL,next_attempt_at=NULL WHERE company_id=? AND id=?",
+              [event.provider_message_id, event.timestamp, scope.companyId, message.id]);
+            await audit(db, scope, null, 'meta_accepted', 'whatsapp_message', message.id, { provider_message_id: event.provider_message_id, webhook_at: event.timestamp });
+            message.status = 'SENT';
+          }
+        }
         if (!message) continue;
         if (event.status === 'SENT' || message.status === event.status || !deliveryTransition(message.status, event.status)) continue;
         const column = event.status === 'READ' ? 'read_at' : event.status === 'DELIVERED' ? 'delivered_at' : 'updated_at';
@@ -315,6 +411,18 @@ export async function receiveMetaWebhook({ events }, dbPool = pool) {
         const content = event.content || `[${event.type || 'media'} recibido · id ${event.media?.id || 'sin identificador'}]`;
         const [result] = await db.query("INSERT INTO messages(company_id,customer_id,channel,recipient,content,status,provider,provider_message_id,direction,received_at) VALUES (?,?,'whatsapp',? ,?,'DELIVERED','WHATSAPP_CLOUD_API',?,'inbound',?)", [scope.companyId, customerId, event.phone, content.slice(0, 16000), event.provider_message_id, event.timestamp]);
         await audit(db, scope, null, 'meta_incoming', 'whatsapp_message', result.insertId, { provider_message_id: event.provider_message_id, type: event.type, linked_customer: Boolean(customerId) });
+        if (['BAJA', 'STOP', 'CANCELAR'].includes(String(event.content || '').trim().toUpperCase())) {
+          const [[stored]] = await db.query('SELECT setting_value FROM settings WHERE company_id=? AND setting_key=?', [scope.companyId, SETTING]);
+          if (stored) {
+            const settings = { ...defaultWhatsAppSettings(), ...JSON.parse(stored.setting_value) };
+            for (const [id, contact] of Object.entries(settings.authorized_recipients)) {
+              if (contact.recipient !== event.phone) continue;
+              delete settings.authorized_recipients[id];
+              await audit(db, scope, null, 'whatsapp_opt_out', 'customer', id, { recipient: event.phone, provider_message_id: event.provider_message_id });
+            }
+            await saveSettings(db, scope, null, settings, 'customer_opt_out');
+          }
+        }
       }
     }
     await db.commit();
@@ -365,7 +473,10 @@ export async function mockSendWhatsApp({ scope, actorId, messageId, customerId, 
     connected(settings);
     const message = await messageById(db, scope, id, true);
     if(customerId&&String(customerId)!==String(message.customer_id))throw operationError(404,'Mensaje no encontrado para este cliente.');
-    if (message.message_mode === 'AUTOMATICO') return dispatchAutomatic(db, { ...scope, actorId: null }, settings, message, now, fail);
+    if (message.message_mode === 'AUTOMATICO') {
+      if (message.provider !== 'MOCK') throw operationError(409, 'El aviso real lo procesa el motor de WhatsApp.');
+      return dispatchAutomatic(db, { ...scope, actorId: null }, settings, message, now, fail);
+    }
     if (message.direction !== 'outbound' || !['MOCK', 'WHATSAPP_CLOUD_API'].includes(message.provider) || !['PENDING', 'FAILED'].includes(message.status)) throw operationError(409, 'El mensaje no puede procesarse.');
     if (message.attempts >= RETRY_POLICY.max_attempts) throw operationError(409, 'Máximo de intentos alcanzado.');
     if (message.next_attempt_at && new Date(message.next_attempt_at) > now) throw operationError(409, 'El reintento todavía no está disponible.');
@@ -473,17 +584,23 @@ export async function listWhatsAppAudit({ scope }, dbPool = pool) {
 
 export async function processWhatsAppAutomations({scope,actorId,now=new Date()},dbPool=pool){
   const systemScope={...scope,actorId:null};
-  const active=await transaction(systemScope,async(db,settings)=>settings.provider==='MOCK'&&settings.connection_status==='CONNECTED'&&settings.automations_enabled,dbPool);
-  if(!active)return {queued:0,sent:0,cancelled:0,skipped:0,enabled:false};
+  const provider=await transaction(systemScope,async(db,settings)=>settings.automations_enabled && automationProvider(settings),dbPool);
+  if(!provider)return {queued:0,sent:0,cancelled:0,skipped:0,enabled:false};
   const result={queued:0,sent:0,cancelled:0,skipped:0,enabled:true};
   const [customers]=await dbPool.query("SELECT CAST(id AS CHAR) id FROM customers WHERE company_id=? AND status='active' AND deleted_at IS NULL ORDER BY id",[scope.companyId]);
   for(const customer of customers){
     try{const value=await enqueueWhatsApp({scope:systemScope,body:{customer_id:customer.id,mode:'AUTOMATICO'},now},dbPool);if(!value.duplicate)result.queued++;}
     catch(error){if(![400,403,404,409].includes(error.status))throw error;result.skipped++;}
   }
-  const [messages]=await dbPool.query("SELECT CAST(id AS CHAR) id FROM messages WHERE company_id=? AND message_mode='AUTOMATICO' AND UPPER(status) IN ('PENDING','FAILED') AND attempts<3 AND (next_attempt_at IS NULL OR next_attempt_at<=?) ORDER BY scheduled_at,id",[scope.companyId,now]);
+  const [messages]=await dbPool.query(`SELECT CAST(id AS CHAR) id FROM messages WHERE company_id=? AND provider=? AND message_mode='AUTOMATICO'
+    AND attempts<3 AND (UPPER(status)='PENDING' OR (UPPER(status)='FAILED' AND next_attempt_at<=?)) ORDER BY scheduled_at,id`,[scope.companyId,provider,now]);
   for(const message of messages){
-    try{const value=await mockSendWhatsApp({scope:systemScope,messageId:message.id,now},dbPool);if(value.message.status==='SENT')result.sent++;if(value.cancelled)result.cancelled++;}
+    try {
+      const args = { scope: systemScope, messageId: message.id, now };
+      const value = provider === 'MOCK' ? await mockSendWhatsApp(args,dbPool) : await sendAutomaticMeta(args,dbPool);
+      if(!value.duplicate && ['SENT', 'DELIVERED', 'READ'].includes(value.message.status))result.sent++;
+      if(value.cancelled)result.cancelled++;
+    }
     catch(error){if(![400,403,404,409].includes(error.status))throw error;result.skipped++;}
   }
   // A user can request evaluation, but individual automatic messages keep their SYSTEM actor.
@@ -497,12 +614,15 @@ async function automaticInput(db, scope, settings, customerId, day) {
   const [invoices] = await db.query(`SELECT CAST(id AS CHAR) id,CAST(id AS CHAR) invoice_id,CAST(customer_id AS CHAR) customer_id,
     DATE_FORMAT(issue_date,'%Y-%m-%d') issue_date,DATE_FORMAT(due_date,'%Y-%m-%d') due_date,
     invoice_number,document_value,base_value,iva_value,balance,promo_18,discount,notes,deleted_at
-    FROM invoices WHERE company_id=? AND customer_id=? AND deleted_at IS NULL ORDER BY due_date,id FOR UPDATE`, [scope.companyId, customerId]);
+    FROM invoices WHERE company_id=? AND customer_id=? AND deleted_at IS NULL AND LOWER(status) NOT IN ('cancelled','inactive','void','paid')
+    ORDER BY due_date,id FOR UPDATE`, [scope.companyId, customerId]);
   const [templates] = await db.query("SELECT CAST(id AS CHAR) id,name,stage,status,channel,content FROM message_templates WHERE company_id=? AND channel='whatsapp'", [scope.companyId]);
   const [messages] = await db.query(`SELECT ${messageColumns} FROM messages m JOIN customers c ON c.id=m.customer_id AND c.company_id=m.company_id
     LEFT JOIN message_templates t ON t.id=m.template_id AND t.company_id=m.company_id WHERE m.company_id=? AND m.customer_id=? ORDER BY m.id DESC`, [scope.companyId, customerId]);
   const rules = await loadCompanyCollectionRules(scope.companyId, db);
-  return { customer, invoices, templates, messages, rules, settings, referenceDate: day };
+  const real = runtimeProvider(settings) === 'WHATSAPP_CLOUD_API';
+  return { customer, invoices, templates, messages: real ? messages.filter(row => row.provider !== 'MOCK') : messages, rules, settings,
+    referenceDate: day, realTemplateName: real ? MERTEL_INVOICE_TEMPLATE : null, contactAuthorized: !real || hasWhatsAppConsent(settings, customer) };
 }
 
 async function oneAutomaticPerDay(db, scope, customerId, day, excludeId = null) {
@@ -515,21 +635,22 @@ function renderAutomatic(notice, day) {
   try { return renderAutomaticNotice(notice, day); } catch (error) { throw operationError(409, error.message); }
 }
 async function enqueueAutomatic(db, scope, settings, customerId, now) {
-  connected(settings);
+  const provider = requireAutomationProvider(settings);
   if (!settings.automations_enabled) throw operationError(409, 'Automatizaciones desactivadas.');
   const input = await automaticInput(db, scope, settings, customerId, bogotaDate(now));
   if (settings.excluded_customers?.[customerId]) throw operationError(409, 'Cliente excluido de mensajes automáticos.');
   if (!validMobile(input.customer.phone)) throw operationError(409, 'Cliente sin celular válido; no consume cupo.');
+  if (!input.contactAuthorized) throw operationError(409, 'El cliente no tiene autorización registrada para avisos por WhatsApp.');
   const notice = automaticSelection(input);
   if (!notice) throw operationError(409, 'No hay un aviso automático vigente pendiente de envío.');
   if (notice.message) return { message: notice.message, duplicate: true };
-  const key = createHash('sha256').update(JSON.stringify([String(scope.companyId), customerId, 'AVISO_MERTEL', notice.stage, notice.date])).digest('hex');
+  const key = createHash('sha256').update(JSON.stringify([String(scope.companyId), customerId, provider === 'MOCK' ? 'AVISO_MERTEL' : 'AVISO_MERTEL_META', notice.stage, notice.date])).digest('hex');
   const [[duplicate]] = await db.query('SELECT CAST(id AS CHAR) id FROM messages WHERE company_id=? AND idempotency_key=?', [scope.companyId, key]);
   if (duplicate) return { message: await messageById(db, scope, duplicate.id), duplicate: true };
   const scheduled = automaticWindow(notice, input.rules, now, input.messages);
   const context = { notice_date: notice.date, expires_on: notice.expires_on, invoice_ids: notice.invoice_ids, reason: notice.description,
     cancellation_reason: scheduled ? null : 'No hay día permitido dentro del plazo máximo del aviso.' };
-  const content = renderAutomatic(notice, input.referenceDate);
+  const content = provider === 'MOCK' ? renderAutomatic(notice, input.referenceDate) : realAutomaticMessage(notice, input.referenceDate).content;
   if (scheduled) {
     await oneAutomaticPerDay(db, scope, customerId, bogotaDate(scheduled));
     await enforceLimits(db, scope, settings, notice.rule, customerId, bogotaDate(scheduled));
@@ -537,41 +658,49 @@ async function enqueueAutomatic(db, scope, settings, customerId, now) {
   const [inserted] = await db.query(`INSERT INTO messages(company_id,customer_id,invoice_id,template_id,channel,recipient,content,status,provider,stage,direction,message_mode,idempotency_key,scheduled_at,budget_date,automation_context)
     VALUES (?,?,?,?,'whatsapp',?,?,?,? ,?,'outbound','AUTOMATICO',?,?,?,?)`,
     [scope.companyId, customerId, notice.invoice.id ?? notice.invoice.invoice_id, notice.template.id, normalizePhone(input.customer.phone), content,
-      scheduled ? 'PENDING' : 'CANCELLED', settings.provider, notice.stage, key, scheduled, scheduled ? bogotaDate(scheduled) : null, JSON.stringify(context)]);
+      scheduled ? 'PENDING' : 'CANCELLED', provider, notice.stage, key, scheduled, scheduled ? bogotaDate(scheduled) : null, JSON.stringify(context)]);
   await audit(db, scope, null, scheduled ? 'queued' : 'cancelled', 'whatsapp_message', inserted.insertId, { ...context, actor_type: 'SYSTEM' });
   return { message: await messageById(db, scope, inserted.insertId), duplicate: false };
 }
 async function dispatchAutomatic(db, scope, settings, message, now, fail) {
-  if (message.sent_at || ['SENT', 'DELIVERED', 'READ'].includes(message.status)) return { message, duplicate: true, simulated: true };
+  const simulated = message.provider === 'MOCK';
+  if (message.sent_at || ['SENT', 'DELIVERED', 'READ'].includes(message.status)) return { message, duplicate: true, simulated };
   if (!['PENDING', 'FAILED'].includes(message.status)) throw operationError(409, 'El mensaje automático no puede enviarse.');
   const context = noticeContext(message), day = bogotaDate(now);
   const input = await automaticInput(db, scope, settings, message.customer_id, day);
   const cancel = async reason => {
     await db.query("UPDATE messages SET status='CANCELLED',next_attempt_at=NULL,automation_context=? WHERE id=? AND company_id=?", [JSON.stringify({ ...context, cancellation_reason: reason }), message.id, scope.companyId]);
     await audit(db, scope, null, 'cancelled', 'whatsapp_message', message.id, { reason, actor_type: 'SYSTEM' });
-    return { message: await messageById(db, scope, message.id), cancelled: true, simulated: true };
+    return { message: await messageById(db, scope, message.id), cancelled: true, simulated };
   };
   if (!context) return cancel('Aviso anterior sin identidad permanente; requiere revisión.');
   if (day > context.expires_on) return cancel('Aviso descartado: superó su ventana máxima de 3 días o el día calendario 10.');
   if (!settings.automations_enabled || settings.excluded_customers?.[message.customer_id]) return cancel('Automatización desactivada o cliente excluido.');
   if (!validMobile(input.customer.phone)) return cancel('Cliente sin celular válido; no consume cupo.');
+  if (!input.contactAuthorized) return cancel('El número ya no tiene autorización para avisos por WhatsApp.');
+  if (!simulated && await hasSharedWhatsAppNumber(db, scope, input.customer)) return cancel('El teléfono está asociado a más de un cliente.');
   const notice = automaticNotices(input).find(row => row.stage === message.stage && row.date === context.notice_date);
   if (!notice?.applicable) return cancel(notice?.reason || 'La cartera aplicable ya fue pagada o el aviso dejó de aplicar.');
   const winner = automaticSelection(input);
   if (winner && MERTEL_CONTACTS.findIndex(row => row.stage === winner.stage) > MERTEL_CONTACTS.findIndex(row => row.stage === notice.stage)) return cancel('Se priorizó un aviso de mayor urgencia.');
   if (message.attempts >= RETRY_POLICY.max_attempts) return cancel('Se agotaron los intentos del aviso.');
-  if (message.next_attempt_at && new Date(message.next_attempt_at) > now) return { message, simulated: true };
+  if (message.next_attempt_at && new Date(message.next_attempt_at) > now) return { message, simulated };
   const scheduled = automaticWindow(notice, input.rules, now, input.messages);
   if (!scheduled) return cancel('No hay día permitido dentro del plazo máximo.');
-  const content = renderAutomatic(notice, day), recipient = normalizePhone(input.customer.phone);
+  const prepared = simulated ? null : realAutomaticMessage(notice, day);
+  const content = prepared?.content ?? renderAutomatic(notice, day), recipient = normalizePhone(input.customer.phone);
   await oneAutomaticPerDay(db, scope, message.customer_id, bogotaDate(scheduled), message.id);
   await enforceLimits(db, scope, settings, notice.rule, message.customer_id, bogotaDate(scheduled), message.id);
   if (scheduled > now) {
     await db.query('UPDATE messages SET scheduled_at=?,budget_date=?,content=?,recipient=? WHERE id=? AND company_id=?', [scheduled, bogotaDate(scheduled), content, recipient, message.id, scope.companyId]);
-    return { message: await messageById(db, scope, message.id), scheduled: true, simulated: true };
+    return { message: await messageById(db, scope, message.id), scheduled: true, simulated };
   }
   const attempts = Number(message.attempts) + 1;
   await db.query("UPDATE messages SET status='PROCESSING',content=?,recipient=?,attempts=?,last_attempt_at=?,budget_date=? WHERE id=? AND company_id=?", [content, recipient, attempts, now, day, message.id, scope.companyId]);
+  if (prepared) {
+    await audit(db, scope, null, 'meta_request', 'whatsapp_message', message.id, { notice_date: context.notice_date, attempts, test_mode: false });
+    return { message: { ...message, recipient, content, attempts }, template: prepared.template };
+  }
   const result = await whatsappProvider(settings.provider).sendTemplateMessage({ content, recipient, fail });
   await db.query('UPDATE messages SET status=?,provider_message_id=?,sent_at=?,error_code=?,error_message=?,next_attempt_at=? WHERE id=? AND company_id=?',
     [result.status, result.provider_message_id ?? null, result.status === 'SENT' ? now : null, result.error_code ?? null, result.error_message ?? null,
@@ -580,11 +709,54 @@ async function dispatchAutomatic(db, scope, settings, message, now, fail) {
   return { message: await messageById(db, scope, message.id), simulated: true };
 }
 
+function realAutomaticMessage(notice, day) {
+  const promptPayment = notice.stage === 'prompt_payment' ? { ...automaticContent(notice, day).values, expires_on: notice.expires_on } : null;
+  return buildMertelInvoiceMessage(notice.current.evaluated.customer, notice.matched, promptPayment);
+}
+
+async function sendAutomaticMeta({ scope, messageId, now }, dbPool) {
+  const claimed = await transaction(scope, async (db, settings) => {
+    if (requireAutomationProvider(settings) !== 'WHATSAPP_CLOUD_API') throw operationError(409, 'El canal real de WhatsApp no está activo.');
+    const message = await messageById(db, scope, messageId, true);
+    if (message.provider !== 'WHATSAPP_CLOUD_API' || message.direction !== 'outbound' || message.message_mode !== 'AUTOMATICO' ||
+        (message.status === 'FAILED' && !message.next_attempt_at)) throw operationError(409, 'El aviso no está pendiente de envío real.');
+    return dispatchAutomatic(db, scope, settings, message, now, false);
+  }, dbPool);
+  if (!claimed.template) return claimed;
+  return deliverMetaText({ scope, message: claimed.message, now, testMode: false, template: claimed.template }, dbPool);
+}
+
 export async function getCustomerWhatsAppSequence({ scope, customerId, filters = {}, now = new Date() }, dbPool = pool) {
   customerId = operationId(customerId, 'customer_id');
   const day = filters.reference_date || bogotaDate(now);
   try { dateDay(day); } catch { throw operationError(400, 'Fecha de referencia inválida.'); }
-  return transaction(scope, async (db, settings) => buildWhatsAppSequence(await automaticInput(db, scope, settings, customerId, day)), dbPool);
+  return transaction(scope, async (db, settings) => {
+    const input = await automaticInput(db, scope, settings, customerId, day);
+    const result = buildWhatsAppSequence(input, input.realTemplateName ? (notice, date) => realAutomaticMessage(notice, date).content : undefined);
+    return input.realTemplateName ? { ...result, real_provider: true, contact_authorized: input.contactAuthorized } : result;
+  }, dbPool);
+}
+export async function setWhatsAppCustomerConsent({ scope, actorId, customerId, body }, dbPool = pool) {
+  customerId = operationId(customerId, 'customer_id');
+  if (!body || Object.keys(body).some(key => !['authorized', 'source'].includes(key)) || typeof body.authorized !== 'boolean' ||
+      (body.authorized && (typeof body.source !== 'string' || !body.source.trim() || body.source.length > 200))) {
+    throw operationError(400, 'Indica si el cliente autorizó el contacto y dónde quedó registrado su consentimiento.');
+  }
+  return transaction(scope, async (db, settings) => {
+    if (runtimeProvider(settings) !== 'WHATSAPP_CLOUD_API') throw operationError(409, 'Configura WhatsApp Cloud API antes de registrar autorizaciones.');
+    const [[customer]] = await db.query("SELECT CAST(id AS CHAR) id,phone FROM customers WHERE company_id=? AND id=? AND status='active' AND deleted_at IS NULL FOR UPDATE", [scope.companyId, customerId]);
+    if (!customer) throw operationError(404, 'Cliente no encontrado.');
+    let recipient = settings.authorized_recipients[customerId]?.recipient ?? null;
+    if (body.authorized) {
+      if (!validMobile(customer.phone) || await hasSharedWhatsAppNumber(db, scope, customer)) throw operationError(409, 'Registra un celular válido asociado únicamente a este cliente.');
+      recipient = normalizePhone(customer.phone);
+      settings.authorized_recipients[customerId] = { recipient, source: body.source.trim(), recorded_at: new Date().toISOString() };
+    } else delete settings.authorized_recipients[customerId];
+    await saveSettings(db, scope, actorId, settings, 'customer_contact_permission');
+    await audit(db, scope, actorId, body.authorized ? 'whatsapp_opt_in' : 'whatsapp_opt_out', 'customer', customerId,
+      { recipient, ...(body.authorized ? { source: body.source.trim() } : {}) });
+    return { contact_authorized: body.authorized };
+  }, dbPool);
 }
 export async function excludeWhatsAppCustomer({ scope, actorId, customerId, body }, dbPool = pool) {
   customerId = operationId(customerId, 'customer_id');

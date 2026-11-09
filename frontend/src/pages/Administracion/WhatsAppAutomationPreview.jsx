@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { MERTEL_CONTACTS } from '../../../../backend/src/services/whatsappSequence';
+import { MERTEL_INVOICE_TEMPLATE } from '../../../../backend/src/services/mertelInvoiceWhatsApp';
 import { whatsappRequest } from '../../services/whatsappCenter.service';
 
 const days = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
@@ -25,16 +26,17 @@ function AutomaticRule({ step, rule, templates, busy, act }) {
 }
 export default function WhatsAppAutomationPreview({ settings, templates, busy, act, revision }) {
   const [daily, setDaily] = useState(settings.global_daily_limit ?? '');
+  const real = settings.provider === 'WHATSAPP_CLOUD_API';
   return <>
     <article className="wa-card"><span className="wa-eyebrow">AUTOMATIZACIÓN MERTEL</span><h2>Automatización de mensajes</h2><p>Configuración automática</p>
       <p className="wa-banner">Mora → Vence hoy → Recordatorio → Pronto pago. Un aviso enviado no se repite. Sin domingos ni festivos; aplazamiento máximo de 3 días y pronto pago hasta el día calendario 10.</p>
       <p>Estado: {settings.automations_enabled ? 'Automatización activa' : settings.rules.some(rule => rule.mode === 'AUTOMATICO') ? 'Automatización configurada' : 'Automatización desactivada'}</p>
-      <p>Proveedor MOCK: esta configuración no envía WhatsApp real.</p>
+      <p>{real ? 'Canal real de WhatsApp. Requiere la plantilla aprobada por Meta y clientes con autorización registrada en Timeline.' : 'Proveedor MOCK: esta configuración no envía WhatsApp real.'}</p>
       <form onSubmit={event => { event.preventDefault(); void act(() => whatsappRequest('/settings', { method: 'patch', body: { global_daily_limit: Number(daily), customer_daily_limit: settings.customer_daily_limit || 1 } }), 'Límite diario guardado.'); }}>
         <label>Límite global diario<input required type="number" min="1" value={daily} onChange={event => setDaily(event.target.value)} /></label><button disabled={busy}>Guardar límite diario</button>
       </form>
-      <button disabled={busy || settings.connection_status !== 'CONNECTED'} onClick={() => act(() => whatsappRequest('/settings', { method: 'patch', body: { automations_enabled: !settings.automations_enabled } }), settings.automations_enabled ? 'Automatización desactivada.' : 'Automatización activada en MOCK.')}>{settings.automations_enabled ? 'Desactivar automatización' : 'Activar automatización MOCK'}</button>
+      <button disabled={busy || settings.connection_status !== 'CONNECTED' || (real && !settings.real_sending_enabled)} onClick={() => act(() => whatsappRequest('/settings', { method: 'patch', body: { automations_enabled: !settings.automations_enabled } }), settings.automations_enabled ? 'Automatización desactivada.' : 'Automatización activada.')}>{settings.automations_enabled ? 'Desactivar automatización' : real ? 'Activar envíos automáticos por WhatsApp' : 'Activar automatización MOCK'}</button>
     </article>
-    {MERTEL_CONTACTS.map(step => <AutomaticRule key={`${step.stage}:${revision}`} step={step} rule={settings.rules.find(row => row.stage === step.stage && row.mode === 'AUTOMATICO')} templates={templates} busy={busy} act={act} />)}
+    {MERTEL_CONTACTS.map(step => <AutomaticRule key={`${step.stage}:${revision}`} step={real ? { ...step, template_name: MERTEL_INVOICE_TEMPLATE } : step} rule={settings.rules.find(row => row.stage === step.stage && row.mode === 'AUTOMATICO')} templates={templates} busy={busy} act={act} />)}
   </>;
 }

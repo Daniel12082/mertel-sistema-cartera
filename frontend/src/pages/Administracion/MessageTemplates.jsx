@@ -6,6 +6,7 @@ import "./MessageTemplates.css";
 import { useAppDataMode } from '../../simulation/useAppDataMode';
 import { WhatsAppAttachmentPicker, WhatsAppMediaPreview } from './WhatsAppMedia';
 import { discardDraftMedia, MEDIA_TYPES, MEDIA_UNAVAILABLE } from '../../services/whatsappMedia.service';
+import { whatsappRequest } from '../../services/whatsappCenter.service';
 
 const blankForm = () => ({ name: "", description: "", channel: "whatsapp", content: "", stage: "", status: "inactive", content_type: 'text', attachment: null });
 const formatDate = value => value ? new Intl.DateTimeFormat("es-CO", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value)) : "—";
@@ -38,6 +39,7 @@ export default function MessageTemplates() {
   const [formError, setFormError] = useState("");
   const [changingId, setChangingId] = useState("");
   const [actionError, setActionError] = useState("");
+  const [meta, setMeta] = useState({ templates: null, loading: false, error: '' });
   const textarea = useRef(null);
   const [mediaBusy, setMediaBusy] = useState(false);
   const ownedMedia = useRef(null);
@@ -87,6 +89,15 @@ export default function MessageTemplates() {
     setState(current => ({ ...current, loading: true, error: "" }));
     try { const result = await getMessageTemplateAdminData(); setState({ loading: false, saving: false, error: "", data: result }); }
     catch (error) { setState(current => ({ ...current, loading: false, error: error.message })); }
+  }
+  async function refreshMeta() {
+    setMeta(current => ({ ...current, loading: true, error: '' }));
+    try {
+      const result = await whatsappRequest('/meta/templates');
+      setMeta({ templates: result.templates, loading: false, error: '' });
+    } catch (error) {
+      setMeta({ templates: null, loading: false, error: error.message });
+    }
   }
   async function save(event) {
     event.preventDefault();
@@ -159,6 +170,12 @@ export default function MessageTemplates() {
       <footer className="template-editor-footer"><span>Solo guardas la plantilla. Aquí no se envían mensajes.</span><div><button type="button" className="template-secondary" onClick={cancelEdit}>Cancelar</button><button className="template-primary" type="submit" disabled={state.saving || mediaBusy}>{state.saving ? <LoaderCircle className="template-spin" size={17} /> : <Check size={17} />}{state.saving ? "Guardando…" : editing ? "Guardar cambios" : "Crear plantilla"}</button></div></footer>
     </form>}
     {!form && <section className="template-list-panel"><div className="template-list-heading"><div><h2>Plantillas registradas</h2><p>Las plantillas inactivas permanecen guardadas y no se ofrecen en Cobranza.</p></div><button className="template-secondary" onClick={refresh} disabled={state.loading}><RefreshCw size={16} /> Actualizar</button></div>
+      {!simulated && permissions.includes('settings.manage') && <section aria-label="Aprobación de Meta">
+        <p>Activa o Inactiva es el estado interno de MERTEL.</p>
+        <button className="template-secondary" disabled={meta.loading} onClick={refreshMeta}>{meta.loading ? 'Consultando Meta…' : 'Consultar aprobación en Meta'}</button>
+        {meta.error && <p role="alert">{meta.error}</p>}
+        {meta.templates && <ul>{meta.templates.map(row => <li key={`${row.name}-${row.language}`}>{row.name} · {row.language} · {({ APPROVED: 'Aprobada', PENDING: 'Pendiente', REJECTED: 'Rechazada' })[row.status] || row.status}</li>)}</ul>}
+      </section>}
       <div className="template-filters"><label><Search size={17} /><input aria-label="Buscar plantillas" type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="Buscar por nombre, canal o etapa" /></label><select aria-label="Filtrar por estado" value={statusFilter} onChange={event => setStatusFilter(event.target.value)}><option value="all">Todos los estados</option><option value="active">Activas</option><option value="inactive">Inactivas</option></select></div>
       {state.loading ? <div className="template-empty" role="status"><LoaderCircle className="template-spin" size={26} /><h2>Cargando plantillas…</h2></div> : state.error ? <div className="template-empty"><CircleAlert size={27} /><h2>No se pudieron cargar las plantillas</h2><p role="alert">{state.error}</p><button className="template-secondary" onClick={refresh}>Reintentar</button></div> : !templates.length ? <div className="template-empty"><MessageSquareText size={27} /><h2>No hay plantillas WhatsApp configuradas</h2><p>Crea una plantilla para que el equipo pueda utilizarla en Cobranza.</p><button className="template-primary" onClick={beginCreate}><Plus size={17} /> Nueva plantilla</button></div> : !filteredTemplates.length ? <div className="template-empty"><Search size={27} /><h2>No hay resultados</h2><p>Ajusta la búsqueda o el filtro de estado.</p></div> : <div className="template-table-wrap"><table className="template-table"><thead><tr><th>Nombre</th><th>Canal</th><th>Etapa</th><th>Estado</th><th>Actualizada</th><th>Acciones</th></tr></thead><tbody>{filteredTemplates.map(template => <tr key={template.id}><td data-label="Nombre"><strong>{template.name}</strong><small>{MEDIA_TYPES[template.content_type || 'text']} · {template.attachment ? 'Con adjunto temporal' : 'Sin adjunto'}</small><small>{template.content}</small></td><td data-label="Canal">{template.channel === "whatsapp" ? "WhatsApp" : template.channel}</td><td data-label="Etapa">{stages.find(stage => stage.key === template.stage)?.label ?? (template.stage || "General")}</td><td data-label="Estado"><span className={`template-status ${template.status === "active" ? "is-active" : "is-inactive"}`}>{template.status === "active" ? "Activa" : "Inactiva"}</span></td><td data-label="Actualizada">{formatDate(template.updated_at)}</td><td data-label="Acciones"><div className="template-actions"><button type="button" className="template-icon-button" aria-label={`Editar ${template.name}`} onClick={() => beginEdit(template)}><Pencil size={17} /></button><button type="button" className="template-icon-button" aria-label={`${template.status === "active" ? "Desactivar" : "Activar"} ${template.name}`} disabled={changingId === template.id} onClick={() => toggle(template)}>{changingId === template.id ? <LoaderCircle className="template-spin" size={18} /> : template.status === "active" ? <ToggleRight size={20} /> : <ToggleLeft size={20} />}</button></div></td></tr>)}</tbody></table></div>}
     </section>}

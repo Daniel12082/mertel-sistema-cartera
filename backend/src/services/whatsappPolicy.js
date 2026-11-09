@@ -6,9 +6,9 @@ export const MESSAGE_STATES = ['PENDING', 'PROCESSING', 'SENT', 'DELIVERED', 'RE
 export const RETRY_POLICY = Object.freeze({ max_attempts: 3, delay_minutes: 15 });
 export const defaultWhatsAppSettings = () => ({ provider: null, number: '', phone_number_id: '', business_account_id: '',
   connection_status: 'NOT_CONFIGURED', automations_enabled: false, global_daily_limit: null,
-  customer_daily_limit: null, rules: [], excluded_customers: {}, retry: { ...RETRY_POLICY } });
+  customer_daily_limit: null, rules: [], excluded_customers: {}, authorized_recipients: {}, retry: { ...RETRY_POLICY } });
 export function publicWhatsAppSettings(settings) {
-  const { encrypted_credentials, ...safe } = settings;
+  const { encrypted_credentials, authorized_recipients: _authorizedRecipients, ...safe } = settings;
   const meta = String(process.env.WHATSAPP_PROVIDER || '').toLowerCase() === 'meta';
   return { ...safe, provider: meta ? 'WHATSAPP_CLOUD_API' : safe.provider, credentials_configured: Boolean(encrypted_credentials),
     real_sending_enabled: meta && process.env.WHATSAPP_TEST_MODE === 'false', test_mode: meta && process.env.WHATSAPP_TEST_MODE === 'true',

@@ -3,6 +3,7 @@ import { ArrowLeft, CheckCheck, MessageCircle, Search, Send, UserRound, ShieldCh
 import { getCustomers } from '../../services/customer.service';
 import { whatsappRequest, sendMetaTestMessage, sendManualWhatsApp, sendConversationSimulation, associateConversationSimulation } from '../../services/whatsappCenter.service';
 import WhatsAppQuickReplies from './WhatsAppQuickReplies';
+import WhatsAppInvoiceNotice from './WhatsAppInvoiceNotice';
 import { WhatsAppAttachmentPicker, WhatsAppMediaPreview } from './WhatsAppMedia';
 import { discardDraftMedia, temporaryWhatsAppMedia, MEDIA_UNAVAILABLE } from '../../services/whatsappMedia.service';
 import { collectionResultsRequest } from '../../services/collectionResults.service';
@@ -49,6 +50,12 @@ export default function WhatsAppConversations({ settings, chatOnly = false, pref
   const { mode } = useAppDataMode(); const simulated = mode === 'SIMULATION';
   const metaConnected = !simulated && settings?.provider === 'WHATSAPP_CLOUD_API' && settings?.connection_status === 'CONNECTED';
   const metaProduction = metaConnected && settings.real_sending_enabled && !settings.test_mode;
+  const [windowClock, setWindowClock] = useState(() => Date.now());
+  useEffect(() => {
+    if (!metaConnected) return;
+    const interval = setInterval(() => setWindowClock(Date.now()), 30000);
+    return () => clearInterval(interval);
+  }, [metaConnected]);
   const preferenceKey = `mertel:wa-inbox:${mode}:${preferenceOwner ?? 'admin'}`;
   const [preferences, setPreferences] = useState(() => {
     if (!chatOnly) return {};
@@ -116,15 +123,14 @@ export default function WhatsAppConversations({ settings, chatOnly = false, pref
   const recipient = phoneKey(conversation?.phone);
   const metaTestChat = metaConnected && settings.test_mode && Boolean(recipient) && recipient === phoneKey(settings.test_allowed_recipient);
   const draft = drafts[selection] || '';
-  function hasOpenMetaWindow() {
-    const now = Date.now();
+  function hasOpenMetaWindow(now) {
     return messages.some(message => {
       if (message.provider !== 'WHATSAPP_CLOUD_API' || message.direction !== 'inbound' || phoneKey(message.recipient || message.phone) !== recipient) return false;
       const received = new Date(message.received_at).getTime();
       return received <= now && now - received < 24 * 60 * 60 * 1000;
     });
   }
-  const canReplyToMeta = Boolean(recipient && (metaTestChat || metaProduction) && hasOpenMetaWindow());
+  const canReplyToMeta = Boolean(recipient && (metaTestChat || metaProduction) && hasOpenMetaWindow(windowClock));
   const canWriteMetaDraft = canReplyToMeta || (metaProduction && Boolean(recipient));
   const modeLabel = simulated ? 'Demo local' : metaProduction ? 'Meta conectada' : metaConnected ? settings.test_mode ? 'Meta conectada · prueba controlada' : 'Meta conectada · envío desactivado' : 'Proveedor MOCK · Meta pendiente';
   const modeNotice = simulated ? 'SIMULACIÓN — No se enviará ningún mensaje real'
@@ -201,7 +207,7 @@ export default function WhatsAppConversations({ settings, chatOnly = false, pref
   async function send() {
     if (pending.current) return;
     if (metaConnected) {
-      if (!canReplyToMeta || !hasOpenMetaWindow() || !draft.trim() || draft.length > 4096) return;
+      if (!canReplyToMeta || !draft.trim() || draft.length > 4096) return;
       if (metaTestChat && !window.confirm('¿Enviar este mensaje real al número de prueba autorizado?')) return;
     } else if (!canSend) return;
     const key = selection, id = customerId, content = draft; pending.current = true; setBusy(true); setSendError(''); setNotice('');
@@ -299,6 +305,9 @@ export default function WhatsAppConversations({ settings, chatOnly = false, pref
           {detail.historyError && <p className="wa-warning" role="alert">{detail.historyError}<button onClick={() => setRevision(value => value + 1)}>Reintentar historial</button></p>}
           {detail.hasNext && <button className="wa-chat-more" disabled={loadingMore} onClick={() => loadMore(true)}>Cargar mensajes anteriores</button>}
           <ChatMessages messages={messages} />
+          {metaProduction && <WhatsAppInvoiceNotice key={selection} customerId={customerId}
+            invoices={detail.context?.open_invoices || []} authorized={detail.sequence?.contact_authorized && !detail.sequence?.excluded}
+            onMessage={message => setRecords(current => merge(current, [message]))} />}
           {metaConnected ? <form className="wa-chat-compose" onSubmit={event => { event.preventDefault(); void send(); }}>
             {notice && <p className="wa-success" role="status">{notice}</p>}
             {sendError && <p className="wa-error" role="alert">{sendError}</p>}

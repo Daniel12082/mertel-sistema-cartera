@@ -24,6 +24,7 @@ adminWhatsAppRoutes.patch('/settings', respond(center.updateWhatsAppSettings));
 adminWhatsAppRoutes.post('/test', respond(center.testWhatsAppConnection));
 adminWhatsAppRoutes.get('/meta/templates', respond(center.listMetaMessageTemplates));
 adminWhatsAppRoutes.post('/meta/replies', respond(center.replyToMetaConversation));
+adminWhatsAppRoutes.post('/meta/invoice-notices', respond(center.sendMetaInvoiceNotice));
 adminWhatsAppRoutes.post('/meta/test-messages', respond(center.enqueueMetaTestMessage));
 adminWhatsAppRoutes.post('/meta/test-messages/:messageId/send', respond(args => center.sendMetaTestMessage({ ...args, body: args.body })));
 adminWhatsAppRoutes.post('/disconnect', respond(center.disconnectWhatsApp));
@@ -33,6 +34,7 @@ adminWhatsAppRoutes.put('/automations/:stage', respond(center.saveWhatsAppRule))
 adminWhatsAppRoutes.get('/messages', respond(center.listWhatsAppMessages));
 adminWhatsAppRoutes.get('/audit', respond(center.listWhatsAppAudit));
 adminWhatsAppRoutes.patch('/customers/:customerId/exclusion', respond(center.excludeWhatsAppCustomer));
+adminWhatsAppRoutes.patch('/customers/:customerId/consent', respond(center.setWhatsAppCustomerConsent));
 adminWhatsAppRoutes.post('/automations/process', respond(args => {
   if (args.body && Object.keys(args.body).length) throw Object.assign(new Error('La fecha automática la determina el servidor.'), { status: 400 });
   return center.processWhatsAppAutomations(args);

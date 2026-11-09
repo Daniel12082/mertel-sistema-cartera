@@ -104,12 +104,17 @@ export class MetaWhatsAppProvider extends WhatsAppProvider {
       response: { messaging_product: data.messaging_product || 'whatsapp', contacts: data.contacts || [], messages: [message] } };
   }
 
-  async sendTemplateMessage({ recipient, manual = false, template, signal } = {}) {
+  async sendTemplateMessage({ recipient, manual = false, template, expectedBody, callbackId, signal } = {}) {
     const to = this.assertTestRecipient(recipient, { manual });
     const approved = (await this.listMessageTemplates()).find(row => row.name === template?.name && row.language === template?.language && row.status === 'APPROVED');
     if (!approved) throw providerError('META_TEMPLATE_NOT_APPROVED', 'La plantilla no está aprobada por Meta para este idioma.');
+    if (expectedBody && (approved.category !== 'UTILITY' || approved.components.length !== 1 ||
+        approved.components[0].type !== 'BODY' || approved.components[0].text !== expectedBody)) {
+      throw providerError('META_TEMPLATE_CHANGED', 'La plantilla aprobada en Meta cambió de contenido o categoría.');
+    }
     validateTemplateParameters(approved, template.components || []);
-    return this.sendMessage({ recipient: to, manual, payload: { type: 'template', template: { name: approved.name, language: { code: approved.language }, ...(template.components?.length ? { components: template.components } : {}) } }, signal });
+    return this.sendMessage({ recipient: to, manual, payload: { type: 'template', ...(callbackId ? { biz_opaque_callback_data: callbackId } : {}),
+      template: { name: approved.name, language: { code: approved.language }, ...(template.components?.length ? { components: template.components } : {}) } }, signal });
   }
 
   verifyWebhookSignature(rawBody, signature) {
@@ -180,7 +185,9 @@ function normalizeMetaStatus(status) {
   if (!status || typeof status.id !== 'string' || !values[status.status]) throw providerError('META_STATUS_INVALID', 'Estado de Meta inválido.');
   const timestamp = new Date(Number(status.timestamp) * 1000);
   if (Number.isNaN(timestamp.getTime())) throw providerError('META_STATUS_INVALID', 'Marca de tiempo de Meta inválida.');
-  return { kind: 'status', provider_message_id: status.id, status: values[status.status], recipient: status.recipient_id ? normalizePhone(status.recipient_id) : null, timestamp, errors: Array.isArray(status.errors) ? status.errors.map(row => ({ code: String(row.code || ''), title: String(row.title || '').slice(0, 200), message: String(row.message || '').slice(0, 500) })) : [] };
+  const callbackId = typeof status.biz_opaque_callback_data === 'string' ? /^mertel-invoice:([1-9]\d{0,19})$/.exec(status.biz_opaque_callback_data)?.[1] : null;
+  return { kind: 'status', provider_message_id: status.id, status: values[status.status], recipient: status.recipient_id ? normalizePhone(status.recipient_id) : null, timestamp,
+    ...(callbackId ? { callback_id: callbackId } : {}), errors: Array.isArray(status.errors) ? status.errors.map(row => ({ code: String(row.code || ''), title: String(row.title || '').slice(0, 200), message: String(row.message || '').slice(0, 500) })) : [] };
 }
 
 export function normalizePhone(value) {

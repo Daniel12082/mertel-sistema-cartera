@@ -102,6 +102,7 @@ export function automaticNotices(input) {
     // Confirm the event against the same collection engine on its original date.
     const evidence = evaluateCollectionCase({ customer, invoices: engineInvoices(notice.trigger_invoices), rules, referenceDate: notice.date });
     const configured = settings.rules.find(row => row.stage === notice.stage && row.mode === 'AUTOMATICO' && row.enabled);
+    notice.template_name = input.realTemplateName || notice.template_name;
     notice.template = templates.find(row => row.name === notice.template_name && row.status === 'active' && row.channel === 'whatsapp' && (!row.stage || row.stage === notice.stage) && (!configured || String(configured.template_id) === String(row.id)));
     notice.rule = notice.template && settings.rules.find(row => row.enabled && row.mode === 'AUTOMATICO' && row.stage === notice.stage && String(row.template_id) === String(notice.template.id));
     notice.message = messages.find(row => {
@@ -115,6 +116,7 @@ export function automaticNotices(input) {
     if (notice.stage === 'prompt_payment' && current.pending.some(row => !promo18(row) && row.base_value == null)) reason = 'Falta base antes de IVA; no se inventa el descuento.';
     if (settings.excluded_customers?.[String(customer.id)]) reason = 'Cliente excluido de mensajes automáticos.';
     if (!validMobile(customer.phone)) reason = 'Cliente sin celular válido; no consume cupo.';
+    if (input.contactAuthorized === false) reason = 'El cliente no tiene autorización registrada para avisos por WhatsApp.';
     if (input.referenceDate > notice.expires_on) reason = 'Aviso descartado: superó su ventana máxima.';
     if (!notice.template) reason ||= `Plantilla activa ${notice.template_name} no disponible.`;
     if (!notice.rule || !settings.automations_enabled) reason ||= 'Automatización no activada para esta etapa.';
@@ -169,7 +171,7 @@ export function automaticContent(notice, referenceDate) {
   return { values, content, balance };
 }
 
-export function buildWhatsAppSequence(input) {
+export function buildWhatsAppSequence(input, render = renderAutomaticNotice) {
   const current = sequenceCase(input), notices = automaticNotices(input);
   const steps = MERTEL_CONTACTS.flatMap(step => {
     const history = (input.messages || []).filter(row => row.message_mode === 'AUTOMATICO' && row.stage === step.stage).sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
@@ -181,8 +183,8 @@ export function buildWhatsAppSequence(input) {
       const exactMessage = notice?.message && (noticeContext(notice.message)?.notice_date || null) === date ? notice.message : null;
       const message = exactMessage || history.find(row => (noticeContext(row)?.notice_date || null) === date) || null;
       let content = message?.content || '', reason = notice?.reason || (message ? 'Aviso registrado en el historial del canal.' : 'Cliente sin cartera aplicable a esta etapa.');
-      if (notice?.applicable) { try { content = renderAutomaticNotice(notice, input.referenceDate); } catch (error) { reason = error.message; } }
-      return { ...step, date, deadline: notice?.expires_on || noticeContext(message)?.expires_on || null,
+      if (notice?.applicable) { try { content = render(notice, input.referenceDate); } catch (error) { reason = error.message; } }
+      return { ...step, template_name: input.realTemplateName || step.template_name, date, deadline: notice?.expires_on || noticeContext(message)?.expires_on || null,
         template_id: notice?.template ? String(notice.template.id) : message?.template_id || null,
         applicable: Boolean(notice?.applicable), reason, content, message,
         status: message ? message.status === 'PENDING' && message.scheduled_at ? 'PROGRAMADO' : message.status : notice?.applicable ? 'PENDIENTE' : 'NO APLICA' };

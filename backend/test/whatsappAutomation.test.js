@@ -8,6 +8,7 @@ import { applyWhatsAppMigration } from '../src/services/whatsappMigration.servic
 import * as service from '../src/services/whatsappCenter.service.js';
 import { MERTEL_CONTACTS } from '../src/services/whatsappSequence.js';
 import { startWhatsAppAutomationRunner } from '../src/services/whatsappAutomationRunner.js';
+import { MERTEL_INVOICE_BODY, MERTEL_INVOICE_TEMPLATE } from '../src/services/mertelInvoiceWhatsApp.js';
 dotenv.config({ path: new URL('../.env', import.meta.url), quiet: true });
 
 describe('MERTEL automation authority on an isolated MySQL schema', { skip: !(process.env.DB_HOST && process.env.DB_USER) }, () => {
@@ -124,5 +125,57 @@ describe('MERTEL automation authority on an isolated MySQL schema', { skip: !(pr
     const sequence = await service.getCustomerWhatsAppSequence({ scope, customerId: '1', filters: { reference_date: '2026-10-08' } }, pool);
     assert.equal(sequence.steps[1].message.status, 'SENT'); assert.equal(sequence.last_contact.message.stage, 'five_days_before_due');
     assert.equal((await db.query("SELECT COUNT(*) count FROM audit_logs WHERE action='sent'"))[0][0].count, 1);
+  });
+  test('production notice waits for approval and opt-in, sends live values once, and records the webhook', async t => {
+    const env = {
+      WHATSAPP_PROVIDER: 'meta', WHATSAPP_TEST_MODE: 'false', WHATSAPP_API_VERSION: 'v27.0',
+      WHATSAPP_PHONE_NUMBER_ID: '12345678', WHATSAPP_BUSINESS_ACCOUNT_ID: '12345679', WHATSAPP_APP_ID: '12345680',
+      WHATSAPP_BUSINESS_ID: '12345681', WHATSAPP_ACCESS_TOKEN: 'test', WHATSAPP_WEBHOOK_VERIFY_TOKEN: 'test', WHATSAPP_APP_SECRET: 'test',
+    };
+    for (const [key, value] of Object.entries(env)) {
+      const original = process.env[key];
+      process.env[key] = value;
+      t.after(() => { if (original === undefined) delete process.env[key]; else process.env[key] = original; });
+    }
+    let templateStatus = 'PENDING';
+    const requests = [];
+    t.mock.method(globalThis, 'fetch', async (url, options) => {
+      assert.equal(new URL(url).hostname, 'graph.facebook.com');
+      if (options.method === 'GET') return Response.json({ data: [{ name: MERTEL_INVOICE_TEMPLATE, language: 'es',
+        status: templateStatus, category: 'UTILITY', components: [{ type: 'BODY', text: MERTEL_INVOICE_BODY }] }] });
+      requests.push(JSON.parse(options.body));
+      const providerId = `wamid.notice${requests.length}`;
+      const callback = requests.at(-1).biz_opaque_callback_data;
+      await service.receiveMetaWebhook({ events: [{ kind: 'status', provider_message_id: providerId, status: 'DELIVERED', timestamp: now,
+        recipient: '+573001234567', callback_id: callback.split(':')[1] }] }, pool);
+      return Response.json({ messages: [{ id: providerId }] });
+    });
+    const [template] = await db.query("INSERT INTO message_templates(company_id,name,channel,content,status) VALUES (1,?,'whatsapp','Hola {{cliente_nombre}}.','active')", [MERTEL_INVOICE_TEMPLATE]);
+    const configured = { ...defaults, provider: null, automations_enabled: false, rules: [{ ...ruleData[1], template_id: String(template.insertId) }] };
+    await db.query("UPDATE settings SET setting_value=? WHERE setting_key='whatsapp_center'", [JSON.stringify(configured)]);
+    const activate = () => service.updateWhatsAppSettings({ scope, body: { automations_enabled: true } }, pool);
+    await assert.rejects(activate(), /todavía no tiene aprobada/);
+    templateStatus = 'APPROVED';
+    await activate();
+    assert.equal((await service.processWhatsAppAutomations({ scope, now }, pool)).sent, 0);
+    await service.setWhatsAppCustomerConsent({ scope, customerId: '1', body: { authorized: true, source: 'Consentimiento de prueba' } }, pool);
+    const preview = await service.sendMetaInvoiceNotice({ scope, now, body: { customer_id: '1', invoice_ids: ['1'] } }, pool);
+    assert.match(preview.content, /AUTO-DEMO-1: \$1\.190/);
+    assert.equal(requests.length, 0);
+    await Promise.all([service.processWhatsAppAutomations({ scope, now }, pool), service.processWhatsAppAutomations({ scope, now }, pool)]);
+    assert.equal(requests.length, 1);
+    assert.equal(requests[0].to, '573001234567');
+    assert.equal(requests[0].template.name, MERTEL_INVOICE_TEMPLATE);
+    assert.deepEqual(requests[0].template.components[0].parameters.map(row => row.text),
+      ['Cliente automatización DEMO', 'AUTO-DEMO-1: $1.190 (vence 2026-10-13)', '$1.190']);
+    assert.equal((await db.query("SELECT status FROM messages WHERE provider_message_id='wamid.notice1'"))[0][0].status, 'DELIVERED');
+    const sendManual = () => service.sendMetaInvoiceNotice({ scope, now,
+      body: { customer_id: '1', invoice_ids: ['1'], preview_token: preview.preview_token } }, pool);
+    assert.equal((await sendManual()).message.status, 'DELIVERED');
+    assert.equal((await sendManual()).duplicate, true);
+    assert.equal(requests.length, 2);
+    await service.receiveMetaWebhook({ events: [{ kind: 'message', provider_message_id: 'wamid.stop', phone: '+573001234567',
+      timestamp: now, type: 'text', content: 'BAJA' }] }, pool);
+    assert.equal((await service.getCustomerWhatsAppSequence({ scope, customerId: '1', now }, pool)).contact_authorized, false);
   });
 });

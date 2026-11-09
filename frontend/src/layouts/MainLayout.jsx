@@ -1,5 +1,6 @@
 import { NavLink, Outlet } from "react-router-dom";
 import SimulationControls from '../simulation/SimulationControls';
+import { simulationAvailable } from '../simulation/store';
 import { useAppDataMode } from '../simulation/useAppDataMode';
 import { useAppearance } from '../appearance/appearance.context';
 import SessionActions from "../auth/SessionActions";
@@ -101,7 +102,7 @@ function MainLayout() {
             <h1>{appearance.name}</h1>
             <span>{appearance.description}</span>
           </div>
-          <SimulationControls />
+          {simulationAvailable && <SimulationControls />}
           {mode !== 'SIMULATION' && <SessionActions />}
         </header>
 
