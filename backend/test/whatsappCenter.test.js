@@ -219,6 +219,50 @@ describe('WhatsApp center HTTP / MySQL, no real sends', { skip: !(process.env.DB
       assert.equal(newReply.body.data.message.customer_id, customer2);
       const [events] = await db.query("SELECT CAST(user_id AS CHAR) AS actor, JSON_UNQUOTE(JSON_EXTRACT(new_values,'$.customer_id')) AS customer FROM audit_logs WHERE action='conversation_associated'");
       assert.deepEqual(events, [{ actor: admin.id, customer: customer2 }]);
+
+      let mediaUploads = 0;
+      let mediaSends = 0;
+      globalThis.fetch = async (url, options) => {
+        if (!String(url).startsWith('https://graph.facebook.com/')) return realFetch(url, options);
+        if (String(url).endsWith('/media')) {
+          mediaUploads++;
+          assert.equal(options.headers['Content-Type'], undefined);
+          assert.equal(options.body.get('messaging_product'), 'whatsapp');
+          assert.equal(options.body.get('file').type, 'application/pdf');
+          assert.equal(await options.body.get('file').text(), '%PDF-1.4 fixture');
+          return Response.json({ id: '123456789' });
+        }
+        mediaSends++;
+        const payload = JSON.parse(options.body);
+        assert.equal(payload.to, recipient.slice(1));
+        assert.deepEqual(payload.document, { id: '123456789', filename: 'Factura.pdf', caption: 'Aquí está el archivo' });
+        assert.equal(payload.type, 'document');
+        const id = payload.biz_opaque_callback_data.split(':')[1];
+        await services.receiveMetaWebhook({ events: [{ kind: 'status', provider_message_id: 'wamid.attachment', status: 'DELIVERED', timestamp: new Date(),
+          callback_id: id, callback_media: true, recipient }] });
+        return Response.json({ messages: [{ id: 'wamid.attachment' }] });
+      };
+      async function media(bytes, actor = admin) {
+        const form = new FormData();
+        form.set('recipient', recipient);
+        form.set('customer_id', customer2);
+        form.set('content', 'Aquí está el archivo');
+        form.set('file', new Blob([bytes], { type: 'application/pdf' }), 'Factura.pdf');
+        const response = await realFetch(root + '/admin/whatsapp/meta/replies/media', {
+          method: 'POST', body: form, headers: { Authorization: `Bearer ${actor.token}` },
+        });
+        return { status: response.status, body: await response.json() };
+      }
+      assert.equal((await media('%PDF-1.4 fixture', collector)).status, 403);
+      assert.equal((await media('Contenido que no es PDF')).status, 400);
+      const [firstMedia, secondMedia] = await Promise.all([media('%PDF-1.4 fixture'), media('%PDF-1.4 fixture')]);
+      assert.equal(firstMedia.status, 200, JSON.stringify(firstMedia));
+      assert.equal(secondMedia.status, 200, JSON.stringify(secondMedia));
+      assert.equal(firstMedia.body.data.message.id, secondMedia.body.data.message.id);
+      assert.equal(mediaUploads, 1);
+      assert.equal(mediaSends, 1);
+      const messageHistory = await request('GET', `/admin/whatsapp/messages?customer_id=${customer2}`);
+      assert.ok(messageHistory.body.data.messages.some(row => row.content.includes('Factura.pdf') && row.status === 'DELIVERED'));
     } finally {
       globalThis.fetch = realFetch;
       for (const [key, value] of Object.entries(previous)) {

@@ -333,15 +333,25 @@ export async function sendMetaTestMessage({ scope, actorId, messageId, body, now
   return deliverMetaText({ scope, actorId, message: claimed.message, now, testMode: true }, dbPool);
 }
 
-async function deliverMetaText({ scope, actorId, message, now, testMode, template, sendBefore, clock }, dbPool) {
+async function deliverMetaText({ scope, actorId, message, now, testMode, template, sendBefore, clock, attachment }, dbPool) {
   const { id, recipient, content } = message;
   let result;
   try {
     const provider = whatsappProvider('WHATSAPP_CLOUD_API');
-    result = template
-      ? await provider.sendTemplateMessage({ recipient, manual: message.message_mode !== 'AUTOMATICO', template, expectedBody: MERTEL_INVOICE_BODY,
-        callbackId: `mertel-invoice:${id}`, sendBefore, clock })
-      : await provider.sendMessage({ recipient, manual: true, payload: { type: 'text', text: { preview_url: false, body: content } } });
+    if (template) {
+      result = await provider.sendTemplateMessage({ recipient, manual: message.message_mode !== 'AUTOMATICO', template, expectedBody: MERTEL_INVOICE_BODY,
+        callbackId: `mertel-invoice:${id}`, sendBefore, clock });
+    } else if (attachment) {
+      const mediaId = await provider.uploadMedia(attachment);
+      if (Date.now() >= sendBefore.getTime()) throw operationError(409, 'La ventana de respuesta terminó durante la carga del archivo.');
+      const media = { id: mediaId, ...(attachment.type === 'document' ? { filename: attachment.name } : {}),
+        ...(attachment.caption ? { caption: attachment.caption } : {}) };
+      result = await provider.sendMessage({ recipient, manual: true, payload: {
+        type: attachment.type, [attachment.type]: media, biz_opaque_callback_data: `mertel-media:${id}`,
+      } });
+    } else {
+      result = await provider.sendMessage({ recipient, manual: true, payload: { type: 'text', text: { preview_url: false, body: content } } });
+    }
   } catch (error) {
     return transaction(scope, async db => {
       const code = String(error?.code || 'META_SEND_FAILED').slice(0, 100);
@@ -361,30 +371,34 @@ async function deliverMetaText({ scope, actorId, message, now, testMode, templat
   }, dbPool);
 }
 
-export async function replyToMetaConversation({ scope, actorId, body, now = new Date() }, dbPool = pool) {
+export async function replyToMetaConversation({ scope, actorId, body, now = new Date(), attachment }, dbPool = pool) {
   if (process.env.WHATSAPP_TEST_MODE !== 'false') throw operationError(409, 'El envío normal de WhatsApp está desactivado.');
   if (!body || Object.keys(body).some(key => !['recipient', 'content', 'customer_id'].includes(key)) ||
-      typeof body.content !== 'string' || !body.content.trim() || body.content.length > 4096) {
-    throw operationError(400, 'Escribe un mensaje de hasta 4.096 caracteres.');
+      typeof body.content !== 'string' || (!attachment && !body.content.trim()) ||
+      body.content.length > (attachment ? 1024 : 4096) || /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(body.content)) {
+    throw operationError(400, attachment ? 'Escribe un texto de hasta 1.024 caracteres para el adjunto.' : 'Escribe un mensaje de hasta 4.096 caracteres.');
   }
   let recipient;
   try { recipient = normalizePhone(body.recipient); }
   catch { throw operationError(400, 'Número de WhatsApp inválido.'); }
   const selectedCustomer = body.customer_id === undefined ? null : operationId(body.customer_id, 'customer_id');
   const content = body.content.trim();
+  if (attachment?.type === 'audio' && content) throw operationError(400, 'Envía el texto y el audio en mensajes separados.');
   const day = bogotaDate(now);
   const claimed = await transaction(scope, async (db, settings) => {
     if (runtimeProvider(settings) !== 'WHATSAPP_CLOUD_API' || settings.connection_status !== 'CONNECTED') {
       throw operationError(409, 'WhatsApp Cloud API no está conectada.');
     }
-    const [[incoming]] = await db.query(`SELECT CAST(m.id AS CHAR) id FROM messages m
+    const [[incoming]] = await db.query(`SELECT CAST(m.id AS CHAR) id,m.received_at FROM messages m
       WHERE company_id=? AND channel='whatsapp' AND provider='WHATSAPP_CLOUD_API' AND direction='inbound'
       AND recipient=? AND received_at>? AND received_at<=? ORDER BY m.received_at DESC,m.id DESC LIMIT 1`,
     [scope.companyId, recipient, new Date(now.getTime() - 86_400_000), now]);
     if (!incoming) throw operationError(409, 'La ventana de respuesta de 24 horas está cerrada.');
     const customerId = await metaConversationCustomer(db, scope, settings, recipient);
     if (selectedCustomer && customerId !== selectedCustomer) throw operationError(409, 'El número no está vinculado al cliente seleccionado. Actualiza la bandeja.');
-    const key = createHash('sha256').update(JSON.stringify(['meta-reply', scope.companyId, recipient, content, incoming.id, now.toISOString().slice(0, 16)])).digest('hex');
+    const keyParts = ['meta-reply', scope.companyId, recipient, content, incoming.id, now.toISOString().slice(0, 16)];
+    if (attachment) keyParts.push(attachment.name, createHash('sha256').update(attachment.buffer).digest('hex'));
+    const key = createHash('sha256').update(JSON.stringify(keyParts)).digest('hex');
     const [[duplicate]] = await db.query('SELECT CAST(id AS CHAR) id FROM messages WHERE company_id=? AND idempotency_key=?', [scope.companyId, key]);
     if (duplicate) return { message: await messageById(db, scope, duplicate.id), duplicate: true };
     const [[counts]] = await db.query(`SELECT COUNT(*) AS total, COALESCE(SUM(recipient=?),0) AS per_number
@@ -393,15 +407,18 @@ export async function replyToMetaConversation({ scope, actorId, body, now = new 
         (settings.customer_daily_limit && Number(counts.per_number) >= settings.customer_daily_limit)) {
       throw operationError(429, 'Límite diario alcanzado.');
     }
-    const [inserted] = await db.query(`INSERT INTO messages(company_id,customer_id,created_by,channel,recipient,content,status,provider,direction,message_mode,idempotency_key,scheduled_at,budget_date,attempts,last_attempt_at)
-      VALUES (?,?,?,'whatsapp',?,?,'PROCESSING','WHATSAPP_CLOUD_API','outbound','MANUAL',?,?,?,1,?)`,
-    [scope.companyId, customerId, actorId, recipient, content, key, now, day, now]);
+    const historyText = attachment ? `[Adjunto] ${attachment.name}${content ? '\n' + content : ''}` : content;
+    const [inserted] = await db.query(`INSERT INTO messages(company_id,customer_id,created_by,channel,recipient,subject,content,status,provider,direction,message_mode,idempotency_key,scheduled_at,budget_date,attempts,last_attempt_at)
+      VALUES (?,?,?,'whatsapp',?,?,?,'PROCESSING','WHATSAPP_CLOUD_API','outbound','MANUAL',?,?,?,1,?)`,
+    [scope.companyId, customerId, actorId, recipient, attachment?.name ?? null, historyText, key, now, day, now]);
     const id = String(inserted.insertId);
-    await audit(db, scope, actorId, 'meta_request', 'whatsapp_message', id, { recipient, attempts: 1, test_mode: false });
-    return { message: { id, recipient, content } };
+    await audit(db, scope, actorId, 'meta_request', 'whatsapp_message', id, { recipient, attempts: 1, test_mode: false,
+      ...(attachment ? { attachment_type: attachment.type, attachment_size: attachment.buffer.length } : {}) });
+    return { message: { id, recipient, content }, sendBefore: new Date(new Date(incoming.received_at).getTime() + 86_400_000) };
   }, dbPool);
   if (claimed.duplicate) return { ...claimed, accepted: ['SENT', 'DELIVERED', 'READ'].includes(claimed.message.status) };
-  return deliverMetaText({ scope, actorId, message: claimed.message, now, testMode: false }, dbPool);
+  return deliverMetaText({ scope, actorId, message: claimed.message, now, testMode: false, sendBefore: claimed.sendBefore,
+    attachment: attachment ? { ...attachment, caption: content } : null }, dbPool);
 }
 
 export async function listMetaMessageTemplates({ scope }, dbPool = pool) {
@@ -471,8 +488,10 @@ export async function receiveMetaWebhook({ events }, dbPool = pool) {
         if (!message && event.callback_id && event.recipient) {
           // A signed receipt can arrive before the HTTP response or after an ambiguous network failure.
           [[message]] = await db.query(`SELECT CAST(id AS CHAR) id FROM messages WHERE company_id=? AND id=? AND recipient=?
-            AND provider='WHATSAPP_CLOUD_API' AND direction='outbound' AND template_id IS NOT NULL AND provider_message_id IS NULL
-            AND status IN ('PROCESSING','FAILED') FOR UPDATE`, [scope.companyId, event.callback_id, event.recipient]);
+            AND provider='WHATSAPP_CLOUD_API' AND direction='outbound' AND provider_message_id IS NULL
+            AND ((? AND subject IS NOT NULL AND template_id IS NULL) OR (NOT ? AND template_id IS NOT NULL))
+            AND status IN ('PROCESSING','FAILED') FOR UPDATE`,
+          [scope.companyId, event.callback_id, event.recipient, Boolean(event.callback_media), Boolean(event.callback_media)]);
           if (message) {
             await db.query("UPDATE messages SET status='SENT',provider_message_id=?,sent_at=COALESCE(last_attempt_at,?),error_code=NULL,error_message=NULL,next_attempt_at=NULL WHERE company_id=? AND id=?",
               [event.provider_message_id, event.timestamp, scope.companyId, message.id]);

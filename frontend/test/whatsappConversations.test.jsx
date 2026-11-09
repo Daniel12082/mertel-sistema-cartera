@@ -163,6 +163,40 @@ it('replies to a regular number in production using the Meta reply route', async
   expect(await screen.findByLabelText('Mensaje saliente 12')).toHaveTextContent(outgoing.content);
 });
 
+it('sends a real chat attachment as multipart and displays it in the history', async () => {
+  leaveSimulation();
+  const recipient = '+573000000001';
+  const incoming = { id: '31', recipient, provider: 'WHATSAPP_CLOUD_API', direction: 'inbound',
+    status: 'DELIVERED', content: 'Envíame el PDF', received_at: new Date().toISOString() };
+  const outgoing = { ...incoming, id: '32', direction: 'outbound', status: 'SENT', content: '[Adjunto] factura.pdf' };
+  const respond = data => Promise.resolve({ status: 200, data: { success: true, data } });
+  network.mockImplementation(config => {
+    if (config.url === '/customers') return respond([]);
+    if (config.url === '/admin/whatsapp/messages') return respond({ messages: [incoming] });
+    if (config.url === '/admin/whatsapp/meta/replies/media') {
+      expect(config.data).toBeInstanceOf(FormData);
+      expect(config.data.get('recipient')).toBe(recipient);
+      expect(config.data.get('content')).toBe('');
+      expect(config.data.get('file').name).toBe('factura.pdf');
+      return respond({ message: outgoing });
+    }
+    throw new Error('Unexpected request');
+  });
+  const user = userEvent.setup();
+  render(<SimulationContext.Provider value={{ mode: 'REAL' }}>
+    <WhatsAppConversations settings={{ provider: 'WHATSAPP_CLOUD_API', connection_status: 'CONNECTED', real_sending_enabled: true }} />
+  </SimulationContext.Provider>);
+  await open(user, 'Conversación sin asociar');
+  const send = screen.getByRole('button', { name: 'Enviar mensaje' });
+  expect(send).toBeDisabled();
+  await user.upload(screen.getByLabelText('Archivo para enviar por WhatsApp'),
+    new File(['%PDF-1.7'], 'factura.pdf', { type: 'application/pdf' }));
+  expect(send).toBeEnabled();
+  await user.click(send);
+  expect(await screen.findByLabelText('Mensaje saliente 32')).toHaveTextContent(outgoing.content);
+  expect(screen.queryByText('factura.pdf', { exact: true })).toBeNull();
+});
+
 it('links an ambiguous real conversation to the explicitly selected customer', async () => {
   leaveSimulation();
   const recipient = '+573000000001';

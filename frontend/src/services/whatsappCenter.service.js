@@ -4,7 +4,8 @@ import { requireMedia, MEDIA_UNAVAILABLE } from './whatsappMedia.service';
 
 export async function whatsappRequest(path = '', { method = 'get', body, params, signal } = {}) {
   try {
-    const { data } = await api.request({ url: `/admin/whatsapp${path}`, method, data: body, params, signal });
+    const { data } = await api.request({ url: `/admin/whatsapp${path}`, method, data: body, params, signal,
+      ...(body instanceof FormData ? { headers: { 'Content-Type': false } } : {}) });
     if (!data.success) throw new Error('Respuesta inválida del centro WhatsApp.');
     return data.data;
   } catch (error) {

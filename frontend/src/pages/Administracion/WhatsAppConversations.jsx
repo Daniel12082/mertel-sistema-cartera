@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, CheckCheck, MessageCircle, Search, Send, UserRound, ShieldCheck } from 'lucide-react';
+import { ArrowLeft, CheckCheck, MessageCircle, Paperclip, Search, Send, UserRound, ShieldCheck } from 'lucide-react';
 import { getCustomers } from '../../services/customer.service';
 import { whatsappRequest, sendMetaTestMessage, sendManualWhatsApp, sendConversationSimulation, associateConversationSimulation } from '../../services/whatsappCenter.service';
 import WhatsAppQuickReplies from './WhatsAppQuickReplies';
@@ -16,6 +16,7 @@ const time = value => value && Number.isFinite(new Date(value).getTime()) ? new 
 const validAmount = value => typeof value === 'number' && Number.isFinite(value) || typeof value === 'string' && /^\d+(?:\.\d+)?$/.test(value);
 const money = value => !validAmount(value) ? 'No disponible' : new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(Number(value));
 const merge = (rows, more) => [...new Map([...rows, ...more].map(row => [String(row.id), row])).values()];
+const realAttachmentTypes = ['image/jpeg', 'image/png', 'application/pdf', 'video/mp4', 'audio/mpeg', 'audio/mp4', 'audio/ogg'];
 const checkMessages = (response, customerId) => {
   if (!response || !Array.isArray(response.messages) || response.messages.some(row => !row || row.id == null)) throw new Error('No se pudo interpretar el historial de mensajes.');
   if (customerId && response.messages.some(row => String(row.customer_id) !== customerId)) throw new Error('El historial no corresponde al cliente seleccionado.');
@@ -97,6 +98,8 @@ export default function WhatsAppConversations({ settings, conversationCustomers,
   const [drafts, setDrafts] = useState({}), [notice, setNotice] = useState(''), [sendError, setSendError] = useState('');
   const [previews, setPreviews] = useState({}), [quickBusy, setQuickBusy] = useState(false);
   const [attachments, setAttachments] = useState({}), [mediaBusy, setMediaBusy] = useState(false);
+  const [realAttachments, setRealAttachments] = useState({});
+  const realFileInput = useRef(null);
   const draftMedia = useRef({});
   const [busy, setBusy] = useState(false), [mobile, setMobile] = useState('list'), [associateId, setAssociateId] = useState('');
   const [loadingMore, setLoadingMore] = useState(false); const pagePending = useRef(false);
@@ -134,6 +137,9 @@ export default function WhatsAppConversations({ settings, conversationCustomers,
     customers.some(row => String(row.id) === assignedCustomer && phoneKey(row.phone) === recipient));
   const metaTestChat = metaConnected && settings.test_mode && Boolean(recipient) && recipient === phoneKey(settings.test_allowed_recipient);
   const draft = drafts[selection] || '';
+  const realAttachment = realAttachments[selection];
+  const attachmentProblem = realAttachment?.type.startsWith('audio/') && draft.trim() ? 'Envía el texto y el audio en mensajes separados.'
+    : realAttachment && draft.length > 1024 ? 'El texto de un adjunto admite hasta 1.024 caracteres.' : '';
   function hasOpenMetaWindow(now) {
     return messages.some(message => {
       if (message.provider !== 'WHATSAPP_CLOUD_API' || message.direction !== 'inbound' || phoneKey(message.recipient || message.phone) !== recipient) return false;
@@ -227,15 +233,22 @@ export default function WhatsAppConversations({ settings, conversationCustomers,
   async function send() {
     if (pending.current) return;
     if (metaConnected) {
-      if (!canReplyToMeta || !draft.trim() || draft.length > 4096) return;
+      if (!canReplyToMeta || (!draft.trim() && !realAttachment) || draft.length > 4096 || attachmentProblem) return;
       if (metaTestChat && !window.confirm('¿Enviar este mensaje real al número de prueba autorizado?')) return;
     } else if (!canSend) return;
     const key = selection, id = customerId, content = draft; pending.current = true; setBusy(true); setSendError(''); setNotice('');
     try {
+      const body = { recipient: `+${recipient}`, content, ...(customerId ? { customer_id: customerId } : {}) };
+      let mediaBody;
+      if (realAttachment) {
+        mediaBody = new FormData();
+        for (const [field, value] of Object.entries(body)) mediaBody.append(field, value);
+        mediaBody.append('file', realAttachment);
+      }
       const message = metaTestChat
         ? (await sendMetaTestMessage(content)).message
         : metaProduction
-          ? (await whatsappRequest('/meta/replies', { method: 'post', body: { recipient: `+${recipient}`, content, ...(customerId ? { customer_id: customerId } : {}) } })).message
+          ? (await whatsappRequest(realAttachment ? '/meta/replies/media' : '/meta/replies', { method: 'post', body: mediaBody || body })).message
           : simulated
           ? await sendConversationSimulation(id, content, attachment)
           : await sendManualWhatsApp({ customer_id: id, template_id: String(preview.template.id) });
@@ -243,6 +256,11 @@ export default function WhatsAppConversations({ settings, conversationCustomers,
       setRecords(current => merge(current, [message]));
       if (['SENT', 'DELIVERED', 'READ'].includes(message.status)) {
         setDrafts(current => ({ ...current, [key]: '' }));
+        if (realAttachment) setRealAttachments(current => {
+          const next = { ...current };
+          delete next[key];
+          return next;
+        });
         setAttachment(key, null);
         setPreviews(current => ({ ...current, [key]: null }));
         if (chosen.current === key) setNotice(metaConnected ? 'Meta aceptó el mensaje. El estado de entrega se actualizará por webhook.' : attachment ? 'Mensaje multimedia simulado preparado correctamente. Ningún archivo fue enviado ni entregado realmente.' : simulated ? 'Mensaje simulado enviado correctamente. No se realizó ningún envío real.' : 'Mensaje enviado correctamente en el proveedor MOCK. No se realizó ningún envío real.');
@@ -252,6 +270,17 @@ export default function WhatsAppConversations({ settings, conversationCustomers,
       }
     } catch (failure) { if (active.current && chosen.current === key) setSendError(failure.message); }
     finally { pending.current = false; if (active.current) setBusy(false); }
+  }
+  function pickRealFile(event) {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    if (!realAttachmentTypes.includes(file.type.split(';')[0]) || file.size <= 0 || file.size > 5 * 1024 * 1024) {
+      setSendError('Selecciona un JPG, PNG, PDF, MP4, MP3, M4A u OGG Opus de hasta 5 MB.');
+      return;
+    }
+    setSendError('');
+    setRealAttachments(current => ({ ...current, [selection]: file }));
   }
   async function associate() {
     if (pending.current || !conversation || !associateId || (!simulated && !metaProduction)) return;
@@ -355,8 +384,15 @@ export default function WhatsAppConversations({ settings, conversationCustomers,
                 <textarea id="wa-meta-reply" value={draft} maxLength={4096} disabled={busy} placeholder="Escribe un mensaje…"
                   aria-describedby={canReplyToMeta ? undefined : 'wa-meta-draft-note'}
                   onChange={event => setDrafts(current => ({ ...current, [selection]: event.target.value }))} />
-                <button type="submit" disabled={busy || !canReplyToMeta || !draft.trim()}><Send size={18} />{busy ? 'Enviando…' : metaTestChat ? 'Enviar prueba por WhatsApp' : 'Enviar mensaje'}</button>
+                <button type="submit" disabled={busy || !canReplyToMeta || (!draft.trim() && !realAttachment) || Boolean(attachmentProblem)}><Send size={18} />{busy ? 'Enviando…' : metaTestChat ? 'Enviar prueba por WhatsApp' : 'Enviar mensaje'}</button>
               </div>
+              {metaProduction && <div className="wa-chat-draft-actions">
+                <input ref={realFileInput} type="file" aria-label="Archivo para enviar por WhatsApp" accept={realAttachmentTypes.join(',')} hidden onChange={pickRealFile} />
+                <button type="button" disabled={busy || !canReplyToMeta} onClick={() => realFileInput.current?.click()}><Paperclip size={16} /> Adjuntar archivo o audio</button>
+                {realAttachment && <><span>{realAttachment.name}</span><button type="button" disabled={busy}
+                  onClick={() => setRealAttachments(current => ({ ...current, [selection]: null }))}>Retirar adjunto</button></>}
+              </div>}
+              {attachmentProblem && <small role="alert">{attachmentProblem}</small>}
               {!canReplyToMeta && <small id="wa-meta-draft-note">{otherCustomerOwnsChat
                 ? 'Este número está vinculado a otro cliente. Abre el chat vinculado para responder.'
                 : 'Puedes dejar el mensaje escrito. Cuando el contacto te escriba, actualiza la conversación para enviarlo. Para iniciar el chat, Meta requiere una plantilla aprobada.'}</small>}

@@ -2,6 +2,7 @@ import express from 'express';
 import { requirePermission } from '../middleware/requirePermission.js';
 import { requireCompanyScope } from '../middleware/companyScope.js';
 import * as center from '../services/whatsappCenter.service.js';
+import { MAX_WHATSAPP_UPLOAD_BYTES, parseWhatsAppMediaUpload } from '../services/whatsappMediaUpload.js';
 
 function respond(work) {
   return async (req, res, next) => {
@@ -24,6 +25,12 @@ adminWhatsAppRoutes.patch('/settings', respond(center.updateWhatsAppSettings));
 adminWhatsAppRoutes.post('/test', respond(center.testWhatsAppConnection));
 adminWhatsAppRoutes.get('/meta/templates', respond(center.listMetaMessageTemplates));
 adminWhatsAppRoutes.post('/meta/replies', respond(center.replyToMetaConversation));
+adminWhatsAppRoutes.post('/meta/replies/media',
+  express.raw({ type: 'multipart/form-data', limit: MAX_WHATSAPP_UPLOAD_BYTES + 64 * 1024 }),
+  (req, res, next) => respond(async args => {
+    const upload = await parseWhatsAppMediaUpload(args.body, req.get('content-type'));
+    return center.replyToMetaConversation({ ...args, ...upload });
+  })(req, res, next));
 adminWhatsAppRoutes.put('/meta/conversations/association', respond(center.associateMetaConversation));
 adminWhatsAppRoutes.post('/meta/invoice-notices', respond(center.sendMetaInvoiceNotice));
 adminWhatsAppRoutes.post('/meta/test-messages', respond(center.enqueueMetaTestMessage));

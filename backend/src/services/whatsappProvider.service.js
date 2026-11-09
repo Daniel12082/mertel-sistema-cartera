@@ -27,11 +27,12 @@ export class MetaWhatsAppProvider extends WhatsAppProvider {
     const timeout = setTimeout(() => controller.abort(new Error('timeout')), this.timeoutMs);
     const abort = () => controller.abort(signal.reason);
     signal?.addEventListener('abort', abort, { once: true });
+    const multipart = body instanceof FormData;
     try {
       const response = await this.fetchImpl(`${GRAPH_HOST}/${this.config.version}/${path}`, {
         method, signal: controller.signal,
-        headers: { Authorization: `Bearer ${this.config.accessToken}`, Accept: 'application/json', ...(body ? { 'Content-Type': 'application/json' } : {}) },
-        ...(body ? { body: JSON.stringify(body) } : {})
+        headers: { Authorization: `Bearer ${this.config.accessToken}`, Accept: 'application/json', ...(body && !multipart ? { 'Content-Type': 'application/json' } : {}) },
+        ...(body ? { body: multipart ? body : JSON.stringify(body) } : {})
       });
       const text = await response.text();
       let data = null;
@@ -103,13 +104,22 @@ export class MetaWhatsAppProvider extends WhatsAppProvider {
 
   async sendMessage({ recipient, manual = false, payload, signal } = {}) {
     const to = this.assertTestRecipient(recipient, { manual });
-    if (!payload || !['text', 'template'].includes(payload.type)) throw providerError('META_MESSAGE_TYPE_UNSUPPORTED', 'Tipo de mensaje no habilitado para esta prueba.');
+    if (!payload || !['text', 'template', 'image', 'document', 'audio', 'video'].includes(payload.type)) throw providerError('META_MESSAGE_TYPE_UNSUPPORTED', 'Tipo de mensaje no habilitado.');
     const data = await this.request(`${this.config.phoneNumberId}/messages`, { method: 'POST', body: { messaging_product: 'whatsapp', recipient_type: 'individual', to: to.slice(1), ...payload }, signal });
     const message = data.messages?.[0];
     if (typeof message?.id !== 'string' || !message.id.startsWith('wamid.')) throw providerError('META_INVALID_RESPONSE', 'Meta no confirmó un identificador de mensaje.');
     // HTTP success means accepted by Meta, never delivered. Delivery comes only by webhook.
     return { accepted: true, status: 'SENT', provider: 'WHATSAPP_CLOUD_API', provider_message_id: message.id,
       response: { messaging_product: data.messaging_product || 'whatsapp', contacts: data.contacts || [], messages: [message] } };
+  }
+
+  async uploadMedia({ buffer, mime, name }) {
+    const body = new FormData();
+    body.append('messaging_product', 'whatsapp');
+    body.append('file', new Blob([buffer], { type: mime }), name);
+    const data = await this.request(`${this.config.phoneNumberId}/media`, { method: 'POST', body });
+    if (typeof data.id !== 'string' || !/^\d{1,30}$/.test(data.id)) throw providerError('META_INVALID_RESPONSE', 'Meta no devolvió el identificador del adjunto.');
+    return data.id;
   }
 
   async sendTemplateMessage({ recipient, manual = false, template, expectedBody, callbackId, sendBefore, clock = () => new Date(), signal } = {}) {
@@ -196,9 +206,11 @@ function normalizeMetaStatus(status, acceptCallback = false) {
   if (!status || typeof status.id !== 'string' || !values[status.status]) throw providerError('META_STATUS_INVALID', 'Estado de Meta inválido.');
   const timestamp = new Date(Number(status.timestamp) * 1000);
   if (Number.isNaN(timestamp.getTime())) throw providerError('META_STATUS_INVALID', 'Marca de tiempo de Meta inválida.');
-  const callbackId = acceptCallback && typeof status.biz_opaque_callback_data === 'string' ? /^mertel-invoice:([1-9]\d{0,19})$/.exec(status.biz_opaque_callback_data)?.[1] : null;
+  const callback = acceptCallback && typeof status.biz_opaque_callback_data === 'string'
+    ? /^mertel-(invoice|media):([1-9]\d{0,19})$/.exec(status.biz_opaque_callback_data) : null;
   return { kind: 'status', provider_message_id: status.id, status: values[status.status], recipient: status.recipient_id ? normalizePhone(status.recipient_id) : null, timestamp,
-    ...(callbackId ? { callback_id: callbackId } : {}), errors: Array.isArray(status.errors) ? status.errors.map(row => ({ code: String(row.code || ''), title: String(row.title || '').slice(0, 200), message: String(row.message || '').slice(0, 500) })) : [] };
+    ...(callback ? { callback_id: callback[2], ...(callback[1] === 'media' ? { callback_media: true } : {}) } : {}),
+    errors: Array.isArray(status.errors) ? status.errors.map(row => ({ code: String(row.code || ''), title: String(row.title || '').slice(0, 200), message: String(row.message || '').slice(0, 500) })) : [] };
 }
 
 export function normalizePhone(value) {
