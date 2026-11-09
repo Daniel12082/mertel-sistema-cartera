@@ -76,7 +76,7 @@ export async function analyzeCustomerResolution({ bytes, scope, batchId, actorId
       } else status = group.conflicts.size ? "AMBIGUOUS" : "NEW";
       await db.query(`INSERT INTO mertel_customer_resolution_rows
         (company_id,import_batch_id,identity_key,nit_normalized,source_rows,source_data,status,customer_id,differences,updated_by,resolved_at)
-        VALUES (?,?,?,?,CAST(? AS JSON),CAST(? AS JSON),?,?,CAST(? AS JSON),?,?)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?)
         ON DUPLICATE KEY UPDATE source_rows=VALUES(source_rows),source_data=IF(decision='correct' OR status IN ('PERSISTENT','RESOLVED'),source_data,VALUES(source_data)),
           status=IF(decision='correct' OR status IN ('PERSISTENT','RESOLVED'),status,VALUES(status)),
           customer_id=COALESCE(customer_id,VALUES(customer_id)),differences=VALUES(differences),updated_by=VALUES(updated_by),
@@ -86,11 +86,11 @@ export async function analyzeCustomerResolution({ bytes, scope, batchId, actorId
       if(status==="PERSISTENT"){
         const [[resolutionRow]]=await db.query("SELECT id FROM mertel_customer_resolution_rows WHERE company_id=? AND import_batch_id=? AND identity_key=?",[scope.companyId,batch.id,group.key]);
         const [matchedAudit]=await db.query("SELECT id FROM audit_logs WHERE company_id=? AND entity_type='customer_resolution' AND entity_id=? AND action='CLIENT_MATCHED' LIMIT 1",[scope.companyId,resolutionRow.id]);
-        if(!matchedAudit.length)await db.query("INSERT INTO audit_logs(company_id,user_id,entity_type,entity_id,action,new_values) VALUES (?,?, 'customer_resolution',?,'CLIENT_MATCHED',CAST(? AS JSON))",
+        if(!matchedAudit.length)await db.query("INSERT INTO audit_logs(company_id,user_id,entity_type,entity_id,action,new_values) VALUES (?,?, 'customer_resolution',?,'CLIENT_MATCHED',?)",
           [scope.companyId,actorId,resolutionRow.id,JSON.stringify({import_batch_id:batch.id,source_hash:digest,nit_normalized:group.nit,customer_id:customerId,source_data:group.source,differences})]);
       }
     }
-    await db.query("INSERT INTO audit_logs(company_id,user_id,entity_type,entity_id,action,new_values) VALUES (?,?, 'customer_resolution_batch',?,'analyzed',CAST(? AS JSON))",
+    await db.query("INSERT INTO audit_logs(company_id,user_id,entity_type,entity_id,action,new_values) VALUES (?,?, 'customer_resolution_batch',?,'analyzed',?)",
       [scope.companyId, actorId, batch.id, JSON.stringify({ source_hash: digest, file_name: batch.file_name, customer_count: groups.length })]);
     await db.commit();
     return getCustomerResolution({ scope, batchId });
@@ -152,9 +152,9 @@ export async function decideCustomerResolution({ scope, actorId, rowId, body, ip
       const [conflict] = await db.query("SELECT id FROM mertel_customer_resolution_rows WHERE company_id=? AND import_batch_id=? AND nit_normalized=? AND id<>?", [scope.companyId,row.import_batch_id,correctedNit,row.id]);
       if (conflict.length) throw fail("El NIT corregido ya está en otro registro de esta importación; revisa ese registro.",409);
       const correctedSource={...source,nit:String(body.corrections.nit).trim(),nit_normalized:correctedNit,name:correctedName};
-      await db.query("UPDATE mertel_customer_resolution_rows SET nit_normalized=?,source_data=CAST(? AS JSON),status='NEW',decision='correct',decision_reason=?,updated_by=?,resolved_at=NULL WHERE id=? AND company_id=?",
+      await db.query("UPDATE mertel_customer_resolution_rows SET nit_normalized=?,source_data=?,status='NEW',decision='correct',decision_reason=?,updated_by=?,resolved_at=NULL WHERE id=? AND company_id=?",
         [correctedNit,JSON.stringify(correctedSource),maxField(body.reason,500),actorId,row.id,scope.companyId]);
-      await db.query("INSERT INTO audit_logs(company_id,user_id,entity_type,entity_id,action,old_values,new_values,ip_address,user_agent) VALUES (?,?, 'customer_resolution',?,'CLIENT_MANUAL_RESOLUTION',CAST(? AS JSON),CAST(? AS JSON),?,?)",
+      await db.query("INSERT INTO audit_logs(company_id,user_id,entity_type,entity_id,action,old_values,new_values,ip_address,user_agent) VALUES (?,?, 'customer_resolution',?,'CLIENT_MANUAL_RESOLUTION',?,?,?,?)",
         [scope.companyId,actorId,row.id,JSON.stringify({status:beforeStatus,source_data:source}),JSON.stringify({import_batch_id:row.import_batch_id,nit_normalized:correctedNit,status:"NEW",source_data:correctedSource}),ipAddress,userAgent?.slice(0,500)||null]);
       await db.commit(); return getCustomerResolution({scope,batchId:row.import_batch_id});
     }
@@ -180,7 +180,7 @@ export async function decideCustomerResolution({ scope, actorId, rowId, body, ip
         const [created] = await db.query(`INSERT INTO customers(company_id,nit,name,address,city,phone,credit_limit,available_credit,status,notes)
           VALUES (?,?,?,?,?,?,?,0,'active',NULL)`, [scope.companyId, source.nit, name, source.address, source.city, source.phone, Number(source.credit_limit) || 0]);
         customerId = created.insertId; afterStatus = "PERSISTENT";
-        await db.query("INSERT INTO audit_logs(company_id,user_id,entity_type,entity_id,action,old_values,new_values,ip_address,user_agent) VALUES (?,?, 'customer',?,'CLIENT_CREATED',NULL,CAST(? AS JSON),?,?)",
+        await db.query("INSERT INTO audit_logs(company_id,user_id,entity_type,entity_id,action,old_values,new_values,ip_address,user_agent) VALUES (?,?, 'customer',?,'CLIENT_CREATED',NULL,?,?,?)",
           [scope.companyId, actorId, customerId, JSON.stringify({ import_batch_id: row.import_batch_id, nit_normalized: row.nit_normalized, source_data: source }), ipAddress, userAgent?.slice(0,500) || null]);
       } else if (body.decision === "update") {
         const customer = matches.find(item => String(item.id) === String(body.customer_id || customerId || ""));
@@ -207,7 +207,7 @@ export async function decideCustomerResolution({ scope, actorId, rowId, body, ip
     const decisionName = body.decision === "confirm_same" ? "CLIENT_MANUAL_RESOLUTION" : body.decision === "create" ? "CLIENT_CREATED" : body.decision === "update" ? "CLIENT_UPDATED" : body.decision === "review" ? "CLIENT_MARKED_AMBIGUOUS" : "CLIENT_REJECTED";
     await db.query("UPDATE mertel_customer_resolution_rows SET status=?,customer_id=?,decision=?,decision_reason=?,updated_by=?,resolved_at=IF(? IN ('PERSISTENT','RESOLVED'),NOW(),NULL) WHERE id=? AND company_id=?",
       [afterStatus, customerId, body.decision, reason, actorId, afterStatus, row.id, scope.companyId]);
-    await db.query("INSERT INTO audit_logs(company_id,user_id,entity_type,entity_id,action,old_values,new_values,ip_address,user_agent) VALUES (?,?, 'customer_resolution',?,?,CAST(? AS JSON),CAST(? AS JSON),?,?)",
+    await db.query("INSERT INTO audit_logs(company_id,user_id,entity_type,entity_id,action,old_values,new_values,ip_address,user_agent) VALUES (?,?, 'customer_resolution',?,?,?,?,?,?)",
       [scope.companyId, actorId, row.id, decisionName, JSON.stringify({ status: beforeStatus, customer_id: row.customer_id, source_data: source }), JSON.stringify({ import_batch_id: row.import_batch_id, nit_normalized: row.nit_normalized, status: afterStatus, customer_id: customerId, decision: body.decision, reason, changes }), ipAddress, userAgent?.slice(0,500) || null]);
     await db.commit();
     return getCustomerResolution({ scope, batchId: row.import_batch_id });

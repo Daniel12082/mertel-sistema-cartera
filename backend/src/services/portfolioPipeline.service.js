@@ -63,7 +63,7 @@ export async function recordImportedPipelineAction({ scope, token, body, ipAddre
       action_type: actionType, description, operation_id: randomUUID(),
     };
     const [result] = await db.query(`INSERT INTO audit_logs (company_id,user_id,entity_type,entity_id,action,new_values,ip_address,user_agent)
-      VALUES (?,?, 'portfolio_pipeline_action', NULL, 'create', CAST(? AS JSON), ?, ?)`,
+      VALUES (?,?, 'portfolio_pipeline_action', NULL, 'create', ?, ?, ?)`,
     [scope.companyId, scope.actorId, JSON.stringify(payload), ipAddress, userAgent]);
     await db.commit();
     return { id: String(result.insertId), ...payload, created_at: new Date().toISOString() };
