@@ -180,7 +180,8 @@ describe('WhatsApp center HTTP / MySQL, no real sends', { skip: !(process.env.DB
       assert.equal((await request('POST', replyPath, reply, collector)).status, 403);
       assert.equal((await request('POST', replyPath, reply)).status, 409);
 
-      await services.receiveMetaWebhook({ events: [{ kind: 'message', phone: recipient, provider_message_id: 'wamid.incoming-reply', content: 'Hola', timestamp: new Date() }] });
+      const receivedAt = new Date(Math.floor(Date.now() / 1000) * 1000);
+      await services.receiveMetaWebhook({ events: [{ kind: 'message', phone: recipient, provider_message_id: 'wamid.incoming-reply', content: 'Hola', timestamp: receivedAt }] });
       let providerCalls = 0;
       globalThis.fetch = (url, options) => {
         if (!String(url).startsWith('https://graph.facebook.com/')) return realFetch(url, options);

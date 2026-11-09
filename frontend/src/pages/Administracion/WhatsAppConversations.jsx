@@ -93,13 +93,17 @@ export default function WhatsAppConversations({ settings, chatOnly = false, pref
   const [loadingMore, setLoadingMore] = useState(false); const pagePending = useRef(false);
   const pending = useRef(false), active = useRef(true), chosen = useRef('');
   const conversations = useMemo(() => {
-    const rows = buildConversations(customers, records);
-    const existing = new Set(rows.map(row => phoneKey(row.phone)).filter(Boolean));
-    newChats.forEach(row => {
+    const newPhones = new Set(newChats.map(row => phoneKey(row.phone)).filter(Boolean));
+    const rows = buildConversations(customers, records).map(row => {
       const phone = phoneKey(row.phone);
-      if (!phone || existing.has(phone)) return;
-      rows.push({ key: `unlinked:new:${phone}`, customer: null, name: 'Nuevo chat', phone: row.phone, nit: '', candidates: [], messages: [], last: null });
+      // Keep the draft and selection when a new number first appears in the message history.
+      return !row.customer && newPhones.has(phone) ? { ...row, key: `unlinked:new:${phone}` } : row;
     });
+    const existing = new Set(rows.map(row => phoneKey(row.phone)));
+    for (const phone of newPhones) {
+      if (existing.has(phone)) continue;
+      rows.push({ key: `unlinked:new:${phone}`, customer: null, name: 'Nuevo chat', phone: `+${phone}`, nit: '', candidates: [], messages: [], last: null });
+    }
     return rows;
   }, [customers, records, newChats]);
   const conversation = conversations.find(row => row.key === selection) || null;
@@ -121,6 +125,7 @@ export default function WhatsAppConversations({ settings, chatOnly = false, pref
     });
   }
   const canReplyToMeta = Boolean(recipient && (metaTestChat || metaProduction) && hasOpenMetaWindow());
+  const canWriteMetaDraft = canReplyToMeta || (metaProduction && Boolean(recipient));
   const modeLabel = simulated ? 'Demo local' : metaProduction ? 'Meta conectada' : metaConnected ? settings.test_mode ? 'Meta conectada · prueba controlada' : 'Meta conectada · envío desactivado' : 'Proveedor MOCK · Meta pendiente';
   const modeNotice = simulated ? 'SIMULACIÓN — No se enviará ningún mensaje real'
     : metaProduction ? 'Puedes responder con texto durante las 24 horas siguientes al último mensaje recibido.'
@@ -196,7 +201,7 @@ export default function WhatsAppConversations({ settings, chatOnly = false, pref
   async function send() {
     if (pending.current) return;
     if (metaConnected) {
-      if (!canReplyToMeta || !draft.trim() || draft.length > 4096) return;
+      if (!canReplyToMeta || !hasOpenMetaWindow() || !draft.trim() || draft.length > 4096) return;
       if (metaTestChat && !window.confirm('¿Enviar este mensaje real al número de prueba autorizado?')) return;
     } else if (!canSend) return;
     const key = selection, id = customerId, content = draft; pending.current = true; setBusy(true); setSendError(''); setNotice('');
@@ -297,15 +302,22 @@ export default function WhatsAppConversations({ settings, chatOnly = false, pref
           {metaConnected ? <form className="wa-chat-compose" onSubmit={event => { event.preventDefault(); void send(); }}>
             {notice && <p className="wa-success" role="status">{notice}</p>}
             {sendError && <p className="wa-error" role="alert">{sendError}</p>}
-            {canReplyToMeta ? <>
+            {canWriteMetaDraft ? <>
               <label htmlFor="wa-meta-reply">{metaTestChat ? 'Respuesta de prueba por WhatsApp' : 'Mensaje de WhatsApp'}</label>
               <div>
-                <textarea id="wa-meta-reply" value={draft} maxLength={4096} disabled={busy}
+                <textarea id="wa-meta-reply" value={draft} maxLength={4096} disabled={busy} placeholder="Escribe un mensaje…"
+                  aria-describedby={canReplyToMeta ? undefined : 'wa-meta-draft-note'}
                   onChange={event => setDrafts(current => ({ ...current, [selection]: event.target.value }))} />
-                <button type="submit" disabled={busy || !draft.trim()}><Send size={18} />{busy ? 'Enviando…' : metaTestChat ? 'Enviar prueba por WhatsApp' : 'Enviar mensaje'}</button>
+                <button type="submit" disabled={busy || !canReplyToMeta || !draft.trim()}><Send size={18} />{busy ? 'Enviando…' : metaTestChat ? 'Enviar prueba por WhatsApp' : 'Enviar mensaje'}</button>
               </div>
+              {!canReplyToMeta && <small id="wa-meta-draft-note">Puedes dejar el mensaje escrito. Cuando el contacto te escriba, actualiza la conversación para enviarlo. Para iniciar el chat, Meta requiere una plantilla aprobada.</small>}
+              {!canReplyToMeta && <div className="wa-chat-draft-actions">
+                <button type="button" disabled={loading} onClick={() => { setError(''); setLoading(true); setRevision(value => value + 1); }}>
+                  {loading ? 'Actualizando…' : 'Actualizar conversación'}
+                </button>
+              </div>}
               {metaTestChat && <small>Comparte el límite diario de 3 pruebas con la pestaña Conexión.</small>}
-            </> : <p>{metaProduction ? 'Para iniciar o reabrir esta conversación, Meta requiere una plantilla aprobada. También puedes responder cuando el contacto te escriba.' : metaTestChat ? 'Pide al destinatario de prueba que escriba al número de MERTEL para abrir una ventana de respuesta.' : modeNotice}</p>}
+            </> : <p>{metaProduction ? 'Esta conversación no tiene un número de WhatsApp válido.' : metaTestChat ? 'Pide al destinatario de prueba que escriba al número de MERTEL para abrir una ventana de respuesta.' : modeNotice}</p>}
           </form> : <form className="wa-chat-compose" onSubmit={event => { event.preventDefault(); void send(); }}>
             {conversation.customer && !phoneKey(conversation.customer.phone) && <p className="wa-warning">Este cliente no tiene un número de WhatsApp válido. No se puede simular el envío.</p>}
             {notice && <p className="wa-success" role="status">{notice}</p>}{sendError && <p className="wa-error" role="alert">{sendError}</p>}

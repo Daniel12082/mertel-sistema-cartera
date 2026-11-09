@@ -59,20 +59,22 @@ export default function WhatsAppCenter({ chatOnly = false }) {
     finally { operationPending.current = false; setBusy(false); }
   }
   const settings = data?.settings; const connected = settings?.connection_status === 'CONNECTED';
-  const stages = data?.stage_catalog || []; const metaTestMode = settings?.provider === 'WHATSAPP_CLOUD_API' && settings?.test_mode;
+  const stages = data?.stage_catalog || [];
+  const metaConfigured = settings?.provider === 'WHATSAPP_CLOUD_API';
+  const metaTestMode = metaConfigured && settings?.test_mode;
   function changeFilter(key, value) { setFilters(current => ({ ...current, [key]: value, page: 1 })); }
   if (!authorized) return <section className="wa-center"><h1>Centro de WhatsApp MERTEL</h1><p role="alert">No tienes permiso para configurar WhatsApp.</p></section>;
   if (chatOnly) return <section className="wa-center wa-center-expanded">
     {error && <p role="alert" className="wa-error">{error}</p>}
     {settings ? <WhatsAppConversations key={`${mode}:${user?.id ?? 'admin'}`} settings={settings} chatOnly preferenceOwner={user?.id} /> : !error && <p role="status">Cargando WhatsApp…</p>}
   </section>;
-  return <section className="wa-center"><header><span>Administración de MERTEL</span><h1>Centro de WhatsApp</h1><p>Atiende conversaciones y consulta el contexto de cada cliente.</p><p className="wa-banner">{mode === 'SIMULATION' ? 'MODO SIMULACIÓN · Datos locales de demostración · ningún envío real' : metaTestMode ? 'WhatsApp Cloud API · envíos al número de prueba autorizado' : 'Proveedor MOCK · pruebas internas · ningún envío real'}</p></header>
+  return <section className="wa-center"><header><span>Administración de MERTEL</span><h1>Centro de WhatsApp</h1><p>Atiende conversaciones y consulta el contexto de cada cliente.</p><p className="wa-banner">{mode === 'SIMULATION' ? 'MODO SIMULACIÓN · Datos locales de demostración · ningún envío real' : metaTestMode ? 'WhatsApp Cloud API · envíos al número de prueba autorizado' : metaConfigured ? 'WhatsApp Cloud API · ' + (connected && settings.real_sending_enabled ? 'respuestas manuales activas' : 'respuestas manuales no disponibles') : 'Proveedor MOCK · pruebas internas · ningún envío real'}</p></header>
     <nav aria-label="Secciones de WhatsApp">{['Conexión', 'Plantillas', 'Automatizaciones', 'Mensajes', 'Historial', 'Envío manual', 'Timeline'].map(item => <button key={item} aria-pressed={tab === item} onClick={() => { setTab(item); setError(''); setNotice(''); if (item !== 'Plantillas') setRevision(value => value + 1); }}>{item}</button>)}</nav>
     {error && <p className="wa-error" role="alert">{error}</p>}{notice && <p role="status" className="wa-success">{notice}</p>}
     {!data && <p role="status">{error ? 'Configuración no disponible.' : 'Cargando configuración…'} <button onClick={() => { setError(''); setRevision(value => value + 1); }}>Reintentar</button></p>}
     {data && tab === 'Conexión' && <>
       <article className="wa-card"><h2>Estado de conexión</h2><p className={`wa-state ${connected ? 'connected' : ''}`}>{connectionLabels[settings.connection_status] || 'Estado desconocido'}</p>
-        <dl><dt>Proveedor</dt><dd>{settings.provider || 'No configurado'}</dd><dt>Número</dt><dd>{settings.number || 'No configurado'}</dd><dt>Automatizaciones</dt><dd>{settings.automations_enabled ? 'Activadas · solo MOCK' : 'Desactivadas'}</dd><dt>Credencial</dt><dd>{settings.credentials_configured ? '••••••••••••••••' : 'No configurada'}</dd></dl>
+        <dl><dt>Proveedor</dt><dd>{settings.provider || 'No configurado'}</dd><dt>Número</dt><dd>{settings.number || 'No configurado'}</dd><dt>Automatizaciones</dt><dd>{metaConfigured ? 'Envío automático real no disponible' : settings.automations_enabled ? 'Activadas · solo MOCK' : 'Desactivadas'}</dd><dt>Credencial</dt><dd>{metaConfigured && connected ? 'Validada por Meta' : settings.credentials_configured ? '••••••••••••••••' : 'No configurada'}</dd></dl>
         <div className="wa-actions"><button disabled={busy} onClick={() => setSettingsForm({ provider: settings.provider || '', number: settings.number, phone_number_id: settings.phone_number_id, business_account_id: settings.business_account_id, global_daily_limit: settings.global_daily_limit ?? '', customer_daily_limit: settings.customer_daily_limit ?? '' })}>Configurar WhatsApp</button>
           <button disabled={busy || !settings.provider} onClick={() => act(() => whatsappRequest('/test', { method: 'post', body: {} }), settings.provider === 'WHATSAPP_CLOUD_API' ? 'Conexión con Meta validada. Revisa el número antes de enviar una prueba.' : 'Prueba MOCK completada. Configuración válida.')}>Probar conexión {settings.provider === 'WHATSAPP_CLOUD_API' ? 'Meta' : 'MOCK'}</button>
           {settings.provider === 'WHATSAPP_CLOUD_API' && <button disabled={busy} onClick={() => act(async () => { const result = await whatsappRequest('/meta/templates'); setMetaTemplates(result.templates || []); return result; }, 'Plantillas oficiales consultadas desde Meta. No se modificó el catálogo interno.')}>Consultar plantillas Meta</button>}

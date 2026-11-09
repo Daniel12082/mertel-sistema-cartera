@@ -3,7 +3,7 @@ import { companyFilter, validCompanyId } from "../utils/companyScope.js";
 import { operationId, operationError } from "./collectionOperations.validation.js";
 
 const PAGE_SIZE_MAX = 100;
-const TYPES = new Set(["action", "promise", "configuration", "import"]);
+const TYPES = new Set(["action", "promise", "configuration", "import", "invoice"]);
 function normalizePage(page, limit) {
   const validInteger = value => typeof value === "string" && /^\d{1,6}$/.test(value);
   if ((page !== undefined && !validInteger(page)) || (limit !== undefined && !validInteger(limit))) throw operationError(400, "page y limit deben ser enteros positivos.");
@@ -71,6 +71,12 @@ function eventView(row) {
   }
   if (row.type === "configuration") return { ...base, description: row.description, status: row.status,
     metadata: { before: safeStages(row.old_values), after: safeStages(row.new_values) } };
+  if (row.type === "invoice") {
+    const old = typeof row.old_values === "string" ? JSON.parse(row.old_values) : row.old_values;
+    const next = typeof row.new_values === "string" ? JSON.parse(row.new_values) : row.new_values;
+    const changes = row.status === "invoice_updated" && old && next ? Object.keys(old).filter(field => old[field] !== next[field]) : [];
+    return { ...base, description: next?.reason || null, status: null, metadata: { balance: next?.balance ?? null, changed_fields: changes } };
+  }
   return { ...base, description: row.description, status: row.status,
     metadata: { file_name: row.file_name, total_rows: row.total_rows, failed_rows: row.failed_rows } };
 }
@@ -108,8 +114,9 @@ function financialSelect({companyId,customerId,type}){
 function safeStages(value) {
   try {
     const parsed = typeof value === "string" ? JSON.parse(value) : value;
-    if (!Array.isArray(parsed?.stages)) return null;
-    return parsed.stages.filter(item => typeof item?.key === "string" && typeof item?.active === "boolean")
+    const stages = parsed?.stages ?? parsed?.configuration?.rules;
+    if (!Array.isArray(stages)) return null;
+    return stages.filter(item => typeof item?.key === "string" && typeof item?.active === "boolean")
       .map(item => ({ key: item.key, active: item.active }));
   } catch { return null; }
 }
@@ -164,12 +171,18 @@ function globalSelects({ companyId, type, dateFrom, dateTo, actorId, query }) {
     defs.push({ sql: `SELECT CONCAT('promise:',p.id) AS id,'promise' AS type,UNIX_TIMESTAMP(p.created_at)*1000 AS occurred_ms,NULL AS occurred_at,CONCAT_WS(' ',u.first_name,u.last_name) AS actor,c.name AS customer_name,c.nit AS customer_nit,i.invoice_number,'Promesa de pago' AS title,NULL AS description,p.status,DATE_FORMAT(p.promised_date,'%Y-%m-%d') AS promised_date,CAST(p.promised_amount AS CHAR) AS amount,p.notes,NULL AS old_values,NULL AS new_values,NULL AS file_name,NULL AS total_rows,NULL AS failed_rows FROM payment_promises p JOIN customers c ON c.id=p.customer_id AND c.company_id=p.company_id LEFT JOIN invoices i ON i.id=p.invoice_id AND i.customer_id=p.customer_id AND i.company_id=p.company_id LEFT JOIN users u ON u.id=p.created_by AND (u.company_id=p.company_id OR u.company_id IS NULL) WHERE ${where.sql}`, values: where.values });
   }
   if (!type || type === "configuration") {
-    const values = [companyId]; let where = "a.company_id=? AND a.entity_type='setting' AND a.action='update' AND s.setting_key='collection_rules'";
+    const values = [companyId]; let where = "a.company_id=? AND a.entity_type='setting' AND a.action IN ('create','update') AND s.setting_key='collection_rules'";
     if (dateFrom) { where += " AND DATE(a.created_at)>=?"; values.push(dateFrom); }
     if (dateTo) { where += " AND DATE(a.created_at)<=?"; values.push(dateTo); }
     if (actorId) { where += " AND a.user_id=?"; values.push(actorId); }
     if (query) { where += " AND (CONCAT_WS(' ',u.first_name,u.last_name) LIKE ? OR 'configuracion' LIKE ?)"; values.push(`%${query}%`, `%${query}%`); }
-    defs.push({ sql: `SELECT CONCAT('configuration:',a.id) AS id,'configuration' AS type,UNIX_TIMESTAMP(a.created_at)*1000 AS occurred_ms,NULL AS occurred_at,CONCAT_WS(' ',u.first_name,u.last_name) AS actor,NULL AS customer_name,NULL AS customer_nit,NULL AS invoice_number,'Configuración de cobranza' AS title,'Se actualizaron las etapas operativas de cobranza.' AS description,a.action AS status,NULL AS promised_date,NULL AS amount,NULL AS notes,a.old_values,a.new_values,NULL AS file_name,NULL AS total_rows,NULL AS failed_rows FROM audit_logs a JOIN settings s ON s.id=a.entity_id LEFT JOIN users u ON u.id=a.user_id AND (u.company_id=a.company_id OR u.company_id IS NULL) WHERE ${where}`, values });
+    defs.push({ sql: `SELECT CONCAT('configuration:',a.id) AS id,'configuration' AS type,UNIX_TIMESTAMP(a.created_at)*1000 AS occurred_ms,NULL AS occurred_at,
+      CASE WHEN JSON_UNQUOTE(JSON_EXTRACT(a.new_values,'$.actor_type'))='SYSTEM' THEN 'Sistema' ELSE CONCAT_WS(' ',u.first_name,u.last_name) END AS actor,
+      NULL AS customer_name,NULL AS customer_nit,NULL AS invoice_number,'Configuración de cobranza' AS title,
+      CASE a.action WHEN 'create' THEN 'Se instalaron las etapas de cobranza.' ELSE 'Se actualizaron las etapas operativas de cobranza.' END AS description,
+      a.action AS status,NULL AS promised_date,NULL AS amount,NULL AS notes,a.old_values,a.new_values,NULL AS file_name,NULL AS total_rows,NULL AS failed_rows
+      FROM audit_logs a JOIN settings s ON s.id=a.entity_id AND s.company_id=a.company_id
+      LEFT JOIN users u ON u.id=a.user_id AND (u.company_id=a.company_id OR u.company_id IS NULL) WHERE ${where}`, values });
   }
   if (!type || type === "import") {
     const values = [companyId]; let where = "b.company_id=?";
@@ -178,6 +191,20 @@ function globalSelects({ companyId, type, dateFrom, dateTo, actorId, query }) {
     if (actorId) { where += " AND b.user_id=?"; values.push(actorId); }
     if (query) { where += " AND (b.file_name LIKE ? OR CONCAT_WS(' ',u.first_name,u.last_name) LIKE ?)"; values.push(`%${query}%`, `%${query}%`); }
     defs.push({ sql: `SELECT CONCAT('import:',b.id) AS id,'import' AS type,UNIX_TIMESTAMP(b.created_at)*1000 AS occurred_ms,NULL AS occurred_at,CONCAT_WS(' ',u.first_name,u.last_name) AS actor,NULL AS customer_name,NULL AS customer_nit,NULL AS invoice_number,'Análisis de importación' AS title,'El análisis estructural no aplica cambios a la cartera.' AS description,b.status,NULL AS promised_date,NULL AS amount,NULL AS notes,NULL AS old_values,NULL AS new_values,b.file_name,b.total_rows,b.failed_rows FROM import_batches b LEFT JOIN users u ON u.id=b.user_id AND (u.company_id=b.company_id OR u.company_id IS NULL) WHERE ${where}`, values });
+  }
+  if (!type || type === "invoice") {
+    const where = filter("a", "company_id", "user_id", "a.created_at");
+    defs.push({ sql: `SELECT CONCAT('invoice:',a.id) AS id,'invoice' AS type,UNIX_TIMESTAMP(a.created_at)*1000 AS occurred_ms,NULL AS occurred_at,
+      CONCAT_WS(' ',u.first_name,u.last_name) AS actor,c.name AS customer_name,c.nit AS customer_nit,
+      JSON_UNQUOTE(JSON_EXTRACT(a.new_values,'$.invoice_number')) AS invoice_number,
+      CASE a.action WHEN 'invoice_created' THEN 'Factura creada' WHEN 'invoice_updated' THEN 'Factura editada'
+        WHEN 'invoice_voided' THEN 'Factura anulada' ELSE 'Factura eliminada' END AS title,
+      NULL AS description,a.action AS status,NULL AS promised_date,NULL AS amount,NULL AS notes,a.old_values,a.new_values,
+      NULL AS file_name,NULL AS total_rows,NULL AS failed_rows
+      FROM audit_logs a JOIN invoices i ON i.id=a.entity_id AND i.company_id=a.company_id
+      LEFT JOIN customers c ON c.id=JSON_UNQUOTE(JSON_EXTRACT(a.new_values,'$.customer_id')) AND c.company_id=a.company_id
+      LEFT JOIN users u ON u.id=a.user_id AND (u.company_id=a.company_id OR u.company_id IS NULL)
+      WHERE ${where.sql} AND a.entity_type='invoice' AND a.action IN ('invoice_created','invoice_updated','invoice_voided','invoice_deleted')`, values: where.values });
   }
   return defs;
 }
@@ -215,9 +242,10 @@ export async function getAdministrativeHistoryActors({ scope }, dbPool = pool) {
       SELECT a.user_id AS actor_id,CONCAT_WS(' ',u.first_name,u.last_name) AS actor_name FROM collection_actions a JOIN users u ON u.id=a.user_id WHERE a.company_id=?
       UNION SELECT p.created_by,CONCAT_WS(' ',u.first_name,u.last_name) FROM payment_promises p JOIN users u ON u.id=p.created_by WHERE p.company_id=?
       UNION SELECT a.user_id,CONCAT_WS(' ',u.first_name,u.last_name) FROM audit_logs a JOIN settings s ON s.id=a.entity_id AND s.setting_key='collection_rules' JOIN users u ON u.id=a.user_id WHERE a.company_id=? AND a.entity_type='setting'
+      UNION SELECT a.user_id,CONCAT_WS(' ',u.first_name,u.last_name) FROM audit_logs a JOIN users u ON u.id=a.user_id WHERE a.company_id=? AND a.entity_type='invoice' AND a.action IN ('invoice_created','invoice_updated','invoice_voided','invoice_deleted')
       UNION SELECT b.user_id,CONCAT_WS(' ',u.first_name,u.last_name) FROM import_batches b JOIN users u ON u.id=b.user_id WHERE b.company_id=?
     ) actors WHERE actor_id IS NOT NULL AND actor_name<>'' GROUP BY actor_id,actor_name ORDER BY actor_name,actor_id LIMIT 500`,
-    [scope.companyId, scope.companyId, scope.companyId, scope.companyId]);
+    [scope.companyId, scope.companyId, scope.companyId, scope.companyId, scope.companyId]);
     await db.commit(); return rows;
   } catch (error) { try { await db.rollback(); } catch { /* preserve original */ } throw error; }
   finally { db.release(); }

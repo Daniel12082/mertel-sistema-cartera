@@ -55,6 +55,6 @@ export async function editInvoice(id, invoice, scope) {
   return await updateInvoice(id, invoice, scope);
 }
 
-export async function removeInvoice(id, scope) {
-  return await deleteInvoice(id, scope);
+export async function removeInvoice(id, scope, options) {
+  return await deleteInvoice(id, scope, options);
 }

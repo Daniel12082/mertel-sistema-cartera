@@ -24,6 +24,16 @@ const invoiceColumns = `
   c.name AS customer_name,
   c.nit AS customer_nit`;
 
+const auditedFields = ["customer_id", "invoice_number", "issue_date", "due_date", "document_value", "base_value",
+  "iva_value", "balance", "credit_days", "status", "promo_18", "discount", "email", "notes"];
+const invoiceSnapshot = invoice => Object.fromEntries(auditedFields.map(field => [field, invoice[field] ?? null]));
+
+async function auditInvoice(db, scope, action, invoice, before, after) {
+  await db.query(`INSERT INTO audit_logs (company_id,user_id,entity_type,entity_id,action,old_values,new_values)
+    VALUES (?,?,'invoice',?,?,?,?)`, [invoice.company_id, scope.actorId, invoice.id, action,
+    before && JSON.stringify(before), JSON.stringify(after)]);
+}
+
 export async function getAllInvoices(scope) {
   const filter = companyFilter(scope, "i.company_id", "c.company_id");
   const [rows] = await pool.query(`
@@ -119,6 +129,7 @@ export async function createInvoice(invoice, scope) {
     );
 
     const created = await getInvoiceById(result.insertId, scope, connection);
+    await auditInvoice(connection, scope, "invoice_created", created, null, invoiceSnapshot(created));
     await connection.commit();
     return created;
   } catch (error) {
@@ -134,7 +145,7 @@ export async function updateInvoice(id, invoice, scope) {
     await connection.beginTransaction();
     const customer = await lockActiveCustomer(invoice.customer_id, connection, scope);
     const [rows] = await connection.query(
-      `SELECT id, customer_id, CAST(company_id AS CHAR) AS company_id FROM invoices WHERE id = ? AND deleted_at IS NULL ${filter.sql} FOR UPDATE`, [id, ...filter.values],
+      `SELECT invoices.*, CAST(company_id AS CHAR) AS company_id FROM invoices WHERE id = ? AND deleted_at IS NULL ${filter.sql} FOR UPDATE`, [id, ...filter.values],
     );
     const existing = rows[0];
     if (!existing) { await connection.commit(); return null; }
@@ -243,6 +254,7 @@ export async function updateInvoice(id, invoice, scope) {
     }
 
     const updated = await getInvoiceById(id, scope, connection);
+    await auditInvoice(connection, scope, "invoice_updated", updated, invoiceSnapshot(existing), invoiceSnapshot(updated));
     await connection.commit();
     return updated;
   } catch (error) {
@@ -251,17 +263,18 @@ export async function updateInvoice(id, invoice, scope) {
   } finally { connection.release(); }
 }
 
-export async function deleteInvoice(id, scope) {
+export async function deleteInvoice(id, scope, { voidReason = null } = {}) {
   const filter = companyFilter(scope, "company_id");
   const connection = await pool.getConnection();
   try {
     await connection.beginTransaction();
     const [rows] = await connection.query(
-      `SELECT balance, customer_id FROM invoices WHERE id = ? AND deleted_at IS NULL ${filter.sql} FOR UPDATE`, [id, ...filter.values],
+      `SELECT * FROM invoices WHERE id = ? AND deleted_at IS NULL ${filter.sql} FOR UPDATE`, [id, ...filter.values],
     );
-    if (!rows[0]) { await connection.commit(); return false; }
-    await assertCompanyCustomerReference(rows[0], connection, scope, "Factura no encontrada");
-    if (Number(rows[0].balance) > 0) throw financialError("INVOICE_HAS_BALANCE", "La factura no puede eliminarse porque tiene saldo pendiente.");
+    const invoice = rows[0];
+    if (!invoice) { await connection.commit(); return false; }
+    await assertCompanyCustomerReference(invoice, connection, scope, "Factura no encontrada");
+    if (!voidReason && Number(invoice.balance) > 0) throw financialError("INVOICE_HAS_BALANCE", "La factura no puede eliminarse porque tiene saldo pendiente.");
     const [allocations] = await connection.query(
       "SELECT COUNT(*) > 0 AS active FROM payment_allocations WHERE invoice_id = ? AND deleted_at IS NULL", [id],
     );
@@ -270,7 +283,11 @@ export async function deleteInvoice(id, scope) {
       "SELECT COUNT(*) > 0 AS pending FROM payment_promises WHERE invoice_id = ? AND status = 'pending'", [id],
     );
     if (promises[0].pending) throw financialError("INVOICE_HAS_PROMISES", "La factura no puede eliminarse porque tiene promesas de pago pendientes.");
-    await connection.query(`UPDATE invoices SET deleted_at = NOW() WHERE id = ? AND deleted_at IS NULL ${filter.sql}`, [id, ...filter.values]);
+    const status = voidReason ? "cancelled" : invoice.status;
+    await connection.query(`UPDATE invoices SET deleted_at = NOW(), status = ? WHERE id = ? AND deleted_at IS NULL ${filter.sql}`, [status, id, ...filter.values]);
+    const before = invoiceSnapshot(invoice);
+    await auditInvoice(connection, scope, voidReason ? "invoice_voided" : "invoice_deleted", invoice,
+      before, { ...before, status, deleted: true, reason: voidReason });
     await connection.commit();
     return true;
   } catch (error) {

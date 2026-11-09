@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Eye, FileText, LoaderCircle, Pencil, Plus, Search, Trash2, X } from "lucide-react";
+import { useAuth } from "../../auth/useAuth";
+import { useAppDataMode } from "../../simulation/useAppDataMode";
 import { getCustomers } from "../../services/customer.service";
-import { createInvoice, deleteInvoice, getInvoiceById, getInvoices, updateInvoice } from "../../services/invoice.service";
+import { createInvoice, deleteInvoice, getInvoiceById, getInvoices, updateInvoice, voidInvoice } from "../../services/invoice.service";
 import "./Facturas.css";
 
 const blankInvoice = { customer_id: "", invoice_number: "", issue_date: "", due_date: "", document_value: "", base_value: "", iva_value: "", credit_days: "", status: "pending", promo_18: "", discount: "", email: "", notes: "" };
@@ -28,6 +30,9 @@ function Detail({ label, value, full = false }) {
 }
 
 export default function Facturas() {
+  const { permissions = [] } = useAuth();
+  const { mode } = useAppDataMode();
+  const canDelete = permissions.includes("invoices.delete");
   const [invoices, setInvoices] = useState([]);
   const [customers, setCustomers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -39,6 +44,7 @@ export default function Facturas() {
   const [form, setForm] = useState(blankInvoice);
   const [saving, setSaving] = useState(false);
   const [customersError, setCustomersError] = useState("");
+  const [voidReason, setVoidReason] = useState("");
 
   const loadInvoices = useCallback(async () => {
     setLoading(true); setError("");
@@ -113,24 +119,58 @@ export default function Facturas() {
     finally { setSaving(false); }
   }
   async function remove(invoice) {
+    if (needsVoid(invoice)) {
+      setError(""); setNotice(""); setVoidReason(""); setModal({ type: "void", invoice });
+      return;
+    }
     if (!window.confirm(`¿Eliminar la factura ${invoice.invoice_number}?`)) return;
     setError(""); setNotice("");
     try { await deleteInvoice(invoice.id); setInvoices((current) => current.filter((item) => item.id !== invoice.id)); setNotice("Factura eliminada correctamente."); }
     catch (requestError) { setError(errorMessage(requestError)); }
   }
 
+  function needsVoid(invoice) { return mode === "REAL" && Number(invoice.balance) > 0; }
+  async function confirmVoid(event) {
+    event.preventDefault();
+    if (saving || !voidReason.trim()) return;
+    const { invoice } = modal;
+    setError(""); setSaving(true);
+    try {
+      await voidInvoice(invoice.id, voidReason.trim());
+      setInvoices(current => current.filter(item => item.id !== invoice.id));
+      setModal(null);
+      setNotice(`Factura ${invoice.invoice_number} anulada. El motivo quedó registrado en Auditoría.`);
+    } catch (requestError) { setError(errorMessage(requestError)); }
+    finally { setSaving(false); }
+  }
+
   const detail = modal?.type === "detail" ? modal.invoice : null;
+  const voiding = modal?.type === "void" ? modal.invoice : null;
   return <main className="facturas-page">
     <header className="facturas-header"><div><h1>Facturas</h1><p>Consulta y administra las facturas registradas.</p></div><button className="factura-primary" onClick={openCreate}><Plus size={17} /> Nueva factura</button></header>
     {notice && <div className="factura-alert factura-alert-success" role="status">{notice}<button onClick={() => setNotice("")} aria-label="Cerrar"><X size={16} /></button></div>}
-    {error && <div className="factura-alert factura-alert-error" role="alert">{error}<button onClick={() => setError("")} aria-label="Cerrar"><X size={16} /></button></div>}
+    {error && !voiding && <div className="factura-alert factura-alert-error" role="alert">{error}<button onClick={() => setError("")} aria-label="Cerrar"><X size={16} /></button></div>}
     <section className="factura-card">
       <div className="factura-toolbar"><div className="factura-card-title"><FileText size={17} /> Facturas registradas <span>({filteredInvoices.length})</span></div><div className="factura-controls"><label className="factura-search"><Search size={16} /><input aria-label="Buscar factura" placeholder="Buscar número, cliente o NIT" value={query} onChange={(event) => setQuery(event.target.value)} /></label><select aria-label="Filtrar por estado" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}><option value="">Todos los estados</option>{statuses.map((status) => <option key={status} value={status}>{status}</option>)}</select></div></div>
-      {loading ? <div className="factura-empty"><LoaderCircle className="factura-spin" size={25} /><p>Cargando facturas…</p></div> : error && invoices.length === 0 ? <div className="factura-empty"><p>No se pudo cargar el listado.</p><button className="factura-secondary" onClick={loadInvoices}>Reintentar</button></div> : filteredInvoices.length === 0 ? <div className="factura-empty"><FileText size={28} /><h3>{invoices.length ? "No hay resultados" : "No hay facturas registradas."}</h3><p>{invoices.length ? "Prueba con otra búsqueda o filtro." : "Cuando registres una factura, aparecerá en este listado."}</p></div> : <div className="factura-table-wrap"><table className="factura-table"><thead><tr><th>Número</th><th>Cliente</th><th>NIT</th><th>Emisión</th><th>Vencimiento</th><th>Valor</th><th>Saldo</th><th>Estado</th><th>Acciones</th></tr></thead><tbody>{filteredInvoices.map((invoice) => <tr key={invoice.id}><td><strong>{invoice.invoice_number}</strong></td><td>{invoice.customer_name || "—"}</td><td>{invoice.customer_nit || "—"}</td><td>{formatDate(invoice.issue_date)}</td><td>{formatDate(invoice.due_date)}</td><td>{currency(invoice.document_value)}</td><td>{currency(invoice.balance)}</td><td><span className="factura-status">{invoice.status || "—"}</span></td><td><div className="factura-actions"><button title="Ver detalle" aria-label={`Ver factura ${invoice.invoice_number}`} onClick={() => openDetail(invoice)}><Eye size={16} /></button><button title="Editar" aria-label={`Editar factura ${invoice.invoice_number}`} onClick={() => openEdit(invoice)}><Pencil size={16} /></button><button title="Eliminar" aria-label={`Eliminar factura ${invoice.invoice_number}`} onClick={() => remove(invoice)}><Trash2 size={16} /></button></div></td></tr>)}</tbody></table></div>}
+      {loading ? <div className="factura-empty"><LoaderCircle className="factura-spin" size={25} /><p>Cargando facturas…</p></div> : error && invoices.length === 0 ? <div className="factura-empty"><p>No se pudo cargar el listado.</p><button className="factura-secondary" onClick={loadInvoices}>Reintentar</button></div> : filteredInvoices.length === 0 ? <div className="factura-empty"><FileText size={28} /><h3>{invoices.length ? "No hay resultados" : "No hay facturas registradas."}</h3><p>{invoices.length ? "Prueba con otra búsqueda o filtro." : "Cuando registres una factura, aparecerá en este listado."}</p></div> : <div className="factura-table-wrap"><table className="factura-table"><thead><tr><th>Número</th><th>Cliente</th><th>NIT</th><th>Emisión</th><th>Vencimiento</th><th>Valor</th><th>Saldo</th><th>Estado</th><th>Acciones</th></tr></thead><tbody>{filteredInvoices.map((invoice) => <tr key={invoice.id}><td><strong>{invoice.invoice_number}</strong></td><td>{invoice.customer_name || "—"}</td><td>{invoice.customer_nit || "—"}</td><td>{formatDate(invoice.issue_date)}</td><td>{formatDate(invoice.due_date)}</td><td>{currency(invoice.document_value)}</td><td>{currency(invoice.balance)}</td><td><span className="factura-status">{invoice.status || "—"}</span></td><td><div className="factura-actions"><button title="Ver detalle" aria-label={`Ver factura ${invoice.invoice_number}`} onClick={() => openDetail(invoice)}><Eye size={16} /></button><button title="Editar" aria-label={`Editar factura ${invoice.invoice_number}`} onClick={() => openEdit(invoice)}><Pencil size={16} /></button>{canDelete && <button title={needsVoid(invoice) ? "Anular" : "Eliminar"} aria-label={`${needsVoid(invoice) ? "Anular" : "Eliminar"} factura ${invoice.invoice_number}`} onClick={() => remove(invoice)}><Trash2 size={16} /></button>}</div></td></tr>)}</tbody></table></div>}
     </section>
     {modal && <div className="factura-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) setModal(null); }}><section className="factura-modal" role="dialog" aria-modal="true" aria-labelledby="factura-modal-title">
-      <header className="factura-modal-header"><div><h2 id="factura-modal-title">{detail ? `Factura ${detail.invoice_number}` : modal.editing ? "Editar factura" : "Nueva factura"}</h2><p>{detail ? "Detalle de la factura." : "Completa la información de la factura."}</p></div><button className="factura-close" onClick={() => setModal(null)} aria-label="Cerrar"><X size={19} /></button></header>
-      {detail ? <><div className="factura-modal-body"><div className="factura-detail-grid"><Detail label="Cliente" value={detail.customer_name} /><Detail label="NIT" value={detail.customer_nit} /><Detail label="Fecha de emisión" value={formatDate(detail.issue_date)} /><Detail label="Fecha de vencimiento" value={formatDate(detail.due_date)} /><Detail label="Valor del documento" value={currency(detail.document_value)} /><Detail label="Valor base" value={currency(detail.base_value)} /><Detail label="IVA" value={currency(detail.iva_value)} /><Detail label="Saldo" value={currency(detail.balance)} /><Detail label="Días de crédito" value={detail.credit_days} /><Detail label="Estado" value={detail.status} /><Detail label="Descuento" value={currency(detail.discount)} /><Detail label="PROMO 18" value={currency(detail.promo_18)} /><Detail label="Correo" value={detail.email} /><Detail label="Notas" value={detail.notes} full /></div></div><footer className="factura-modal-footer"><button className="factura-secondary" onClick={() => setModal(null)}>Cerrar</button></footer></> : <form onSubmit={submit}><div className="factura-modal-body"><div className="factura-form-grid">
+      <header className="factura-modal-header"><div><h2 id="factura-modal-title">{voiding ? `Anular factura ${voiding.invoice_number}` : detail ? `Factura ${detail.invoice_number}` : modal.editing ? "Editar factura" : "Nueva factura"}</h2><p>{voiding ? "Registra el motivo de la anulación." : detail ? "Detalle de la factura." : "Completa la información de la factura."}</p></div><button className="factura-close" disabled={saving} onClick={() => setModal(null)} aria-label="Cerrar"><X size={19} /></button></header>
+      {voiding ? <form onSubmit={confirmVoid}>
+        <div className="factura-modal-body">
+          <p>La factura saldrá de la cartera activa. Su saldo registrado de {currency(voiding.balance)} se conservará en el historial.</p>
+          <Field label="Motivo de anulación" name="invoice-void-reason" required>
+            <textarea id="invoice-void-reason" maxLength={500} value={voidReason}
+              onChange={event => setVoidReason(event.target.value)} required disabled={saving} />
+          </Field>
+          {error && <p className="factura-form-error" role="alert">{error}</p>}
+        </div>
+        <footer className="factura-modal-footer">
+          <button type="button" className="factura-secondary" disabled={saving} onClick={() => setModal(null)}>Cancelar</button>
+          <button type="submit" className="factura-primary" disabled={saving || !voidReason.trim()}>{saving ? "Anulando…" : "Confirmar anulación"}</button>
+        </footer>
+      </form> :
+      detail ? <><div className="factura-modal-body"><div className="factura-detail-grid"><Detail label="Cliente" value={detail.customer_name} /><Detail label="NIT" value={detail.customer_nit} /><Detail label="Fecha de emisión" value={formatDate(detail.issue_date)} /><Detail label="Fecha de vencimiento" value={formatDate(detail.due_date)} /><Detail label="Valor del documento" value={currency(detail.document_value)} /><Detail label="Valor base" value={currency(detail.base_value)} /><Detail label="IVA" value={currency(detail.iva_value)} /><Detail label="Saldo" value={currency(detail.balance)} /><Detail label="Días de crédito" value={detail.credit_days} /><Detail label="Estado" value={detail.status} /><Detail label="Descuento" value={currency(detail.discount)} /><Detail label="PROMO 18" value={currency(detail.promo_18)} /><Detail label="Correo" value={detail.email} /><Detail label="Notas" value={detail.notes} full /></div></div><footer className="factura-modal-footer"><button className="factura-secondary" onClick={() => setModal(null)}>Cerrar</button></footer></> : <form onSubmit={submit}><div className="factura-modal-body"><div className="factura-form-grid">
         <Field label="Cliente" name="customer_id" value={form.customer_id} onChange={change} required><select id="customer_id" name="customer_id" value={form.customer_id} onChange={change} required><option value="">Selecciona un cliente</option>{activeCustomers.map((customer) => <option key={customer.id} value={customer.id}>{customer.name}{customer.nit ? ` — ${customer.nit}` : ""}</option>)}</select></Field>
         <Field label="Número de factura" name="invoice_number" value={form.invoice_number} onChange={change} required />
         <Field label="Fecha de emisión" name="issue_date" value={form.issue_date} onChange={change} type="date" />

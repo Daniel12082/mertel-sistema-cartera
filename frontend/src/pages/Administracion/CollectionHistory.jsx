@@ -6,7 +6,12 @@ import "./CollectionHistory.css";
 
 function dayValue(date = new Date()) { return [date.getFullYear(), String(date.getMonth() + 1).padStart(2, "0"), String(date.getDate()).padStart(2, "0")].join("-"); }
 function shownDate(value) { return new Intl.DateTimeFormat("es-CO", { dateStyle: "short", timeStyle: "short", timeZone: "America/Bogota" }).format(new Date(value)); }
-const kinds = { action: "Gestión", promise: "Promesa", configuration: "Configuración", import: "Importación" };
+const kinds = { action: "Gestión", promise: "Promesa", configuration: "Configuración", import: "Importación", invoice: "Factura" };
+const invoiceFields = {
+  customer_id: "Cliente", invoice_number: "Número", issue_date: "Emisión", due_date: "Vencimiento",
+  document_value: "Valor", base_value: "Base", iva_value: "IVA", balance: "Saldo", credit_days: "Días de crédito",
+  status: "Estado", promo_18: "PROMO 18", discount: "Descuento", email: "Correo", notes: "Notas",
+};
 
 export default function CollectionHistory({navigationState}) {
   const { permissions = [] } = useAuth(); const authorized = permissions.includes("history.view") && permissions.includes("settings.manage");
@@ -44,7 +49,7 @@ export default function CollectionHistory({navigationState}) {
     <div className="history-filters">
       <label>Desde<input type="date" max={filters.date_to || today} value={filters.date_from} onChange={event => update("date_from", event.target.value)} /></label>
       <label>Hasta<input type="date" min={filters.date_from || undefined} value={filters.date_to} onChange={event => update("date_to", event.target.value)} /></label>
-      <label>Tipo<select aria-label="Tipo de evento" value={filters.type} onChange={event => update("type", event.target.value)}><option value="all">Todos</option><option value="action">Gestiones</option><option value="promise">Promesas</option><option value="configuration">Configuración</option><option value="import">Importaciones</option></select></label>
+      <label>Tipo<select aria-label="Tipo de evento" value={filters.type} onChange={event => update("type", event.target.value)}><option value="all">Todos</option><option value="action">Gestiones</option><option value="promise">Promesas</option><option value="configuration">Configuración</option><option value="import">Importaciones</option><option value="invoice">Facturas</option></select></label>
       <label>Usuario<select aria-label="Usuario" value={filters.actor_id} onChange={event => update("actor_id", event.target.value)}><option value="">Todos</option>{actorRows.map(actor => <option key={actor.id} value={actor.id}>{actor.name}</option>)}</select></label>
       <label>Cliente, identificación, factura o archivo<input type="search" maxLength="120" value={filters.q} onChange={event => update("q", event.target.value)} placeholder="Buscar" /></label>
     </div>
@@ -55,6 +60,8 @@ export default function CollectionHistory({navigationState}) {
         <time dateTime={event.occurred_at}>{shownDate(event.occurred_at)}</time><div className="history-event"><strong>{event.title || kinds[event.type]}</strong><span>{kinds[event.type]} · {event.actor || "Usuario no disponible"}</span>
           {event.customer && <span>Cliente: {event.customer.name}{event.customer.identification ? " · " + event.customer.identification : ""}</span>}{event.invoice && <span>Factura: {event.invoice}</span>}
           {event.description && <p>{event.description}</p>}{event.metadata?.promised_date && <span>Fecha prometida: {event.metadata.promised_date}</span>}
+          {event.type === "invoice" && event.metadata?.balance != null && <span>Saldo registrado: {formatCurrency(event.metadata.balance)}</span>}
+          {event.type === "invoice" && event.metadata?.changed_fields?.length > 0 && <span>Campos modificados: {event.metadata.changed_fields.map(field => invoiceFields[field] || field).join(", ")}</span>}
           {event.metadata?.amount && <span>Monto prometido: {formatCurrency(event.metadata.amount)}</span>}{event.status && <span>Estado: {event.status}</span>}
           {event.metadata?.file_name && <span>Archivo: {event.metadata.file_name} · Filas: {event.metadata.total_rows} · Errores: {event.metadata.failed_rows}</span>}
           {(event.metadata?.before || event.metadata?.after) && <span>Etapas: {JSON.stringify(event.metadata.before || [])} → {JSON.stringify(event.metadata.after || [])}</span>}

@@ -44,14 +44,14 @@ describe('WhatsApp administrative center', () => {
   });
   it('filters history and shows failed messages and retry dates', async () => {
     whatsappRequest.mockImplementation(path => Promise.resolve(path === '/messages' ? { messages: [{ id: '2', customer_name: 'Cliente DEMO', template_name: 'DEMO', status: 'FAILED', direction: 'outbound', content: 'DEMO', attempts: 1, error_code: 'MOCK_SEND_FAILED', error_message: 'Fallo simulado', next_attempt_at: '2026-10-07T15:15:00Z' }], page: 1 } : center));
-    const user = userEvent.setup(); view(); await screen.findByRole('heading', { name: 'Conversaciones' }); await user.click(screen.getByRole('button', { name: 'Mensajes', exact: true }));
+    const user = userEvent.setup(); view(); await user.click(await screen.findByRole('button', { name: 'Mensajes', exact: true }));
     expect(await screen.findByText(/MOCK_SEND_FAILED: Fallo simulado/)).toBeVisible();
     await user.selectOptions(screen.getByLabelText('Filtrar estado'), 'FAILED');
     await waitFor(() => expect(whatsappRequest).toHaveBeenCalledWith('/messages', expect.objectContaining({ params: expect.objectContaining({ status: 'FAILED' }) })));
   });
   it('reuses existing template editor and displays audit events', async () => {
     whatsappRequest.mockImplementation(path => Promise.resolve(path === '/audit' ? [{ id: '1', action: 'automation_update', entity_type: 'whatsapp_setting', entity_id: '1', created_at: '2026-10-07T15:00:00Z' }] : center));
-    const user = userEvent.setup(); view(); await screen.findByRole('heading', { name: 'Conversaciones' }); await user.click(screen.getByRole('button', { name: 'Plantillas', exact: true }));
+    const user = userEvent.setup(); view(); await user.click(await screen.findByRole('button', { name: 'Plantillas', exact: true }));
     expect(await screen.findByRole('heading', { name: 'Plantillas WhatsApp', exact: true })).toBeVisible();
     await user.click(screen.getByRole('button', { name: 'Historial', exact: true })); expect(await screen.findByText('Regla de mensajería actualizada')).toBeVisible();
   });

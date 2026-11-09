@@ -151,6 +151,51 @@ describe("financial integrity HTTP / MySQL integration", { skip: !configured }, 
   test("unpaid invoice deletion returns 409", async () => {
     const i = await invoice(); await expectStatus("DELETE", `/invoices/${i.id}`, undefined, 409);
   });
+  test("administrative void keeps the original balance and appears in audit with the reason", async () => {
+    const i = await invoice();
+    await expectStatus("PUT", `/invoices/${i.id}`, { ...i, issue_date: "2026-10-01", due_date: "2026-10-31", credit_days: 30 }, 200);
+    const path = `/invoices/${i.id}/void`;
+    const reason = "Factura cargada por duplicado";
+    await expectStatus("POST", path, { reason: " " }, 400);
+    await expectStatus("POST", path, { reason, actor_id: 999 }, 400);
+    await expectStatus("POST", path, { reason }, 200);
+    await expectStatus("GET", `/invoices/${i.id}`, undefined, 404);
+    await expectStatus("POST", path, { reason }, 404);
+    const [[stored]] = await pool.query("SELECT balance,status,deleted_at FROM invoices WHERE id=?", [i.id]);
+    assert.equal(Number(stored.balance), 100);
+    assert.equal(stored.status, "cancelled");
+    assert.ok(stored.deleted_at);
+    const { events } = await expectStatus("GET", `/admin/collection/history?type=invoice&q=${encodeURIComponent(i.invoice_number)}`, undefined, 200);
+    assert.equal(events.length, 3);
+    const voided = events.find(event => event.title === "Factura anulada");
+    assert.equal(voided.description, reason);
+    assert.equal(voided.actor, "Financial test");
+    assert.equal(Number(voided.metadata.balance), 100);
+    assert.deepEqual(events.find(event => event.title === "Factura editada").metadata.changed_fields, ["credit_days"]);
+  });
+  test("administrative void requires resolving active payments and pending promises first", async () => {
+    const { i } = await pair();
+    const body = { reason: "Corrección del registro" };
+    await expectStatus("POST", `/invoices/${i.id}/void`, body, 409);
+    const promised = await invoice();
+    await pool.query("INSERT INTO payment_promises (customer_id, invoice_id, promised_date, promised_amount) VALUES (?, ?, '2026-10-02', 100)", [customer, promised.id]);
+    await expectStatus("POST", `/invoices/${promised.id}/void`, body, 409);
+    const [[audit]] = await pool.query("SELECT COUNT(*) AS total FROM audit_logs WHERE entity_type='invoice' AND action='invoice_voided' AND entity_id IN (?,?)", [i.id, promised.id]);
+    assert.equal(audit.total, 0);
+  });
+  test("administrative void rolls back if the audit entry cannot be written", async () => {
+    const i = await invoice();
+    await pool.query(`CREATE TRIGGER reject_void_audit BEFORE INSERT ON audit_logs FOR EACH ROW
+      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Test audit failure'`);
+    try {
+      await expectStatus("POST", `/invoices/${i.id}/void`, { reason: "Factura duplicada" }, 500);
+    } finally {
+      await pool.query("DROP TRIGGER reject_void_audit");
+    }
+    const current = await expectStatus("GET", `/invoices/${i.id}`, undefined, 200);
+    assert.equal(current.status, "pending");
+    assert.equal(Number(current.balance), 100);
+  });
   test("paid invoice with active application deletion returns 409", async () => {
     const { i } = await pair("100.00");
     await expectStatus("DELETE", `/invoices/${i.id}`, undefined, 409);

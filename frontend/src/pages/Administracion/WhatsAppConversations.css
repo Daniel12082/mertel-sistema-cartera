@@ -45,6 +45,7 @@
 .wa-chat-compose textarea { resize: vertical; flex: 1; min-height: 54px; max-height: 130px; }
 .wa-center .wa-chat-compose button { display: flex; gap: 7px; align-items: center; background: var(--wa-inbox-accent); color: white; padding: 14px 10px; white-space: nowrap; font-size: 12px; }
 .wa-chat-compose small { display: block; color: #8b6d26; font-size: 10px; margin-top: 9px; }
+.wa-center .wa-chat-draft-actions button { margin-top: 8px; padding: 6px 10px; background: white; color: var(--wa-inbox-accent); }
 .wa-center .wa-chat-compose label { font-size: 12px; margin: 0 0 7px; }
 .wa-inbox-profile { padding: 17px; overflow-y: auto; background: #fff; border-left: 1px solid #e2e9ed; }
 .wa-profile-title { display: flex; align-items: center; gap: 8px; }

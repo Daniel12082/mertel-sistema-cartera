@@ -24,3 +24,8 @@ export async function deleteInvoice(id) {
   const response = await api.delete(`/invoices/${id}`);
   return response.data;
 }
+
+export async function voidInvoice(id, reason) {
+  const response = await api.post(`/invoices/${id}/void`, { reason });
+  return response.data;
+}

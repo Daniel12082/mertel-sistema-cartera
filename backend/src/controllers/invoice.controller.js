@@ -209,18 +209,18 @@ export async function updateInvoice(req, res) {
   }
 }
 
-export async function deleteInvoice(req, res) {
+async function removeInvoiceRequest(req, res, voidReason) {
   const id = parsePositiveId(req.params.id);
   if (id === null) {
     return res.status(400).json({ success: false, message: "ID inválido" });
   }
 
   try {
-    const deleted = await removeInvoice(id, req.companyScope);
+    const deleted = await removeInvoice(id, req.companyScope, { voidReason });
     if (!deleted) {
       return res.status(404).json({ success: false, message: "Factura no encontrada" });
     }
-    return res.status(200).json({ success: true, message: "Factura eliminada correctamente" });
+    return res.status(200).json({ success: true, message: voidReason ? "Factura anulada y registrada en auditoría" : "Factura eliminada correctamente" });
   } catch (error) {
     if (error.status) return res.status(error.status).json({ success: false, message: error.message });
     console.error("Error eliminando factura:");
@@ -229,4 +229,16 @@ export async function deleteInvoice(req, res) {
       message: "No se pudo eliminar la factura",
     });
   }
+}
+
+export function deleteInvoice(req, res) {
+  return removeInvoiceRequest(req, res, null);
+}
+
+export function voidInvoice(req, res) {
+  const reason = typeof req.body?.reason === "string" ? req.body.reason.trim() : "";
+  if (!reason || reason.length > 500 || Object.keys(req.body).some(key => key !== "reason")) {
+    return res.status(400).json({ success: false, message: "Indica un motivo de anulación de hasta 500 caracteres." });
+  }
+  return removeInvoiceRequest(req, res, reason);
 }

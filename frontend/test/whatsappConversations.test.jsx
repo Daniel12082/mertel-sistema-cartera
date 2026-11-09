@@ -163,6 +163,44 @@ it('replies to a regular number in production using the Meta reply route', async
   expect(await screen.findByLabelText('Mensaje saliente 12')).toHaveTextContent(outgoing.content);
 });
 
+it('keeps a new chat draft when the first incoming message opens the Meta reply window', async () => {
+  leaveSimulation();
+  const owner = 'meta-draft-test';
+  const recipient = '+573000000003';
+  const incoming = { id: '21', recipient, provider: 'WHATSAPP_CLOUD_API', direction: 'inbound',
+    status: 'DELIVERED', content: 'Hola', received_at: new Date().toISOString() };
+  let history = [];
+  const respond = data => Promise.resolve({ status: 200, data: { success: true, data } });
+  network.mockImplementation(config => {
+    if (config.url === '/customers') return respond([]);
+    if (config.url === '/admin/whatsapp/messages') return respond({ messages: history });
+    throw new Error('Unexpected request');
+  });
+  const user = userEvent.setup();
+  const view = render(<SimulationContext.Provider value={{ mode: 'REAL' }}>
+    <WhatsAppConversations chatOnly preferenceOwner={owner}
+      settings={{ provider: 'WHATSAPP_CLOUD_API', connection_status: 'CONNECTED', real_sending_enabled: true }} />
+  </SimulationContext.Provider>);
+  try {
+    await user.click(screen.getByRole('button', { name: 'Nuevo chat' }));
+    await user.type(screen.getByLabelText('Número de WhatsApp'), recipient);
+    await user.click(screen.getByRole('button', { name: 'Iniciar chat' }));
+    await user.type(screen.getByLabelText('Mensaje de WhatsApp'), 'Hola, soy de MERTEL.');
+    const send = screen.getByRole('button', { name: 'Enviar mensaje' });
+    expect(send).toBeDisabled();
+    history = [incoming];
+    await user.click(screen.getByRole('button', { name: 'Actualizar conversación' }));
+    expect(await screen.findByLabelText('Mensaje entrante 21')).toBeVisible();
+    expect(screen.getByLabelText('Mensaje de WhatsApp')).toHaveValue('Hola, soy de MERTEL.');
+    expect(send).toBeEnabled();
+    expect(network.mock.calls.every(([request]) => request.method === 'get')).toBe(true);
+  } finally {
+    view.unmount();
+    localStorage.removeItem(`mertel:wa-inbox:REAL:${owner}`);
+    localStorage.removeItem(`mertel:wa-new-chats:REAL:${owner}`);
+  }
+});
+
 it('keeps a removed conversation and its history recoverable after remounting', async () => {
   const storageKey = 'mertel:wa-inbox:SIMULATION:fixture';
   localStorage.removeItem(storageKey);

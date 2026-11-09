@@ -13,9 +13,15 @@ function filters(query) { const startDate=date(query.startDate,'startDate'), end
 function pageResult(rows,total,p) { return {rows,pagination:{page:p.page,limit:p.limit,total:Number(total),pages:Math.ceil(Number(total)/p.limit),has_next:p.offset+p.limit<Number(total),has_previous:p.page>1}}; }
 async function safeSection(name, work, errors) { try { return await work(); } catch (error) { errors.push({section:name,message:error.status===400?error.message:'No se pudo consultar esta sección.'}); return null; } }
 
-export async function getReports({scope, query = {}}) {
+export async function getReports({scope, query = {}, includeAdministrativeHistory = false}) {
   if (!validCompanyId(scope?.companyId)) { const e = new Error('El contexto MERTEL no está disponible.'); e.status=403; throw e; }
-  const f=filters(query); const requested=query.section?String(query.section).split(',').map(v=>v.trim()).filter(Boolean):sections; const unknown=requested.filter(v=>!sections.includes(v)); if(unknown.length) throw bad(`section no disponible: ${unknown.join(', ')}`);
+  const f=filters(query);
+  const requested = query.section ? String(query.section).split(',').map(v=>v.trim()).filter(Boolean)
+    : sections.filter(section => section !== 'history' || includeAdministrativeHistory);
+  const unknown=requested.filter(v=>!sections.includes(v)); if(unknown.length) throw bad(`section no disponible: ${unknown.join(', ')}`);
+  if (requested.includes('history') && !includeAdministrativeHistory) {
+    throw Object.assign(new Error('No tienes permiso para consultar el historial administrativo.'), {status:403});
+  }
   const errors=[]; const result={referenceDate:f.referenceDate,generatedAt:new Date().toISOString(),sections:{},meta:{filters:{...f},requested}};
   const db=await pool.getConnection();
   try {
@@ -34,7 +40,13 @@ export async function getReports({scope, query = {}}) {
     if(requested.includes('promises')) await safeSection('promises',async()=>{const where=['p.company_id=?'];const vals=[scope.companyId];if(f.status){where.push('p.status=?');vals.push(f.status);}if(f.customerId){where.push('p.customer_id=?');vals.push(f.customerId);}const [[count]]=await db.query(`SELECT COUNT(*) total FROM payment_promises p WHERE ${where.join(' AND ')}`,vals);const [rows]=await db.query(`SELECT CAST(p.id AS CHAR) id,c.name customer,c.nit identification,p.created_at,p.promised_date,p.promised_amount,p.status,p.notes FROM payment_promises p JOIN customers c ON c.id=p.customer_id WHERE ${where.join(' AND ')} ORDER BY p.promised_date ${f.sortOrder},p.id ${f.sortOrder} LIMIT ? OFFSET ?`,[...vals,f.limit,f.offset]);return pageResult(rows,count.total,f);},errors).then(v=>{if(v)result.sections.promises=v;});
     await db.commit();
   } catch(error) { try{await db.rollback();}catch{}; throw error; } finally { db.release(); }
-  if(requested.includes('history')) await safeSection('history',async()=>{const {getAdministrativeCollectionHistory}=await import('./collectionHistory.service.js');return getAdministrativeCollectionHistory({scope,page:String(f.page),limit:String(f.limit),dateFrom:f.startDate,dateTo:f.endDate,query:f.search||undefined});},errors).then(v=>{if(v)result.sections.history=v;});
+  if (requested.includes('history')) {
+    const history = await safeSection('history', async () => {
+      const {getAdministrativeCollectionHistory}=await import('./collectionHistory.service.js');
+      return getAdministrativeCollectionHistory({scope,page:String(f.page),limit:String(f.limit),dateFrom:f.startDate,dateTo:f.endDate,query:f.search||undefined});
+    }, errors);
+    if (history) result.sections.history = { ...history, rows: history.events };
+  }
   if(requested.includes('summary')||requested.includes('portfolio')) result.sections.summary ||= null;
   result.errors=errors; return result;
 }

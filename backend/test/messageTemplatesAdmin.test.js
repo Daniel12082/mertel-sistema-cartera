@@ -247,6 +247,11 @@ describe("5.1A template and 5.2 collection settings administration HTTP / MySQL"
       assert.equal(global.status, 200);
       assert.ok(global.body.data.events.some(event => event.type === "import" && event.metadata.file_name === "cartera-fixture.csv"));
       assert.ok(global.body.data.events.some(event => event.type === "configuration"));
+      const reportHistory = "/admin/reports?section=history&limit=100";
+      assert.equal((await request("GET", reportHistory, collectorA)).status, 403);
+      const report = await request("GET", reportHistory, globalAdmin);
+      assert.equal(report.status, 200);
+      assert.deepEqual(report.body.data.sections.history.rows, global.body.data.events);
       assert.equal((await request("GET", `${url}&company_id=${companyB}`, globalAdmin)).status, 403);
       const actors = await request("GET", `/admin/collection/history/actors?company_id=${companyA}`, globalAdmin);
       assert.ok(actors.body.data.some(actor => actor.id === collectorA.id && actor.name === "Fixture"));
