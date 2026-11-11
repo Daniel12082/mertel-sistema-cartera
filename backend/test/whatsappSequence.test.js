@@ -14,50 +14,51 @@ test('real schedule starts Saturday at 8, closes at 15 and skips Sunday and holi
   assert.equal(automaticWindow(notice, rules, new Date('2026-10-10T20:00:00Z'), [], true).toISOString(), '2026-10-13T12:00:00.000Z');
 });
 
-test('pronto pago is day business 7, before calendar 10; uses complete portfolio and only base before VAT', () => {
+test('pronto pago is day business 7, before calendar 10; it lists documents and only reminds the condition', () => {
   const source = input([invoice(), invoice({ id: '2', invoice_id: '2', invoice_number: 'DEMO-2', issue_date: '2026-09-30' })]);
   const copy = structuredClone(source), notice = automaticSelection(source), body = automaticContent(notice, source.referenceDate);
   assert.equal(notice.stage, 'prompt_payment'); assert.equal(notice.date, '2026-10-08');
-  assert.equal(body.values.total_cartera, '$2.380'); assert.equal(body.values.base_antes_iva, '$2.000'); assert.equal(body.values.descuento_pronto_pago, '$60'); assert.equal(body.values.total_pronto_pago, '$2.320');
-  assert.match(body.content, /DEMO-1/); assert.match(body.content, /DEMO-2/); assert.deepEqual(source, copy);
+  assert.match(body.content, /Factura DEMO-1/); assert.match(body.content, /Factura DEMO-2/);
+  assert.match(body.content, /3% por pronto pago puede aplicar hasta el 2026-10-09/); assert.doesNotMatch(body.content, /\$2\.380|\$60|Total a pagar/); assert.deepEqual(source, copy);
 });
-test('PROMO 18 SI stays in listing at full balance without contributing to discount', () => {
+test('PROMO 18 SI remains listed and does not create a pronto pago reminder for that invoice', () => {
   const source = input([invoice(), invoice({ id: '2', invoice_id: '2', invoice_number: 'PROMO-DEMO', promo_18: 'SI' })]);
   const body = automaticContent(automaticSelection(source), source.referenceDate);
-  assert.equal(body.values.descuento_pronto_pago, '$30'); assert.equal(body.values.total_pronto_pago, '$2.350'); assert.match(body.content, /PROMO-DEMO.*sin descuento/);
+  assert.match(body.content, /Factura PROMO-DEMO/); assert.match(body.content, /3% por pronto pago puede aplicar/); assert.doesNotMatch(body.content, /\$2\.350|\$30/);
 });
 test('all PROMO 18 invoices never produce pronto pago or a fictional discount', () => {
   const source = input([invoice({ promo_18: 'SI' }), invoice({ id: '2', promo_18: '18.00' })]);
   assert.equal(automaticSelection(source), null); assert.match(automaticNotices(source).find(row => row.stage === 'prompt_payment').reason, /Toda la cartera/);
 });
-test('backend discount cannot exceed actual collectible value and never uses balance as its base', () => {
+test('low balances never trigger a discount calculation in the notice', () => {
   const source = input([invoice({ balance: '20.00' })]);
-  assert.throws(() => automaticContent(automaticSelection(source), source.referenceDate), /supera el valor/);
+  const body = automaticContent(automaticSelection(source), source.referenceDate);
+  assert.match(body.content, /Factura DEMO-1/); assert.doesNotMatch(body.content, /\$20|Total a pagar/);
 });
 for (const [stage, due, issue] of [['prompt_payment', '2026-11-03', '2026-09-29'], ['five_days_before_due', '2026-10-13', '2026-09-01'], ['due_today', '2026-10-08', '2026-09-01']]) {
-  test(`${stage}: conditioned benefit is explicit, conditional on timely payment and has no invented percentage`, () => {
+  test(`${stage}: conditioned benefit is a 10% reminder within its 60-day validity`, () => {
     const source = input([invoice({ due_date: due, issue_date: issue, notes: 'DSCTO = CONDICIONADO' })]);
     const notice = automaticSelection(source); assert.equal(notice.stage, stage);
-    const content = renderAutomaticNotice(notice, source.referenceDate); assert.match(content, /solamente si paga a tiempo/); assert.doesNotMatch(content, /10%/);
+    const content = renderAutomaticNotice(notice, source.referenceDate); assert.match(content, /10% condicionado puede aplicar hasta/); assert.doesNotMatch(content, /Total a pagar/);
   });
 }
 test('reminder with one invoice lists only the matching due date', () => {
   const source = input([invoice({ issue_date: '2026-09-01', due_date: '2026-10-13' }), invoice({ id: '2', invoice_id: '2', invoice_number: 'NOT-IN-REMINDER', issue_date: '2026-09-01', due_date: '2026-11-01' })]);
   const notice = automaticSelection(source); assert.equal(notice.stage, 'five_days_before_due');
-  assert.match(renderAutomaticNotice(notice, source.referenceDate), /Su factura vence el 2026-10-13/); assert.doesNotMatch(renderAutomaticNotice(notice, source.referenceDate), /NOT-IN-REMINDER/);
+  assert.match(renderAutomaticNotice(notice, source.referenceDate), /Factura DEMO-1 · emisión 2026-09-01 · vence 2026-10-13/); assert.doesNotMatch(renderAutomaticNotice(notice, source.referenceDate), /NOT-IN-REMINDER/);
 });
-test('reminder and due-today dynamically count multiple invoices and show original value and balance without interpretation', () => {
+test('reminder and due-today list every applicable invoice without monetary interpretation', () => {
   for (const due of ['2026-10-13', '2026-10-08']) {
     const source = input([invoice({ issue_date: '2026-09-01', due_date: due, balance: '900.00' }), invoice({ id: '2', invoice_id: '2', invoice_number: 'DEMO-2', issue_date: '2026-09-01', due_date: due })]);
     const body = renderAutomaticNotice(automaticSelection(source), source.referenceDate);
-    assert.match(body, /Sus 2 facturas vencen/); assert.match(body, /valor \$1\.190 · saldo pendiente \$900/); assert.doesNotMatch(body, /abono|ajuste|pago parcial|diferencia/);
+    assert.match(body, /Factura DEMO-1/); assert.match(body, /Factura DEMO-2/); assert.doesNotMatch(body, /\$1\.190|saldo pendiente|abono|ajuste|pago parcial|diferencia/);
   }
 });
-test('mora lists overdue invoices, total, credit days, overdue days and loss of conditioned discount', () => {
+test('mora lists overdue invoices and keeps the conditioned reminder without amounts', () => {
   const source = input([invoice({ issue_date: '2026-09-01', due_date: '2026-10-07', notes: 'DSCTO: CONDICIONADO' })]);
   const notice = automaticSelection(source); assert.equal(notice.stage, 'overdue');
   const body = renderAutomaticNotice(notice, source.referenceDate);
-  assert.match(body, /Total en mora \$1\.190/); assert.match(body, /Le pedimos ponerse al día para no afectar su cupo de crédito/); assert.match(body, /perdió el descuento condicionado · 36 días de crédito · 1 días vencida/); assert.doesNotMatch(body, /10%/);
+  assert.match(body, /Factura DEMO-1 · emisión 2026-09-01 · vence 2026-10-07/); assert.match(body, /10% condicionado puede aplicar hasta el 2026-10-31/); assert.doesNotMatch(body, /Total en mora|\$1\.190/);
 });
 test('daily priority is mora > due today > reminder > prompt payment', () => {
   const all = [invoice({ id: '1', due_date: '2026-10-07', issue_date: '2026-09-01' }), invoice({ id: '2', due_date: '2026-10-08', issue_date: '2026-09-01' }), invoice({ id: '3', due_date: '2026-10-13', issue_date: '2026-09-01' }), invoice({ id: '4' })];
@@ -79,7 +80,7 @@ test('Sunday and Colombian public holiday postpone to a permitted date and regen
   const source = input([invoice({ issue_date: '2026-09-01', due_date: '2026-10-16' })], '2026-10-11');
   const notice = automaticSelection(source); assert.ok(colombianHolidays(2026).has('2026-10-12'));
   assert.equal(automaticWindow(notice, rules, new Date('2026-10-11T15:00:00Z')).toISOString(), '2026-10-13T13:00:00.000Z');
-  const deferred = input(source.invoices, '2026-10-13'); assert.match(renderAutomaticNotice(automaticSelection(deferred), deferred.referenceDate), /vence el 2026-10-16/);
+  const deferred = input(source.invoices, '2026-10-13'); assert.match(renderAutomaticNotice(automaticSelection(deferred), deferred.referenceDate), /Factura DEMO-1 · emisión 2026-09-01 · vence 2026-10-16/);
 });
 test('notice beyond three days and pronto pago beyond calendar ten are not eligible', () => {
   assert.equal(automaticSelection(input([invoice({ issue_date: '2026-09-01', due_date: '2026-10-16' })], '2026-10-15')), null);
@@ -99,5 +100,5 @@ test('manual exclusion, invalid mobile and paid portfolio are blocked before sel
 test('partial payment uses persistent balance and timeline shows actual dates/content with all four stages', () => {
   const source = input([invoice({ issue_date: '2026-09-01', due_date: '2026-10-13', balance: '500.00' })]);
   const timeline = buildWhatsAppSequence(source); assert.equal(timeline.total_balance, '500.00'); assert.equal(timeline.steps.length, 4);
-  assert.equal(timeline.steps[1].date, '2026-10-08'); assert.match(timeline.steps[1].content, /saldo pendiente \$500/);
+  assert.equal(timeline.steps[1].date, '2026-10-08'); assert.match(timeline.steps[1].content, /Factura DEMO-1 · emisión 2026-09-01 · vence 2026-10-13/); assert.doesNotMatch(timeline.steps[1].content, /\$500/);
 });

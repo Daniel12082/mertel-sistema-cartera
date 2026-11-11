@@ -82,12 +82,10 @@ export function evaluatePromptPayment({ referenceDate, invoice, policy, products
   if (invoice.deleted_at != null || invoice.active === false || (invoice.balance != null && moneyCents(invoice.balance) === 0n)) {
     eligibility = "not_eligible"; eligibilityReason = "Factura sin saldo pendiente o inactiva.";
   }
-  let preview = null;
-  if (eligibility === "eligible" && invoice.base_value != null) preview = calculatePromptPaymentDiscount(invoice.base_value);
   return {
     reference_date: dateFromDay(reference), percentage: policy.percentage, base_calculation: policy.base_calculation, base_value: invoice.base_value ?? null,
     window: { ...window, days: policy.days, reference_basis: "issue_date", status, reason, elapsed_days: elapsed, start_date: startDate, end_date: endDate },
     eligibility: { status: eligibility, reason: eligibilityReason }, product_eligibility: productEligibility,
-    discount: { amount: null, preview_amount: preview?.amount ?? null, preview, status: "not_applied", reason: "La clasificación no aplica descuentos ni modifica el saldo." },
+    discount: { amount: null, preview_amount: null, preview: null, status: "not_calculated", reason: "La clasificación solo recuerda la vigencia; no calcula ni aplica descuentos." },
   };
 }

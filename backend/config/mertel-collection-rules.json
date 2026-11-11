@@ -14,6 +14,6 @@
     "rounding": {"method": "half_up", "currency": "COP", "decimal_places": 0},
     "exclusions": {"promo_18": true, "car": ["Alternadores", "Arranques", "Motoventiladores"], "motorcycle": ["Set piñón", "Kit piñón-cadenas"]}
   },
-  "conditional_discount": {"active": true, "percentage": "10", "min_days": 60, "max_days": 70, "day_type": "calendar", "include_day_seventy": true, "base_calculation": null},
+  "conditional_discount": {"active": true, "percentage": "10", "min_days": 0, "max_days": 60, "day_type": "calendar", "include_day_sixty": true, "base_calculation": null},
   "non_overdue_pending": {"representation": "operational_group", "label": "Facturas no vencidas"}
 }

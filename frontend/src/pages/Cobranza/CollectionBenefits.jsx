@@ -1,4 +1,4 @@
-import { formatCurrency, formatDate } from "../../utils/format";
+import { formatDate } from "../../utils/format";
 
 const labels = { eligible: "Elegible", not_eligible: "No elegible", manual_review: "Revisión manual", unknown: "Desconocido", pending_configuration: "Configuración pendiente", pending_product_data: "Datos de productos pendientes" };
 
@@ -13,10 +13,8 @@ export default function CollectionBenefits({ row }) {
       <p>{prompt.window?.reason}</p>
       {prompt.window?.end_date && <p>Último día: {formatDate(prompt.window.end_date)} (incluido).</p>}
       <p>{prompt.eligibility?.reason}</p>
-      <p>{prompt.percentage}% sobre base antes de IVA.</p>
-      <p>Base: {prompt.base_value == null ? "No informada" : formatCurrency(prompt.base_value)}</p>
+      <p>Recordatorio del {prompt.percentage}% sujeto a validación comercial. No se calcula base ni valor descontado.</p>
       {prompt.product_eligibility?.exclusions?.length > 0 && <p>Exclusiones: {prompt.product_eligibility.exclusions.join(", ")}</p>}
-      {prompt.discount?.preview_amount != null && <p>Descuento estimado en pesos enteros: {formatCurrency(prompt.discount.preview_amount)}. Elegible; pendiente de aplicación.</p>}
       <p>{prompt.discount?.reason}</p>
     </details>}
     {conditional && <details><summary>Ver beneficio condicionado</summary>

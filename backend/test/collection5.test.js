@@ -18,7 +18,8 @@ for (const day of [0, 1, 9, 10, 11]) test(`Pronto Pago elapsed day ${day} respec
   assert.equal(result.eligibility.status, day <= 10 ? "eligible" : "not_eligible");
   assert.equal(result.window.end_date, "2026-10-15");
   assert.equal(result.discount.amount, null);
-  assert.equal(result.discount.preview_amount, day <= 10 ? "31" : null);
+  assert.equal(result.discount.preview_amount, null);
+  assert.equal(result.discount.status, "not_calculated");
 });
 test("Pronto Pago includes weekends and crosses month/year without timezone shifts", () => {
   for (const [issue, end] of [["2026-10-25", "2026-11-04"], ["2026-12-25", "2027-01-04"], ["2028-02-20", "2028-03-01"]]) {
@@ -50,9 +51,9 @@ test("unknown/incomplete/mixed products require manual review and never invent a
   assert.equal(prompt("2026-10-15", {}, { complete: true, items: [{ description: "Producto revisado", assessment: "eligible" }] }).eligibility.status, "eligible");
 });
 
-for (const day of [59, 60, 69, 70, 71]) test(`conditioned 10% day ${day} evaluates 60–70 inclusive without applying money`, () => {
+for (const day of [0, 59, 60, 61]) test(`conditioned 10% day ${day} evaluates through day 60 without applying money`, () => {
   const result = evaluateConditionalDiscount({ referenceDate: after("2026-10-05", day), invoice: invoice(), policy: policy.conditionalDiscount });
-  assert.equal(result.eligibility.status, day >= 60 && day <= 70 ? "eligible" : "not_eligible"); assert.equal(result.discount.amount, null);
+  assert.equal(result.eligibility.status, day >= 0 && day <= 60 ? "eligible" : "not_eligible"); assert.equal(result.discount.amount, null);
 });
 test("independent benefits can coexist as separate dated facts without an invented 13%", () => {
   const early = prompt("2026-10-15");

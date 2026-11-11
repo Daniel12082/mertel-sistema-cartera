@@ -16,7 +16,7 @@ describe('MERTEL automation authority on an isolated MySQL schema', { skip: !(pr
   let db, pool, originalFinances;
   const now = new Date('2026-10-08T15:00:00Z');
   const ruleData = MERTEL_CONTACTS.map((step, index) => ({ stage: step.stage, mode: 'AUTOMATICO', enabled: true, template_id: String(index + 1), weekdays: [1,2,3,4,5,6], start_time: '08:00', end_time: '18:00', daily_limit: 100, interval_hours: 1 }));
-  const defaults = { provider: 'MOCK', connection_status: 'CONNECTED', automations_enabled: true, global_daily_limit: 100, customer_daily_limit: 10, rules: ruleData, excluded_customers: {} };
+  const defaults = { provider: 'MOCK', connection_status: 'CONNECTED', automations_enabled: true, global_daily_limit: 100, customer_daily_limit: 10, collection_contact_phone: '+573001234567', rules: ruleData, excluded_customers: {} };
   before(async () => {
     db = await mysql.createConnection({ host: process.env.DB_HOST, port: Number(process.env.DB_PORT), user: process.env.DB_USER, password: process.env.DB_PASSWORD, multipleStatements: true });
     await db.query(`CREATE DATABASE \`${schema}\``); await db.query(`USE \`${schema}\``);
@@ -81,8 +81,8 @@ describe('MERTEL automation authority on an isolated MySQL schema', { skip: !(pr
     assert.equal((await dispatch(queued.id, new Date('2026-10-12T15:00:00Z'))).scheduled, true);
     await db.query('UPDATE invoices SET balance=900 WHERE id=1'); await freeze();
     const sent = (await dispatch(queued.id, tuesday)).message;
-    assert.equal(sent.status, 'SENT'); assert.match(sent.content, /valor \$1\.190 · saldo pendiente \$900/);
-    assert.match(sent.content, /vence el 2026-10-16/); assert.equal(sent.attempts, 1);
+    assert.equal(sent.status, 'SENT'); assert.match(sent.content, /Factura AUTO-DEMO-1 · emisión 2026-09-01 · vence 2026-10-16/);
+    assert.doesNotMatch(sent.content, /\$900|\$1\.190|Total/); assert.equal(sent.attempts, 1);
   });
   test('past expiry is cancelled, does not dispatch and never regenerates', async () => {
     await invoices([{ due: '2026-10-16' }]); const queued = (await enqueue(new Date('2026-10-11T15:00:00Z'))).message;
@@ -109,16 +109,18 @@ describe('MERTEL automation authority on an isolated MySQL schema', { skip: !(pr
     const queued = (await enqueue()).message; await db.query('UPDATE invoices SET balance=0'); await freeze();
     assert.equal((await dispatch(queued.id)).message.status, 'CANCELLED'); await assert.rejects(enqueue(), /No hay un aviso/);
   });
-  test('pronto pago base, PROMO exclusion and conditioned benefit are constructed authoritatively', async () => {
+  test('pronto pago and conditioned benefit are reminders only, with no calculated values', async () => {
     await invoices([{ issue: '2026-09-29', due: '2026-11-03', notes: 'DSCTO = CONDICIONADO' }, { issue: '2026-09-29', due: '2026-11-03', promo: '18.00' }]);
     const queued = (await enqueue()).message; assert.equal(queued.stage, 'prompt_payment');
-    assert.match(queued.content, /Total cartera \$2\.380/); assert.match(queued.content, /3% de descuento sobre esa base \$30/); assert.match(queued.content, /\$2\.350/); assert.match(queued.content, /sin descuento/); assert.match(queued.content, /solamente si paga a tiempo/);
+    assert.match(queued.content, /Factura AUTO-DEMO-1/); assert.match(queued.content, /Observación: DSCTO = CONDICIONADO/);
+    assert.match(queued.content, /3% por pronto pago puede aplicar hasta el 2026-10-09/); assert.match(queued.content, /10% condicionado puede aplicar hasta el 2026-11-28/);
+    assert.doesNotMatch(queued.content, /Total cartera|\$2\.380|\$2\.350/);
     assert.equal((await dispatch(queued.id)).message.status, 'SENT');
   });
-  test('all PROMO, missing base and excessive discount fail before reserving budget', async () => {
+  test('all PROMO is excluded but incomplete bases and low balances do not trigger a discount calculation', async () => {
     await invoices([{ issue: '2026-09-29', due: '2026-11-03', promo: '18.00' }]); await assert.rejects(enqueue(), /No hay un aviso/);
-    await invoices([{ issue: '2026-09-29', due: '2026-11-03', balance: '20.00' }]); await assert.rejects(enqueue(), /supera el valor/);
-    assert.equal((await db.query('SELECT COUNT(*) count FROM messages'))[0][0].count, 0);
+    await invoices([{ issue: '2026-09-29', due: '2026-11-03', balance: '20.00' }]);
+    assert.equal((await enqueue()).message.status, 'PENDING');
   });
   test('runner processes enabled context and timeline records actual sent dates and reasons', async () => {
     const runner = startWhatsAppAutomationRunner({ dbPool: pool, clock: () => now, report: (...args) => assert.fail(JSON.stringify(args)) });
@@ -162,14 +164,16 @@ describe('MERTEL automation authority on an isolated MySQL schema', { skip: !(pr
     assert.equal((await service.processWhatsAppAutomations({ scope, now }, pool)).sent, 0);
     await service.setWhatsAppCustomerConsent({ scope, customerId: '1', body: { authorized: true, source: 'Consentimiento de prueba' } }, pool);
     const preview = await service.sendMetaInvoiceNotice({ scope, now, body: { customer_id: '1', invoice_ids: ['1'] } }, pool);
-    assert.match(preview.content, /AUTO-DEMO-1: \$1\.190/);
+    assert.match(preview.content, /Factura AUTO-DEMO-1 · emisión 2026-09-01 · vence 2026-10-13/);
     assert.equal(requests.length, 0);
     await Promise.all([service.processWhatsAppAutomations({ scope, now }, pool), service.processWhatsAppAutomations({ scope, now }, pool)]);
     assert.equal(requests.length, 1);
     assert.equal(requests[0].to, '573001234567');
     assert.equal(requests[0].template.name, MERTEL_INVOICE_TEMPLATE);
-    assert.deepEqual(requests[0].template.components[0].parameters.map(row => row.text),
-      ['Cliente automatización DEMO', 'AUTO-DEMO-1: $1.190 (vence 2026-10-13)', '$1.190']);
+    const parameters = requests[0].template.components[0].parameters.map(row => row.text);
+    assert.equal(parameters[0], 'Cliente automatización DEMO');
+    assert.match(parameters[1], /Factura AUTO-DEMO-1 · emisión 2026-09-01 · vence 2026-10-13/);
+    assert.equal(parameters.length, 2);
     assert.equal((await db.query("SELECT status FROM messages WHERE provider_message_id='wamid.notice1'"))[0][0].status, 'DELIVERED');
     const sendManual = () => service.sendMetaInvoiceNotice({ scope, now,
       body: { customer_id: '1', invoice_ids: ['1'], preview_token: preview.preview_token } }, pool);

@@ -10,7 +10,7 @@ export function evaluateConditionalDiscount({ referenceDate, invoice, policy }) 
       const issue = dateDay(invoice.issue_date); const elapsed = reference - issue;
       startDate = dateFromDay(issue + policy.min_days); endDate = dateFromDay(issue + policy.max_days);
       status = elapsed >= policy.min_days && elapsed <= policy.max_days ? "eligible" : "not_eligible";
-      reason = status === "eligible" ? "Dentro de la ventana de 60 a 70 días calendario desde fecha de factura, inclusive." : "Fuera de la ventana de 60 a 70 días calendario desde fecha de factura.";
+      reason = status === "eligible" ? "Dentro de la vigencia máxima de 60 días calendario desde fecha de factura." : "Fuera de la vigencia máxima de 60 días calendario desde fecha de factura.";
     }
   }
   if (invoice.deleted_at != null || invoice.active === false || (invoice.balance != null && Number(invoice.balance) <= 0)) {
@@ -18,7 +18,7 @@ export function evaluateConditionalDiscount({ referenceDate, invoice, policy }) 
   }
   return {
     reference_date: dateFromDay(reference), percentage: policy?.percentage ?? "10", eligibility: { status, reason },
-    window: { reference_basis: "issue_date", day_type: "calendar", min_days: 60, max_days: 70, include_day_seventy: true, start_date: startDate, end_date: endDate },
+    window: { reference_basis: "issue_date", day_type: "calendar", min_days: 0, max_days: 60, include_day_sixty: true, start_date: startDate, end_date: endDate },
     discount: { amount: null, status: "not_applied", reason: "Base y aplicación financiera del 10% pendientes de especificación; no modifica el saldo." },
   };
 }
@@ -27,5 +27,5 @@ export function evaluateConditionalDiscount({ referenceDate, invoice, policy }) 
 export function representCollectionBenefits(promptPayment, conditionalDiscount) {
   return { prompt_payment_discount: promptPayment, conditional_discount: conditionalDiscount,
     combination: { status: "pending_financial_specification", combined_percentage: null, combined_amount: null,
-      reason: "Beneficios independientes. Falta precisar cómo coexistirían las ventanas 0–10 y 60–70 días en una operación de pago." } };
+      reason: "Beneficios independientes. No se calculan ni combinan montos; solo se recuerda la vigencia de 0–10 y 0–60 días." } };
 }

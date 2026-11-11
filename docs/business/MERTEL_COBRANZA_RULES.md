@@ -35,12 +35,12 @@ Cada cliente tiene una única tarjeta en el pipeline principal. La factura más 
 |---|---|---|
 | Finalidad | Motivar pago temprano antes del ciclo normal de cobro | No sustituye la gestión de cartera |
 | Porcentaje Pronto Pago | 3% | No usar otro porcentaje por inferencia |
-| Base | Valor antes de IVA | No calcular sobre document_value con IVA |
+| Base | Pendiente de validación comercial por retenciones, devoluciones y cruces | No calcular ni mostrar valores de descuento |
 | Ventana | 10 días calendario desde fecha de factura | Días 0–10 incluidos: 2026-10-05 → 2026-10-15 |
-| Descuento condicionado | Beneficio independiente 10%, días 60–70 calendario desde factura, inclusive | Base y aplicación matemática/financiera pendientes; nunca asumir 13% |
+| Descuento condicionado | Recordatorio independiente del 10%, hasta 60 días calendario desde factura | Base y aplicación matemática/financiera pendientes; nunca asumir 13% |
 | promo_18 | Identificación explícita de exclusión de Pronto Pago | Campo real positivo leído por consulta; ausencia/0 no prueba elegibilidad |
 
-La ventana utiliza issue_date. El cálculo confirmado es 3% de base_value antes de IVA, mediante enteros exactos. Redondeo comercial confirmado por el usuario: al peso COP entero, half-up (1,4 → 1; 1,5 → 2), incluso si la base contiene centavos. No usar toFixed como regla comercial. El resultado calculado es preview_amount; discount.amount conserva null/not_applied. El tratamiento contable continúa pendiente.
+La ventana utiliza issue_date. El sistema solo recuerda el 3% hasta el día calendario 10 y el 10% condicionado hasta el día 60 cuando el dato real de la factura lo indique. No calcula bases, valores de descuento, totales a pagar ni modifica saldos; la aplicación financiera continúa pendiente.
 
 Exclusiones oficiales: PROMO 18; alternadores, arranques y motoventiladores para carros; set piñón y kit piñón-cadenas para motos. Una factura mixta exige **revisión manual** sin cálculo parcial. La fuente de líneas/SKU/productos y la responsabilidad de revisión siguen pendientes. No crear catálogo ni conceder elegibilidad por no encontrar coincidencias.
 
@@ -48,7 +48,7 @@ La consulta real solo dispone de promo_18 y valores agregados. Productos faltant
 
 Faltan 5 días usa exactamente cinco días calendario antes de due_date. La configuración oficial version 2 conserva la jerarquía En mora > Vence hoy > Faltan 5 días > Pronto Pago. Una vencida más antigua determina la factura principal, con ID técnico en empate, según 4.8. La etapa temporal Pronto Pago puede requerir revisión de productos: elegible para cobranza no concede el beneficio; una exclusión confirmada impide esa etapa.
 
-El 10% tiene elegibilidad temporal separada de su aplicación matemática. La combinación con el 3% exige pago dentro de diez días según negocio, pero las ventanas 0–10 y 60–70 no coinciden para una misma fecha. Se preservan beneficios independientes y fechas de evaluación; no se inventa una elegibilidad simultánea automática, porcentaje combinado ni fórmula. Pendiente precisar el hecho comercial que permite coexistencia.
+El 10% tiene vigencia separada de su aplicación matemática. Se preservan recordatorios independientes y fechas reales; no se inventa una elegibilidad simultánea automática, porcentaje combinado ni fórmula.
 
 Facturas no vencidas es una agrupación operativa aditiva de facturas con saldo positivo, due_date futura y sin etapa activa. No agrega una etapa al catálogo. Incluye las facturas de clientes ya presentes en pipeline y permite detalle de los clientes que solo tienen esas facturas; una tarjeta de pipeline por cliente. Las facturas sin vencimiento permanecen no_eligible en detalle, sin inventar fecha ni llamarlas no vencidas.
 
@@ -74,7 +74,7 @@ No se aprobó que una promesa detenga la gestión manual, altere saldos ni elimi
 
 ## Mensajería — fase futura
 
-Confirmado: máximo un mensaje por etapa, máximo uno por día, solamente días laborales/hábiles. Una gestión manual del cobrador no detiene las automatizaciones.
+Confirmado: máximo un mensaje por etapa, máximo uno por día, solamente días laborales/hábiles. El mensaje lista facturas y observaciones reales, no calcula descuentos ni totales, e incluye el número configurado de cobranza para dudas, devoluciones o negociación. Una gestión manual del cobrador no detiene las automatizaciones.
 
 Pendiente: ambigüedad diaria/semanal, calendario, horarios y unidad de aplicación de límites (cliente/factura/episodio/canal); no resolver por inferencia. También falta precisar qué sucede en la fecha prometida y cómo contar intentos, reintentos y mensajes manuales. No existe autorización para enviar mensajes ahora.
 

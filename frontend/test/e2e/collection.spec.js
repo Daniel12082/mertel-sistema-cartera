@@ -107,7 +107,7 @@ for (const [name, width, height] of [["desktop", 1440, 900], ["mobile", 390, 844
     await region.getByRole("button", { name: "Ver factura no vencida NV-FIXTURE" }).click();
     let dialog = page.getByRole("dialog"); await dialog.getByText("Ver beneficio condicionado", { exact: true }).click();
     await expect(dialog.getByText("Estado: Elegible", { exact: true })).toBeVisible();
-    await expect(dialog.getByText(/Ventana: 60–70 días calendario/)).toBeVisible();
+    await expect(dialog.getByText(/Ventana: 0–60 días calendario/)).toBeVisible();
     await expect(dialog.getByText(/Base y aplicación financiera del 10% pendientes/)).toBeVisible();
     await page.keyboard.press("Escape");
     await page.getByRole("button", { name: "Ver detalle de Cliente Águila" }).click();

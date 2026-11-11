@@ -50,7 +50,7 @@ export default function WhatsAppAutomationPreview({ settings, templates, busy, a
     </form>
     <h3>Fechas de los avisos</h3>
     <ul>{MERTEL_CONTACTS.map(step => <li key={step.stage}><strong>{step.label}</strong> · {step.description}</li>)}</ul>
-    <p>Plantilla: <code>{MERTEL_INVOICE_TEMPLATE}</code>. Los clientes deben tener autorización registrada en Timeline.</p>
+    <p>Plantilla: <code>{MERTEL_INVOICE_TEMPLATE}</code>. Los avisos no calculan descuentos: solo recuerdan el 3% hasta 10 días y el 10% condicionado hasta 60 días cuando el dato real aplique. Los clientes deben tener autorización registrada en Timeline.</p>
     <p>{settings.automations_enabled ? 'Envíos automáticos activos.' : 'Envíos automáticos desactivados.'}</p>
     <button disabled={busy || settings.connection_status !== 'CONNECTED' || !settings.real_sending_enabled || !settings.rules.some(rule => rule.enabled && rule.mode === 'AUTOMATICO')}
       onClick={() => act(() => whatsappRequest('/settings', { method: 'patch', body: { automations_enabled: !settings.automations_enabled } }),
@@ -64,7 +64,7 @@ export default function WhatsAppAutomationPreview({ settings, templates, busy, a
   </article>;
   return <>
     <article className="wa-card"><span className="wa-eyebrow">AUTOMATIZACIÓN MERTEL</span><h2>Automatización de mensajes</h2><p>Configuración automática</p>
-      <p className="wa-banner">Mora → Vence hoy → Recordatorio → Pronto pago. Un aviso enviado no se repite. Sin domingos ni festivos; aplazamiento máximo de 3 días y pronto pago hasta el día calendario 10.</p>
+      <p className="wa-banner">Mora → Vence hoy → Recordatorio → Pronto pago. Un aviso enviado no se repite. Sin domingos ni festivos; aplazamiento máximo de 3 días. Los descuentos solo se recuerdan, nunca se calculan.</p>
       <p>Estado: {settings.automations_enabled ? 'Automatización activa' : settings.rules.some(rule => rule.mode === 'AUTOMATICO') ? 'Automatización configurada' : 'Automatización desactivada'}</p>
       <p>Proveedor MOCK: esta configuración no envía WhatsApp real.</p>
       <form onSubmit={event => { event.preventDefault(); void act(() => whatsappRequest('/settings', { method: 'patch', body: { global_daily_limit: Number(daily), customer_daily_limit: settings.customer_daily_limit || 1 } }), 'Límite diario guardado.'); }}>

@@ -1,8 +1,9 @@
 import { renderMessageTemplate } from '../utils/messageTemplate.js';
-import {calculatePromptPaymentDiscount,dateDay,dateFromDay} from './promptPayment.service.js';
+import {dateDay,dateFromDay} from './promptPayment.service.js';
 import {evaluateCollectionCase} from './collectionEngine.service.js';
 import {moneyCents} from './collectionMoney.js';
 import {collectionStageCatalog} from './collectionPolicy.js';
+import { invoiceNoticeParts } from './mertelInvoiceWhatsApp.js';
 
 export const MERTEL_CONTACTS=Object.freeze([
   {stage:'prompt_payment',label:'Pronto pago',template_name:'mertel_pronto_pago',description:'Día hábil 7 desde emisión; límite día calendario 10'},
@@ -113,7 +114,6 @@ export function automaticNotices(input) {
     let reason = notice.reason;
     if (!catalog.some(row => row.key === notice.stage) || !evidence.classifiedInvoices.some(row => row.eligible && row.stage === notice.stage)) reason ||= 'La etapa no está habilitada o no aplica en el motor de cobranza.';
     if (notice.stage === 'prompt_payment' && current.pending.every(promo18)) reason = 'Toda la cartera tiene PROMO 18 = SI; no aplica pronto pago.';
-    if (notice.stage === 'prompt_payment' && current.pending.some(row => !promo18(row) && row.base_value == null)) reason = 'Falta base antes de IVA; no se inventa el descuento.';
     if (settings.excluded_customers?.[String(customer.id)]) reason = 'Cliente excluido de mensajes automáticos.';
     if (!validMobile(customer.phone)) reason = 'Cliente sin celular válido; no consume cupo.';
     if (input.contactAuthorized === false) reason = 'El cliente no tiene autorización registrada para avisos por WhatsApp.';
@@ -136,39 +136,17 @@ export function automaticSelection(input) {
 
 export function automaticContent(notice, referenceDate) {
   const rows = notice.matched;
-  const listing = rows.map(row => {
-    const value = moneyCents(row.document_value), balance = moneyCents(row.balance);
-    let text = `${row.invoice_number}: ${value === balance ? cop(row.balance) : `valor ${cop(row.document_value)} · saldo pendiente ${cop(row.balance)}`}`;
-    if (notice.stage === 'prompt_payment' && promo18(row)) text += ' · sin descuento (PROMO 18)';
-    if (notice.stage === 'overdue' && conditioned(row)) text += ` · perdió el descuento condicionado · ${dateDay(row.due_date) - dateDay(row.issue_date)} días de crédito · ${dateDay(referenceDate) - dateDay(row.due_date)} días vencida`;
-    return text;
-  }).join('\n');
-  const balance = amount(rows.reduce((sum, row) => sum + moneyCents(row.balance), 0n));
+  const parts = invoiceNoticeParts(rows, referenceDate);
   const values = { cliente_nombre: notice.current.evaluated.customer.name, nombre_cliente: notice.current.evaluated.customer.name,
-    nit: notice.current.evaluated.customer.nit, empresa: 'MERTEL IMPORTACIONES S.A.S.', cartera_detalle: listing,
-    cantidad_facturas: rows.length, saldo: cop(balance), saldo_pendiente: cop(balance), total_cartera: cop(notice.total),
-    saldo_en_mora: cop(balance), fecha_vencimiento: notice.invoice.due_date, numero_factura: notice.invoice.invoice_number,
-    aviso_condicionado: rows.some(conditioned) && notice.stage !== 'overdue' ? 'Conserva el beneficio del descuento condicionado solamente si paga a tiempo.' : '',
+    nit: notice.current.evaluated.customer.nit, empresa: 'MERTEL IMPORTACIONES S.A.S.', cartera_detalle: parts.documents,
+    cantidad_facturas: rows.length, fecha_vencimiento: notice.invoice.due_date, numero_factura: notice.invoice.invoice_number,
+    aviso_condicionado: parts.reminders,
     cupo_credito: notice.current.evaluated.customer.credit_limit == null ? null : cop(notice.current.evaluated.customer.credit_limit),
     cupo_disponible: notice.current.evaluated.customer.available_credit == null ? null : cop(notice.current.evaluated.customer.available_credit),
   };
-  let lead;
-  if (notice.stage === 'prompt_payment') {
-    const base = rows.filter(row => !promo18(row)).reduce((sum, row) => sum + moneyCents(row.base_value), 0n);
-    const discount = moneyCents(calculatePromptPaymentDiscount(amount(base)).amount);
-    const collectible = rows.filter(row => !promo18(row)).reduce((sum, row) => sum + moneyCents(row.balance), 0n);
-    if (discount > collectible || discount > moneyCents(notice.total)) throw new Error('El descuento sobre base antes de IVA supera el valor que realmente se cobra.');
-    values.base_antes_iva = cop(amount(base)); values.descuento_pronto_pago = cop(amount(discount)); values.total_pronto_pago = cop(amount(moneyCents(notice.total) - discount));
-    lead = `Total cartera ${values.total_cartera}\nBase antes de IVA con derecho a descuento ${values.base_antes_iva}\n3% de descuento sobre esa base ${values.descuento_pronto_pago}\nTotal a pagar antes del día calendario 10 (${notice.expires_on}) ${values.total_pronto_pago}`;
-  } else if (notice.stage === 'overdue') lead = `Total en mora ${cop(balance)}. Le pedimos ponerse al día para no afectar su cupo de crédito.`;
-  else {
-    const when = referenceDate === notice.invoice.due_date ? 'hoy' : notice.invoice.due_date < referenceDate ? `el ${notice.invoice.due_date} (ya venció)` : `el ${notice.invoice.due_date}`;
-    lead = rows.length === 1 ? `Su factura ${notice.invoice.due_date < referenceDate ? 'venció' : 'vence'} ${when}.` : `Sus ${rows.length} facturas ${notice.invoice.due_date < referenceDate ? 'vencieron' : 'vencen'} ${when}.`;
-  }
-  values.resumen_aviso = lead;
-  // Empty conditional notice is intentionally valid; do not invent a missing variable.
-  const content = `${lead}\n${listing}${values.aviso_condicionado ? '\n' + values.aviso_condicionado : ''}`;
-  return { values, content, balance };
+  values.resumen_aviso = 'Información de cartera sin valores ni descuentos calculados.';
+  const content = `${values.resumen_aviso}\n${parts.documents}\n${parts.reminders}`;
+  return { values, content, balance: amount(rows.reduce((sum, row) => sum + moneyCents(row.balance), 0n)) };
 }
 
 export function buildWhatsAppSequence(input, render = renderAutomaticNotice) {
@@ -232,6 +210,6 @@ export function renderAutomaticNotice(notice, day) {
   const parts = [rendered.content];
   for (const required of [computed.values.resumen_aviso, computed.values.cartera_detalle, computed.values.aviso_condicionado]) if (required && !rendered.content.includes(required)) parts.push(required);
   const content = parts.join('\n');
-  if ([...content.matchAll(/\b(\d+(?:[.,]\d+)?)\s*%/g)].some(match => notice.stage !== 'prompt_payment' || Number(match[1].replace(',', '.')) !== 3)) throw new Error('La plantilla no puede inventar porcentajes de descuento condicionado.');
+  if ([...content.matchAll(/\b(\d+(?:[.,]\d+)?)\s*%/g)].some(match => ![3, 10].includes(Number(match[1].replace(',', '.'))))) throw new Error('La plantilla no puede inventar porcentajes distintos a los recordatorios aprobados.');
   return content;
 }

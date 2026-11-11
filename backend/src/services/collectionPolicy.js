@@ -21,7 +21,7 @@ export function resolveCollectionPolicy(configuration) {
         (prompt.base_calculation !== undefined && prompt.base_calculation !== PROMPT_PAYMENT_POLICY.base_calculation)) throw new TypeError("Pronto Pago MERTEL exige 3% sobre base_value y diez días desde emisión");
   }
   const conditionalDiscount = legacy ? null : configuration.conditional_discount;
-  if (conditionalDiscount && (typeof conditionalDiscount.active !== "boolean" || String(conditionalDiscount.percentage) !== "10" || conditionalDiscount.min_days !== 60 || conditionalDiscount.max_days !== 70 || conditionalDiscount.day_type !== "calendar" || conditionalDiscount.include_day_seventy !== true)) throw new TypeError("El beneficio condicionado exige 10% y ventana 60–70 calendario inclusiva");
+  if (conditionalDiscount && (typeof conditionalDiscount.active !== "boolean" || String(conditionalDiscount.percentage) !== "10" || conditionalDiscount.min_days !== 0 || conditionalDiscount.max_days !== 60 || conditionalDiscount.day_type !== "calendar" || conditionalDiscount.include_day_sixty !== true)) throw new TypeError("El beneficio condicionado exige 10% y vigencia máxima de 60 días calendario desde la factura");
   return { rules, stageOrder, promptPayment: { ...PROMPT_PAYMENT_POLICY, window }, conditionalDiscount };
 }
 

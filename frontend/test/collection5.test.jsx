@@ -10,14 +10,14 @@ vi.mock("../src/services/collection.service", () => ({ getCollection: vi.fn() })
 vi.mock("../src/services/collectionOperations.service", () => ({ getCollectionActions: vi.fn().mockResolvedValue([]), getPaymentPromises: vi.fn().mockResolvedValue([]) }));
 beforeEach(() => vi.clearAllMocks());
 
-const prompt = { percentage: "3", base_value: "50.00", window: { reason: "Diez días calendario desde fecha de factura.", end_date: "2026-10-15" }, eligibility: { status: "eligible", reason: "Evaluación positiva recibida." }, discount: { amount: null, preview_amount: "2", reason: "Beneficio pendiente de aplicación." } };
-const conditional = { percentage: "10", window: { min_days: 60, max_days: 70 }, eligibility: { status: "eligible", reason: "Dentro de la ventana confirmada." }, discount: { amount: null, reason: "Base y fórmula financiera pendientes." } };
+const prompt = { percentage: "3", base_value: "50.00", window: { reason: "Diez días calendario desde fecha de factura.", end_date: "2026-10-15" }, eligibility: { status: "eligible", reason: "Evaluación positiva recibida." }, discount: { amount: null, preview_amount: null, reason: "Beneficio pendiente de aplicación." } };
+const conditional = { percentage: "10", window: { min_days: 0, max_days: 60 }, eligibility: { status: "eligible", reason: "Dentro de la vigencia confirmada." }, discount: { amount: null, reason: "Sin cálculo financiero." } };
 
-it("shows backend whole-peso preview as eligibility, never applied or a 13% combination", () => {
+it("shows reminders without calculating a discount or combining percentages", () => {
   render(<CollectionBenefits row={{ prompt_payment: prompt, conditional_discount: conditional }} />);
   fireEvent.click(screen.getByText("Ver evaluación")); fireEvent.click(screen.getByText("Ver beneficio condicionado"));
-  expect(screen.getByText(/Descuento estimado en pesos enteros/)).toHaveTextContent("$ 2");
-  expect(screen.getByText(/60–70 días calendario/)).toBeVisible();
+  expect(screen.getByText(/No se calcula base ni valor descontado/)).toBeVisible();
+  expect(screen.getByText(/0–60 días calendario/)).toBeVisible();
   expect(screen.getAllByText("Estado: Elegible")).toHaveLength(2);
   expect(screen.queryByText(/descuento aplicado|13%/i)).not.toBeInTheDocument();
 });

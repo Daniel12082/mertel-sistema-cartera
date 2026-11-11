@@ -124,7 +124,7 @@ export function buildCollectionResult({ company, referenceDate, customers, invoi
     priority_basis: "stage_order_ordinal",
     configuration_warnings: [
       ...(promptPending ? ["Pronto Pago pendiente: definir tipo de día, calendario si corresponde y límites de diez días desde emisión. No se asigna esa etapa mientras falte configuración."] : []),
-      ...(policy.conditionalDiscount?.active ? ["Beneficios independientes: combinación financiera y coexistencia de ventanas 0–10 / 60–70 días pendientes de precisión. No se aplica descuento al saldo."] : []),
+      ...(policy.conditionalDiscount?.active ? ["Beneficios independientes: se recuerdan las vigencias 0–10 / 0–60 días. No se calcula ni aplica descuento al saldo."] : []),
     ],
     summary: {
       total_customers: eligibleCustomers.length,

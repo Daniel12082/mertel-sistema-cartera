@@ -74,6 +74,15 @@ function requireAutomationProvider(settings) {
 function hasWhatsAppConsent(settings, customer) {
   return validMobile(customer.phone) && settings.authorized_recipients?.[String(customer.id)]?.recipient === normalizePhone(customer.phone);
 }
+function collectionContactPhone(settings) {
+  try { return settings.collection_contact_phone ? normalizePhone(settings.collection_contact_phone) : null; }
+  catch { return null; }
+}
+function requireCollectionContactPhone(settings) {
+  const phone = collectionContactPhone(settings);
+  if (!phone) throw operationError(409, 'Configura el número de contacto de cobranza antes de activar o enviar avisos reales.');
+  return phone;
+}
 async function hasSharedWhatsAppNumber(db, scope, customer) {
   const phone = normalizePhone(customer.phone);
   const [others] = await db.query("SELECT phone FROM customers WHERE company_id=? AND id<>? AND status='active' AND deleted_at IS NULL AND phone IS NOT NULL", [scope.companyId, customer.id]);
@@ -137,7 +146,7 @@ function requireContactTemplate(rule,template,provider){
   if(rule.mode==='AUTOMATICO'&&(!expected||template.name!==name))throw operationError(409,'Selecciona la plantilla MERTEL correspondiente a esta regla automática.');
 }
 export async function updateWhatsAppSettings({ scope, actorId, body }, dbPool = pool) {
-  const allowed = ['provider', 'number', 'phone_number_id', 'business_account_id', 'credentials', 'global_daily_limit', 'customer_daily_limit', 'automations_enabled'];
+  const allowed = ['provider', 'number', 'phone_number_id', 'business_account_id', 'collection_contact_phone', 'credentials', 'global_daily_limit', 'customer_daily_limit', 'automations_enabled'];
   if (!body || Array.isArray(body) || Object.keys(body).some(key => !allowed.includes(key))) throw operationError(400, 'Campos de configuración inválidos.');
   return transaction(scope, async (db, settings) => {
     let changedConnection = false;
@@ -151,6 +160,11 @@ export async function updateWhatsAppSettings({ scope, actorId, body }, dbPool = 
       if (key === 'number' && body[key]) { try { body[key] = normalizePhone(body[key]); } catch { throw operationError(400, 'Número inválido.'); } }
       if (settings[key] !== body[key]) changedConnection = true;
       settings[key] = body[key];
+    }
+    if (Object.hasOwn(body, 'collection_contact_phone')) {
+      if (typeof body.collection_contact_phone !== 'string' || !body.collection_contact_phone.trim()) throw operationError(400, 'Número de contacto de cobranza inválido.');
+      try { settings.collection_contact_phone = normalizePhone(body.collection_contact_phone); }
+      catch { throw operationError(400, 'Número de contacto de cobranza inválido.'); }
     }
     if (Object.hasOwn(body, 'credentials')) {
       const credentials = body.credentials;
@@ -176,7 +190,7 @@ export async function updateWhatsAppSettings({ scope, actorId, body }, dbPool = 
           validateTemplateContent(template.content);
           requireContactTemplate(rule,template,provider);
         }
-        if (provider === 'WHATSAPP_CLOUD_API') await requireApprovedInvoiceTemplate();
+        if (provider === 'WHATSAPP_CLOUD_API') { requireCollectionContactPhone(settings); await requireApprovedInvoiceTemplate(); }
       }
       settings.automations_enabled = body.automations_enabled;
     }
@@ -236,6 +250,7 @@ export async function configureAutomaticSchedule({ scope, actorId, body }, dbPoo
   if (metaLimit !== null && dailyLimit > metaLimit) throw operationError(400, `El cupo de MERTEL debe ser de máximo ${metaLimit}, según el límite actual del portafolio Meta.`);
   return transaction(scope, async (db, settings) => {
     if (requireAutomationProvider(settings) !== 'WHATSAPP_CLOUD_API') throw operationError(409, 'Conecta el canal real de WhatsApp.');
+    requireCollectionContactPhone(settings);
     const stages = await stagesFor(db, scope);
     const [[template]] = await db.query(`SELECT CAST(id AS CHAR) id,content FROM message_templates WHERE company_id=? AND
       channel='whatsapp' AND name=? AND status='active' AND stage IS NULL ORDER BY id LIMIT 1`, [scope.companyId, MERTEL_INVOICE_TEMPLATE]);
@@ -445,7 +460,7 @@ export async function sendMetaInvoiceNotice({ scope, actorId, body, now = new Da
     if (await hasSharedWhatsAppNumber(db, scope, input.customer)) throw operationError(409, 'El teléfono está asociado a más de un cliente.');
     const invoices = input.invoices.filter(invoice => invoiceIds.includes(String(invoice.id)) && Number(invoice.balance) > 0);
     if (invoices.length !== invoiceIds.length) throw operationError(409, 'Una factura seleccionada ya no tiene saldo o no pertenece al cliente.');
-    const prepared = buildMertelInvoiceMessage(input.customer, invoices);
+    const prepared = buildMertelInvoiceMessage(input.customer, invoices, { referenceDate: day, contactPhone: requireCollectionContactPhone(settings) });
     const recipient = normalizePhone(input.customer.phone);
     const previewToken = createHash('sha256').update(JSON.stringify([String(scope.companyId), customerId, recipient, invoiceIds, prepared.content])).digest('hex');
     if (!body.preview_token) return { content: prepared.content, preview_token: previewToken };
@@ -810,7 +825,7 @@ async function enqueueAutomatic(db, scope, settings, customerId, now, metaLimit)
     : await realAutomaticSlot(db, scope, input, notice, now, { metaLimit });
   const context = { notice_date: notice.date, expires_on: notice.expires_on, invoice_ids: notice.invoice_ids, reason: notice.description,
     cancellation_reason: scheduled ? null : 'No hay horario o cupo disponible dentro del plazo máximo del aviso.' };
-  const content = provider === 'MOCK' ? renderAutomatic(notice, input.referenceDate) : realAutomaticMessage(notice, input.referenceDate).content;
+  const content = provider === 'MOCK' ? renderAutomatic(notice, input.referenceDate) : realAutomaticMessage(notice, input.referenceDate, settings).content;
   if (scheduled && provider === 'MOCK') {
     await oneAutomaticPerDay(db, scope, customerId, bogotaDate(scheduled));
     await enforceLimits(db, scope, settings, notice.rule, customerId, bogotaDate(scheduled));
@@ -848,7 +863,7 @@ async function dispatchAutomatic(db, scope, settings, message, now, fail, metaLi
   const scheduled = simulated ? automaticWindow(notice, input.rules, now, input.messages)
     : await realAutomaticSlot(db, scope, input, notice, now, { message, metaLimit });
   if (!scheduled) return cancel('No hay horario o cupo disponible dentro del plazo máximo.');
-  const prepared = simulated ? null : realAutomaticMessage(notice, day);
+  const prepared = simulated ? null : realAutomaticMessage(notice, day, settings);
   const content = prepared?.content ?? renderAutomatic(notice, day), recipient = normalizePhone(input.customer.phone);
   if (simulated) {
     await oneAutomaticPerDay(db, scope, message.customer_id, bogotaDate(scheduled), message.id);
@@ -872,9 +887,8 @@ async function dispatchAutomatic(db, scope, settings, message, now, fail, metaLi
   return { message: await messageById(db, scope, message.id), simulated: true };
 }
 
-function realAutomaticMessage(notice, day) {
-  const promptPayment = notice.stage === 'prompt_payment' ? { ...automaticContent(notice, day).values, expires_on: notice.expires_on } : null;
-  return buildMertelInvoiceMessage(notice.current.evaluated.customer, notice.matched, promptPayment);
+function realAutomaticMessage(notice, day, settings) {
+  return buildMertelInvoiceMessage(notice.current.evaluated.customer, notice.matched, { referenceDate: day, contactPhone: requireCollectionContactPhone(settings) });
 }
 
 async function sendAutomaticMeta({ scope, messageId, now, metaLimit, clock }, dbPool) {
@@ -895,7 +909,7 @@ export async function getCustomerWhatsAppSequence({ scope, customerId, filters =
   try { dateDay(day); } catch { throw operationError(400, 'Fecha de referencia inválida.'); }
   return transaction(scope, async (db, settings) => {
     const input = await automaticInput(db, scope, settings, customerId, day);
-    const result = buildWhatsAppSequence(input, input.realTemplateName ? (notice, date) => realAutomaticMessage(notice, date).content : undefined);
+    const result = buildWhatsAppSequence(input, input.realTemplateName ? (notice, date) => realAutomaticMessage(notice, date, settings).content : undefined);
     return input.realTemplateName ? { ...result, real_provider: true, contact_authorized: input.contactAuthorized } : result;
   }, dbPool);
 }

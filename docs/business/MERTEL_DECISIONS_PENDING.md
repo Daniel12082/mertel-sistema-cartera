@@ -42,7 +42,7 @@ Actualización 06/10/2026 — Fase 5.2: el editor permite activar/desactivar eta
 | D23 | ¿Qué significa promesa cumplida: importe exacto, parcial, varias facturas y pago recibido o asignado? | 5.0, 5.5 |
 | D24 | Ventana 0–10 incluida RESUELTA. Sigue pendiente qué hecho/fecha de acreditación de pago se utilizará para aplicar financieramente el beneficio | 5, pagos futuros |
 | D25 | Redondeo RESUELTO: al peso COP entero half-up. Pendiente registro contable y aplicación segura con pagos/allocations | 5, pagos futuros |
-| D26 | 10% y ventana 60–70 incluida RESUELTOS. Pendientes base, fórmula y coexistencia temporal con Pronto Pago/pago temprano sin ventanas solapadas | 5 |
+| D26 | Recordatorio 10% hasta 60 días RESUELTO. Pendientes base, fórmula y aplicación financiera con Pronto Pago | 5 |
 | D27 | Aviso exacto cinco días calendario RESUELTO. Persistencia no autorizada; período fuera de etapas visible como agrupación operativa | 5 |
 | D28 | Si no hay facturas vencidas, ¿cómo se determina la factura principal? ¿Y empates de vencimiento, facturas sin fecha o fechas corregidas? | 4.8 |
 | D29 | RESUELTA para facturas futuras: agrupación operativa Facturas no vencidas, fuera de las cuatro etapas. Fuente de fechas faltantes continúa pendiente | 5 |

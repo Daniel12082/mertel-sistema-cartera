@@ -4,7 +4,7 @@ import { operationError } from './collectionOperations.validation.js';
 export const CONNECTION_STATES = ['NOT_CONFIGURED', 'CONFIGURED', 'CONNECTED', 'DISCONNECTED', 'ERROR'];
 export const MESSAGE_STATES = ['PENDING', 'PROCESSING', 'SENT', 'DELIVERED', 'READ', 'FAILED', 'CANCELLED'];
 export const RETRY_POLICY = Object.freeze({ max_attempts: 3, delay_minutes: 15 });
-export const defaultWhatsAppSettings = () => ({ provider: null, number: '', phone_number_id: '', business_account_id: '',
+export const defaultWhatsAppSettings = () => ({ provider: null, number: '', phone_number_id: '', business_account_id: '', collection_contact_phone: '',
   connection_status: 'NOT_CONFIGURED', automations_enabled: false, automatic_daily_limit: null, global_daily_limit: null,
   customer_daily_limit: null, rules: [], excluded_customers: {}, authorized_recipients: {}, conversation_customers: {}, retry: { ...RETRY_POLICY } });
 export function publicWhatsAppSettings(settings) {
