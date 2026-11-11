@@ -601,7 +601,7 @@ CREATE TABLE import_errors (
 
     import_batch_id BIGINT UNSIGNED NOT NULL,
 
-    row_number INT UNSIGNED NULL,
+    `row_number` INT UNSIGNED NULL,
     field_name VARCHAR(100) NULL,
     field_value TEXT NULL,
     error_message TEXT NOT NULL,
@@ -611,7 +611,7 @@ CREATE TABLE import_errors (
     PRIMARY KEY (id),
 
     KEY idx_import_errors_batch (import_batch_id),
-    KEY idx_import_errors_row (row_number),
+    KEY idx_import_errors_row (`row_number`),
 
     CONSTRAINT fk_import_errors_batch
         FOREIGN KEY (import_batch_id)
