@@ -203,8 +203,10 @@ function normalizeMetaWebhook(payload, config) {
     for (const message of change.value.messages || []) {
       const timestamp = new Date(Number(message.timestamp) * 1000);
       if (typeof message?.id !== 'string' || typeof message?.type !== 'string' || Number.isNaN(timestamp.getTime())) throw providerError('META_WEBHOOK_INVALID', 'Evento de mensaje de Meta inválido.');
+      const content = message.type === 'text' ? message.text?.body
+        : message.type === 'button' ? message.button?.text : null;
       events.push({ kind: 'message', phone: normalizePhone(message.from), provider_message_id: message.id, type: message.type,
-        content: message.type === 'text' ? message.text?.body : null,
+        content: typeof content === 'string' ? content : null,
         media: message[message.type]?.id ? { id: message[message.type].id, mime_type: message[message.type].mime_type || null, sha256: message[message.type].sha256 || null } : null,
         timestamp });
     }

@@ -268,7 +268,8 @@ describe('WhatsApp center HTTP / MySQL, no real sends', { skip: !(process.env.DB
       const newNumber = '+573160000123';
       const sendTemplatePath = '/admin/whatsapp/meta/templates/send';
       const approved = { name: 'saludo_mertel', language: 'es', status: 'APPROVED', category: 'UTILITY',
-        components: [{ type: 'BODY', text: 'Hola {{nombre}}, somos MERTEL.' }] };
+        components: [{ type: 'BODY', text: 'Hola {{nombre}}, somos MERTEL.' },
+          { type: 'BUTTONS', buttons: [{ type: 'QUICK_REPLY', text: 'Sí, autorizo' }, { type: 'QUICK_REPLY', text: 'No, gracias' }] }] };
       let templateCalls = 0;
       globalThis.fetch = async (url, options) => {
         if (!String(url).startsWith('https://graph.facebook.com/')) return realFetch(url, options);
@@ -278,6 +279,9 @@ describe('WhatsApp center HTTP / MySQL, no real sends', { skip: !(process.env.DB
         assert.equal(payload.to, newNumber.slice(1));
         assert.equal(payload.type, 'template');
         assert.deepEqual(payload.template.components[0].parameters, [{ type: 'text', text: 'Daniel', parameter_name: 'nombre' }]);
+        assert.deepEqual(payload.template.components.slice(1), ['Sí, autorizo', 'No, gracias'].map((label, index) => ({
+          type: 'button', sub_type: 'quick_reply', index: String(index), parameters: [{ type: 'payload', payload: label }],
+        })));
         return Response.json({ messages: [{ id: 'wamid.template-fixture' }] });
       };
       const templateBody = { recipient: newNumber, name: approved.name, language: 'es', values: ['Daniel'] };

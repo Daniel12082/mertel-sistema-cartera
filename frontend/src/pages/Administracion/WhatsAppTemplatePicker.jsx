@@ -61,7 +61,8 @@ export default function WhatsAppTemplatePicker({ recipient, query, onClose, canU
         <input required maxLength={1024} disabled={busy} value={values[index]} onChange={event => setValues(current =>
           current.map((value, position) => position === index ? event.target.value : value))} />
       </label>)}
-      <p style={{ whiteSpace: 'pre-wrap' }}>{preview?.content || definitions.map(component => component.text).join('\n\n')}</p>
+      <p style={{ whiteSpace: 'pre-wrap' }}>{preview?.content || definitions.filter(component => component.type !== 'button').map(component => component.text).join('\n\n')}</p>
+      {definitions.filter(component => component.type === 'button').map(({ index, text }) => <p key={index}>{text}</p>)}
       <div className="wa-chat-draft-actions">
         <button type="button" disabled={busy} onClick={() => { setSelected(null); setError(''); }}>Volver a plantillas</button>
         <button type="submit" disabled={busy || !preview}>{busy ? 'Enviando…' : 'Enviar plantilla'}</button>

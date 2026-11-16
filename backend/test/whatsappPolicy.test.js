@@ -79,6 +79,12 @@ test('Meta provider uses server env, restricts the test recipient and normalizes
   assert.equal(provider.verifyWebhookSignature(Buffer.from(payload), signature), true); assert.equal(provider.verifyWebhookSignature(Buffer.from(payload), 'sha256=0'.padEnd(71, '0')), false);
   assert.equal(provider.verifyWebhookChallenge('subscribe', env.WHATSAPP_WEBHOOK_VERIFY_TOKEN, 'challenge'), 'challenge');
   const events = provider.handleIncomingWebhook(JSON.parse(payload)); assert.equal(events.length, 2); assert.equal(events[0].content, 'Hola'); assert.equal(events[1].status, 'DELIVERED');
+  const quickReply = JSON.parse(payload);
+  quickReply.entry[0].changes[0].value.messages[0] = {
+    from: '573173697659', id: 'wamid.button', timestamp: '1760000000',
+    type: 'button', button: { text: 'Sí, autorizo', payload: 'Sí, autorizo' },
+  };
+  assert.equal(provider.handleIncomingWebhook(quickReply)[0].content, 'Sí, autorizo');
   const authFailure = new MetaWhatsAppProvider({ env, fetchImpl: async () => new Response(JSON.stringify({ error: { code: 190 } }), { status: 401 }) });
   await assert.rejects(authFailure.validateConnection(), error => error.code === '190' && error.httpStatus === 401);
 });
