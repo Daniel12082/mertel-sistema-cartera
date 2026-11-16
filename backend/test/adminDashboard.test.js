@@ -94,7 +94,18 @@ describe('Administrative dashboard / real MySQL read-only', {skip:!(process.env.
     const [[p]]=await db.query('SELECT MAX(id) id FROM payments');await db.query("INSERT INTO payment_allocations(payment_id,invoice_id,amount,created_at) VALUES (?,?,10,'2026-10-07 05:00:00')",[p.id,item.invoices[0]]);await db.query('UPDATE invoices SET balance=balance-10 WHERE id=?',[item.invoices[0]]);
     await db.query("INSERT INTO audit_logs(company_id,entity_type,entity_id,action,new_values,created_at) VALUES (?,'invoice',?,'invoice_settled',?,'2026-10-07 10:00:00')",[companyId,item.invoices[0],JSON.stringify({actor_type:'SYSTEM',customer_id:item.id,amount:'10.00'})]);
     await db.query("INSERT INTO settings(company_id,setting_key,setting_value,value_type) VALUES (?,'whatsapp_center',?,'json')",[companyId,JSON.stringify({provider:'MOCK',connection_status:'CONNECTED',encrypted_credentials:'DO_NOT_EXPOSE',credentials:'DO_NOT_EXPOSE'})]);
+    for (const [provider, direction, status] of [
+      ['WHATSAPP_CLOUD_API', 'outbound', 'SENT'],
+      ['WHATSAPP_CLOUD_API', 'outbound', 'READ'],
+      ['WHATSAPP_CLOUD_API', 'outbound', 'FAILED'],
+      ['WHATSAPP_CLOUD_API', 'inbound', 'DELIVERED'],
+      ['MOCK', 'outbound', 'SENT'],
+    ]) {
+      await db.query(`INSERT INTO messages(company_id,channel,recipient,content,provider,direction,status,sent_at)
+        VALUES (?,'whatsapp','+573000000001','Fixture',?,?,?,'2026-10-07 10:00:00')`, [companyId, provider, direction, status]);
+    }
     const previous=await snapshot();const now=new Date('2026-10-07T15:00:00Z');const today=await getAdminDashboard({scope:scope(),now});const week=await getAdminDashboard({scope:scope(),now,query:{period:'7'}});
+    assert.equal(today.overview.data.sent_messages,2);
     assert.equal(today.recovery.data.payments_count,1);assert.equal(today.recovery.data.payments_amount,'40.00');assert.equal(week.recovery.data.payments_amount,'65.00');assert.equal(today.recovery.data.allocations_amount,'10.00');assert.equal(today.recovery.data.settled_invoices,1);
     assert.equal(today.recent_activity.data[0].actor,'Sistema');assert.equal(today.whatsapp.data.connection_status,'CONNECTED');assert.ok(!JSON.stringify(today).includes('DO_NOT_EXPOSE'));assert.deepEqual(today.summary,week.summary);assert.deepEqual(await snapshot(),previous);
   });

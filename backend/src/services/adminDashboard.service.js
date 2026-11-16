@@ -72,7 +72,9 @@ export async function getAdminDashboard({scope,query={},now=new Date()}, dbPool=
         FROM invoices i JOIN customers c ON c.id=i.customer_id AND c.company_id=i.company_id
         WHERE i.company_id=? AND i.deleted_at IS NULL AND c.deleted_at IS NULL AND c.status='active'`,[period.reference_date,scope.companyId]);
       const [[customers]]=await db.query('SELECT COUNT(*) total_customers FROM customers WHERE company_id=? AND deleted_at IS NULL',[scope.companyId]);
-      const [[messages]]=await db.query("SELECT COUNT(*) sent_messages FROM messages WHERE company_id=? AND channel='whatsapp' AND direction='outbound' AND sent_at>=? AND sent_at<?",[scope.companyId,period.from_utc,period.to_utc]);
+      const [[messages]]=await db.query(`SELECT COUNT(*) sent_messages FROM messages
+        WHERE company_id=? AND channel='whatsapp' AND provider='WHATSAPP_CLOUD_API' AND direction='outbound'
+          AND status IN ('SENT','DELIVERED','READ') AND sent_at>=? AND sent_at<?`,[scope.companyId,period.from_utc,period.to_utc]);
       return {...invoices,...customers,...messages};
     });
     await section('collection',async()=>{

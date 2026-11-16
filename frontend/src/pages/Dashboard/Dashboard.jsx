@@ -51,7 +51,7 @@ export default function Dashboard() {
         <Metric label="Facturas en mora" value={overview?.overdue_invoices} context="Vencimiento anterior a hoy" icon={AlertCircle} tone="critical"/>
         <Metric label="Saldo total por cobrar" value={summary?.total_balance} money context="Cartera actual · COP" icon={Wallet} tone="featured"/>
         <Metric label="Valor facturado disponible" value={overview?.invoiced_value} money context="Clientes activos · incluye saldadas" icon={Receipt}/>
-        <Metric label="Mensajes enviados este mes" value={overview?.sent_messages} context="Salientes · incluye MOCK" icon={MessageSquare}/>
+        <Metric label="Mensajes enviados este mes" value={overview?.sent_messages} context={simulated?'WhatsApp · simulación':'WhatsApp · aceptados por Meta'} icon={MessageSquare}/>
       </section>
       {failed('overview','summary')&&<div className="ui-error" role="alert">Parte del resumen no está disponible.<button onClick={refresh}>Reintentar</button></div>}
       {overview&&Number(overview.pending_invoices)===0&&<div className="bi-empty-banner"><CheckCircle2 size={17} aria-hidden="true"/><span>{simulated?'Sin facturas temporales con saldo pendiente.':'Sin facturas persistentes con saldo pendiente.'}</span><small>{simulated?'Los datos de esta simulación solo existen en memoria.':'No se utilizan valores del Excel temporal.'}</small></div>}
