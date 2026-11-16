@@ -7,6 +7,7 @@ import dotenv from 'dotenv';
 import { loadAuthConfig } from '../src/config/auth.js';
 import { applyAuthMigrations } from '../src/services/authMigrations.service.js';
 import { applyWhatsAppMigration } from '../src/services/whatsappMigration.service.js';
+import { MERTEL_INVOICE_BODY, MERTEL_INVOICE_LANGUAGE, MERTEL_INVOICE_TEMPLATE } from '../src/services/mertelInvoiceWhatsApp.js';
 dotenv.config({ path: new URL('../.env', import.meta.url), quiet: true });
 
 describe('WhatsApp center HTTP / MySQL, no real sends', { skip: !(process.env.DB_HOST && process.env.DB_USER) }, () => {
@@ -304,6 +305,23 @@ describe('WhatsApp center HTTP / MySQL, no real sends', { skip: !(process.env.DB
       assert.equal(alternate.customer_id, customer2);
       const [[unchanged]] = await db.query('SELECT phone FROM customers WHERE id=?', [customer2]);
       assert.equal(unchanged.phone, '3000000001');
+      const invoiceNotice = { customer_id: customer2, recipient: newNumber, invoice_ids: [String(invoice.insertId)] };
+      const noticePath = '/admin/whatsapp/meta/invoice-notices';
+      const preview = await request('POST', noticePath, invoiceNotice);
+      assert.equal(preview.status, 200, JSON.stringify(preview));
+      assert.match(preview.body.data.content, /Factura LINK-CHAT-1/);
+      globalThis.fetch = async (url, options) => {
+        if (!String(url).startsWith('https://graph.facebook.com/')) return realFetch(url, options);
+        if (options.method === 'GET') return Response.json({ data: [{ name: MERTEL_INVOICE_TEMPLATE, language: MERTEL_INVOICE_LANGUAGE,
+          status: 'APPROVED', category: 'UTILITY', components: [{ type: 'BODY', text: MERTEL_INVOICE_BODY }] }] });
+        const payload = JSON.parse(options.body);
+        assert.equal(payload.to, newNumber.slice(1));
+        assert.equal(payload.template.name, MERTEL_INVOICE_TEMPLATE);
+        return Response.json({ messages: [{ id: 'wamid.linked-invoice-fixture' }] });
+      };
+      const sentInvoice = await request('POST', noticePath, { ...invoiceNotice, preview_token: preview.body.data.preview_token });
+      assert.equal(sentInvoice.body.data.accepted, true, JSON.stringify(sentInvoice));
+      assert.equal(sentInvoice.body.data.message.template_name, MERTEL_INVOICE_TEMPLATE);
     } finally {
       globalThis.fetch = realFetch;
       for (const [key, value] of Object.entries(previous)) {

@@ -16,7 +16,8 @@ import { defaultWhatsAppSettings, publicWhatsAppSettings, encryptCredentials, po
 
 const SETTING = 'whatsapp_center';
 const messageColumns = `CAST(m.id AS CHAR) AS id,CAST(m.customer_id AS CHAR) AS customer_id,
-  CAST(m.template_id AS CHAR) AS template_id,c.name AS customer_name,t.name AS template_name,m.stage,m.channel,m.direction,
+  CAST(m.template_id AS CHAR) AS template_id,c.name AS customer_name,
+  COALESCE(t.name,CASE WHEN m.subject LIKE 'Plantilla: %' THEN SUBSTRING(m.subject,CHAR_LENGTH('Plantilla: ')+1) END) AS template_name,m.stage,m.channel,m.direction,
   CAST(m.invoice_id AS CHAR) AS invoice_id,m.message_mode,m.recipient,m.content,UPPER(m.status) AS status,m.provider,m.provider_message_id,m.created_at,
   m.automation_context,m.sent_at,m.delivered_at,m.read_at,m.received_at,m.scheduled_at,m.error_code,m.error_message,m.attempts,m.last_attempt_at,m.next_attempt_at`;
 
@@ -381,7 +382,7 @@ export async function sendMetaTestMessage({ scope, actorId, messageId, body, now
   return deliverMetaText({ scope, actorId, message: claimed.message, now, testMode: true }, dbPool);
 }
 
-async function deliverMetaText({ scope, actorId, message, now, testMode, template, textTemplate, sendBefore, clock, attachment }, dbPool) {
+async function deliverMetaText({ scope, actorId, message, now, testMode, template, textTemplate, subjectCallback, sendBefore, clock, attachment }, dbPool) {
   const { id, recipient, content } = message;
   let result;
   try {
@@ -389,7 +390,7 @@ async function deliverMetaText({ scope, actorId, message, now, testMode, templat
     if (template) {
       result = await provider.sendTemplateMessage({ recipient, manual: message.message_mode !== 'AUTOMATICO', template,
         ...(textTemplate ? { textTemplate } : { expectedBody: MERTEL_INVOICE_BODY }),
-        callbackId: `mertel-${textTemplate ? 'template' : 'invoice'}:${id}`, sendBefore, clock });
+        callbackId: `mertel-${textTemplate || subjectCallback ? 'template' : 'invoice'}:${id}`, sendBefore, clock });
     } else if (attachment) {
       const mediaId = await provider.uploadMedia(attachment);
       if (Date.now() >= sendBefore.getTime()) throw operationError(409, 'La ventana de respuesta terminó durante la carga del archivo.');
@@ -539,12 +540,12 @@ export async function sendMetaInvoiceNotice({ scope, actorId, body, now = new Da
         await hasSharedWhatsAppNumber(db, scope, { id: customerId, phone: recipient })) throw operationError(409, 'El número no es exclusivo del cliente seleccionado.');
     const invoices = input.invoices.filter(invoice => invoiceIds.includes(String(invoice.id)) && Number(invoice.balance) > 0);
     if (invoices.length !== invoiceIds.length) throw operationError(409, 'Una factura seleccionada ya no tiene saldo o no pertenece al cliente.');
-    const prepared = buildMertelInvoiceMessage(input.customer, invoices, { referenceDate: day, contactPhone: requireCollectionContactPhone(settings) });
+    const contactPhone = collectionContactPhone(settings) || MERTEL_INVOICE_BODY.match(/\+57 \d{3} \d{3} \d{4}/)?.[0];
+    const prepared = buildMertelInvoiceMessage(input.customer, invoices, { referenceDate: day, contactPhone });
     const previewToken = createHash('sha256').update(JSON.stringify([String(scope.companyId), customerId, recipient, invoiceIds, prepared.content])).digest('hex');
     if (!body.preview_token) return { content: prepared.content, preview_token: previewToken };
     if (previewToken !== body.preview_token) throw operationError(409, 'La cartera cambió. Vuelve a revisar el aviso antes de enviarlo.');
     const local = input.templates.find(row => row.name === MERTEL_INVOICE_TEMPLATE && row.status === 'active');
-    if (!local) throw operationError(409, 'Activa la plantilla de estado de facturas en MERTEL.');
     const key = createHash('sha256').update(JSON.stringify(['meta-invoice-manual', day, previewToken])).digest('hex');
     const [[duplicate]] = await db.query('SELECT CAST(id AS CHAR) id FROM messages WHERE company_id=? AND idempotency_key=?', [scope.companyId, key]);
     if (duplicate) return { message: await messageById(db, scope, duplicate.id), duplicate: true };
@@ -553,16 +554,17 @@ export async function sendMetaInvoiceNotice({ scope, actorId, body, now = new Da
       FROM messages WHERE company_id=? AND direction='outbound' AND budget_date=? AND UPPER(status)<>'CANCELLED'`, [recipient, scope.companyId, day]);
     if ((settings.global_daily_limit && Number(counts.total) >= settings.global_daily_limit) ||
         (settings.customer_daily_limit && Number(counts.per_number) >= settings.customer_daily_limit)) throw operationError(429, 'Límite diario alcanzado.');
-    const [inserted] = await db.query(`INSERT INTO messages(company_id,customer_id,invoice_id,template_id,created_by,channel,recipient,content,status,provider,direction,message_mode,idempotency_key,scheduled_at,budget_date,attempts,last_attempt_at)
-      VALUES (?,?,?,?,?,'whatsapp',?,?,'PROCESSING','WHATSAPP_CLOUD_API','outbound','MANUAL',?,?,?,1,?)`,
-    [scope.companyId, customerId, invoices.length === 1 ? invoices[0].id : null, local.id, actorId, recipient, prepared.content, key, now, day, now]);
+    const [inserted] = await db.query(`INSERT INTO messages(company_id,customer_id,invoice_id,template_id,created_by,channel,recipient,subject,content,status,provider,direction,message_mode,idempotency_key,scheduled_at,budget_date,attempts,last_attempt_at)
+      VALUES (?,?,?,?,?,'whatsapp',?,?,?,'PROCESSING','WHATSAPP_CLOUD_API','outbound','MANUAL',?,?,?,1,?)`,
+    [scope.companyId, customerId, invoices.length === 1 ? invoices[0].id : null, local?.id ?? null, actorId, recipient,
+      local ? null : `Plantilla: ${MERTEL_INVOICE_TEMPLATE}`, prepared.content, key, now, day, now]);
     const id = String(inserted.insertId);
     await audit(db, scope, actorId, 'meta_request', 'whatsapp_message', id, { recipient, invoice_ids: invoiceIds, attempts: 1, test_mode: false });
-    return { message: { id, recipient, content: prepared.content }, template: prepared.template };
+    return { message: { id, recipient, content: prepared.content }, template: prepared.template, subjectCallback: !local };
   }, dbPool);
   if (!claimed.message) return claimed;
   if (claimed.duplicate) return { ...claimed, accepted: ['SENT', 'DELIVERED', 'READ'].includes(claimed.message.status) };
-  return deliverMetaText({ scope, actorId, message: claimed.message, now, testMode: false, template: claimed.template }, dbPool);
+  return deliverMetaText({ scope, actorId, now, testMode: false, ...claimed }, dbPool);
 }
 
 export async function receiveMetaWebhook({ events }, dbPool = pool) {
