@@ -2,13 +2,13 @@ import { useEffect, useState } from 'react';
 import { MERTEL_INVOICE_LANGUAGE, MERTEL_INVOICE_TEMPLATE, isMertelInvoiceTemplate } from '../../../../backend/src/services/mertelInvoiceWhatsApp';
 import { whatsappRequest } from '../../services/whatsappCenter.service';
 
-export default function WhatsAppInvoiceNotice({ customerId, invoices, blocked, onMessage }) {
-  const [invoiceIds, setInvoiceIds] = useState([]);
+export default function WhatsAppInvoiceNotice({ customerId, recipient, invoices, blocked, initialOpen, initialInvoiceId, onMessage }) {
+  const [invoiceIds, setInvoiceIds] = useState(() => initialInvoiceId ? [initialInvoiceId] : []);
   const [template, setTemplate] = useState({ status: '', approved: false });
   const [preview, setPreview] = useState(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(Boolean(initialOpen));
 
   useEffect(() => {
     if (!customerId || !open) return;
@@ -28,7 +28,7 @@ export default function WhatsAppInvoiceNotice({ customerId, invoices, blocked, o
     setBusy(true);
     setError('');
     try {
-      const body = { customer_id: customerId, invoice_ids: invoiceIds };
+      const body = { customer_id: customerId, invoice_ids: invoiceIds, recipient };
       if (send) body.preview_token = preview.preview_token;
       const result = await whatsappRequest('/meta/invoice-notices', { method: 'post', body });
       if (!send) setPreview(result);
@@ -46,7 +46,8 @@ export default function WhatsAppInvoiceNotice({ customerId, invoices, blocked, o
     }
   }
 
-  return <details className="wa-chat-compose" onToggle={event => setOpen(event.currentTarget.open)}>
+  const hasInvoice = invoices.some(invoice => invoiceIds.includes(String(invoice.invoice_id ?? invoice.id)));
+  return <details open={open} className="wa-chat-compose" onToggle={event => setOpen(event.currentTarget.open)}>
     <summary>Enviar aviso de facturas</summary>
     {!customerId ? <p>Selecciona una conversación vinculada al cliente para consultar sus facturas.</p> : <>
       <p>Estado en Meta: {({ PENDING: 'Pendiente', APPROVED: 'Aprobada', REJECTED: 'Rechazada' })[template.status] || template.status || 'Consultando…'}</p>
@@ -65,7 +66,7 @@ export default function WhatsAppInvoiceNotice({ customerId, invoices, blocked, o
       {error && <p role="alert" className="wa-error">{error}</p>}
       {preview
         ? <><p style={{ whiteSpace: 'pre-wrap' }}>{preview.content}</p><button type="button" disabled={busy || !template.approved || blocked} onClick={() => request(true)}>Confirmar envío del aviso</button></>
-        : <button type="button" disabled={busy || blocked || !invoiceIds.length} onClick={() => request(false)}>Revisar aviso</button>}
+        : <button type="button" disabled={busy || blocked || !hasInvoice} onClick={() => request(false)}>Revisar aviso</button>}
     </>}
   </details>;
 }

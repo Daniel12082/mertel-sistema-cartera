@@ -15,12 +15,28 @@ export function conversationOwner(message, customers) {
   return { customer: candidates.length === 1 ? candidates[0] : null, candidates, explicit: false };
 }
 export const messageTime = message => message.received_at || message.sent_at || message.created_at || null;
-export function buildConversations(customers, messages) {
+export function customerConversationKey(customer, phone) {
+  return phone && phone !== phoneKey(customer.phone) ? `customer:${customer.id}:phone:${phone}` : `customer:${customer.id}`;
+}
+export function buildConversations(customers, messages, assignments = null) {
   const rows = customers.map(customer => ({ key: `customer:${customer.id}`, customer, phone: customer.phone, name: customer.name, nit: customer.nit, messages: [], candidates: [] }));
   const byKey = new Map(rows.map(row => [row.key, row]));
+  function addLinked(customer, phone) {
+    const key = customerConversationKey(customer, phone);
+    if (!byKey.has(key)) {
+      const row = { key, customer, phone: `+${phone}`, name: customer.name, nit: customer.nit, messages: [], candidates: [] };
+      rows.push(row); byKey.set(key, row);
+    }
+    return key;
+  }
+  for (const [number, id] of Object.entries(assignments || {})) {
+    const customer = customers.find(row => String(row.id) === id);
+    if (customer) addLinked(customer, phoneKey(number));
+  }
   for (const message of messages) {
     const owner = conversationOwner(message, customers);
-    const key = owner.customer ? `customer:${owner.customer.id}` : `unlinked:${phoneKey(message.recipient || message.phone) || message.id}`;
+    const phone = phoneKey(message.recipient || message.phone);
+    const key = owner.customer ? addLinked(owner.customer, assignments && phone) : `unlinked:${phone || message.id}`;
     if (!byKey.has(key)) {
       const row = { key, customer: null, name: owner.candidates.length > 1 ? 'Asociación ambigua' : 'Conversación sin asociar', phone: message.recipient || message.phone || '', nit: '', candidates: owner.candidates, messages: [] };
       rows.push(row); byKey.set(key, row);

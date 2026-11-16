@@ -231,6 +231,60 @@ it('links an ambiguous real conversation to the explicitly selected customer', a
   expect(screen.getByRole('log')).toHaveTextContent(incoming.content);
 });
 
+it('opens approved templates with a slash and links an unknown number by invoice', async () => {
+  leaveSimulation();
+  const recipient = '+573160000123';
+  const customer = { id: '51', name: 'Cliente factura', nit: '1001', phone: '3000000001', status: 'active' };
+  const invoice = { id: '81', invoice_number: 'ME-81', customer_id: customer.id, customer_name: customer.name, balance: '100.00' };
+  const approved = { name: 'saludo_mertel', language: 'es', status: 'APPROVED', category: 'UTILITY',
+    components: [{ type: 'BODY', text: 'Hola {{1}}, somos MERTEL.' }] };
+  const message = { id: '231', recipient, provider: 'WHATSAPP_CLOUD_API', direction: 'outbound', status: 'SENT', content: 'Hola Daniel, somos MERTEL.' };
+  const respond = data => Promise.resolve({ status: 200, data: { success: true, data } });
+  let history = [];
+  network.mockImplementation(config => {
+    if (config.url === '/customers') return respond([customer]);
+    if (config.url.endsWith('/messages')) return respond({ messages: history });
+    if (config.url.endsWith('/sequence')) return respond({ customer, steps: [] });
+    if (config.url.endsWith('/context')) return respond({ customer, total_balance: '100.00', open_invoices: [invoice] });
+    if (config.url.endsWith('/meta/templates')) return respond({ templates: [approved, { ...approved, name: 'pendiente', status: 'PENDING' }] });
+    if (config.url.endsWith('/meta/templates/send')) {
+      expect(JSON.parse(config.data)).toEqual({ recipient, name: approved.name, language: 'es', values: ['Daniel'] });
+      history = [message];
+      return respond({ message, accepted: true });
+    }
+    if (config.url.endsWith('/meta/conversations/invoice')) {
+      expect(config.params.invoice_number).toBe(invoice.invoice_number);
+      return respond(invoice);
+    }
+    if (config.url.endsWith('/meta/conversations/association')) {
+      expect(JSON.parse(config.data)).toEqual({ recipient, customer_id: customer.id, invoice_id: invoice.id });
+      history = [{ ...message, customer_id: customer.id }];
+      return respond({ recipient, customer_id: customer.id, messages_linked: 1 });
+    }
+    throw new Error('Unexpected request');
+  });
+  const user = userEvent.setup();
+  render(<SimulationContext.Provider value={{ mode: 'REAL' }}>
+    <WhatsAppConversations chatOnly preferenceOwner="template-invoice-test"
+      settings={{ provider: 'WHATSAPP_CLOUD_API', connection_status: 'CONNECTED', real_sending_enabled: true }} />
+  </SimulationContext.Provider>);
+  await user.click(screen.getByRole('button', { name: 'Nuevo chat' }));
+  await user.type(screen.getByLabelText('Número de WhatsApp'), recipient);
+  await user.click(screen.getByRole('button', { name: 'Iniciar chat' }));
+  await user.type(screen.getByLabelText('Mensaje de WhatsApp'), '/');
+  await user.click(await screen.findByRole('button', { name: 'saludo_mertel (es)' }));
+  expect(screen.queryByRole('button', { name: /pendiente \(es\)/ })).toBeNull();
+  await user.type(screen.getByLabelText('Mensaje · 1'), 'Daniel');
+  await user.click(screen.getByRole('button', { name: 'Enviar plantilla' }));
+  expect(await screen.findByLabelText('Mensaje saliente 231')).toHaveTextContent(message.content);
+  await user.click(screen.getByText('Vincular a una factura'));
+  await user.type(screen.getByLabelText('Número de factura'), invoice.invoice_number);
+  await user.click(screen.getByRole('button', { name: 'Buscar factura' }));
+  await user.click(await screen.findByRole('button', { name: 'Vincular este número' }));
+  expect(await screen.findByRole('checkbox', { name: invoice.invoice_number })).toBeChecked();
+  expect(screen.getByRole('log')).toHaveTextContent(message.content);
+});
+
 it('keeps a new chat draft when the first incoming message opens the Meta reply window', async () => {
   leaveSimulation();
   const owner = 'meta-draft-test';

@@ -263,6 +263,47 @@ describe('WhatsApp center HTTP / MySQL, no real sends', { skip: !(process.env.DB
       assert.equal(mediaSends, 1);
       const messageHistory = await request('GET', `/admin/whatsapp/messages?customer_id=${customer2}`);
       assert.ok(messageHistory.body.data.messages.some(row => row.content.includes('Factura.pdf') && row.status === 'DELIVERED'));
+
+      const newNumber = '+573160000123';
+      const sendTemplatePath = '/admin/whatsapp/meta/templates/send';
+      const approved = { name: 'saludo_mertel', language: 'es', status: 'APPROVED', category: 'UTILITY',
+        components: [{ type: 'BODY', text: 'Hola {{nombre}}, somos MERTEL.' }] };
+      let templateCalls = 0;
+      globalThis.fetch = async (url, options) => {
+        if (!String(url).startsWith('https://graph.facebook.com/')) return realFetch(url, options);
+        if (options.method === 'GET') return Response.json({ data: [approved] });
+        templateCalls++;
+        const payload = JSON.parse(options.body);
+        assert.equal(payload.to, newNumber.slice(1));
+        assert.equal(payload.type, 'template');
+        assert.deepEqual(payload.template.components[0].parameters, [{ type: 'text', text: 'Daniel', parameter_name: 'nombre' }]);
+        return Response.json({ messages: [{ id: 'wamid.template-fixture' }] });
+      };
+      const templateBody = { recipient: newNumber, name: approved.name, language: 'es', values: ['Daniel'] };
+      assert.equal((await request('POST', sendTemplatePath, { ...templateBody, values: [] })).status, 400);
+      const sentTemplate = await request('POST', sendTemplatePath, templateBody);
+      assert.equal(sentTemplate.status, 200, JSON.stringify(sentTemplate));
+      assert.equal(sentTemplate.body.data.message.customer_id, null);
+      assert.equal(sentTemplate.body.data.message.content, 'Hola Daniel, somos MERTEL.');
+      assert.equal((await request('POST', sendTemplatePath, templateBody)).body.data.duplicate, true);
+      assert.equal(templateCalls, 1);
+
+      const [invoice] = await db.query(`INSERT INTO invoices(company_id,customer_id,invoice_number,document_value,base_value,iva_value,balance)
+        SELECT company_id,id,'LINK-CHAT-1',100,100,0,100 FROM customers WHERE id=?`, [customer2]);
+      const searchPath = '/admin/whatsapp/meta/conversations/invoice?invoice_number=LINK-CHAT-1';
+      assert.equal((await request('GET', searchPath, undefined, collector)).status, 403);
+      const found = await request('GET', searchPath);
+      assert.equal(found.status, 200);
+      assert.equal(found.body.data.customer_id, customer2);
+      const alternateLink = { recipient: newNumber, customer_id: customer2, invoice_id: String(invoice.insertId) };
+      assert.equal((await request('PUT', assocPath, { ...alternateLink, customer_id: customerId })).status, 409);
+      assert.equal((await request('PUT', assocPath, alternateLink)).status, 200);
+      await services.receiveMetaWebhook({ events: [{ kind: 'message', phone: newNumber, provider_message_id: 'wamid.alt-phone',
+        content: 'Hola', timestamp: receivedAt }] });
+      const [[alternate]] = await db.query("SELECT CAST(customer_id AS CHAR) customer_id FROM messages WHERE provider_message_id='wamid.alt-phone'");
+      assert.equal(alternate.customer_id, customer2);
+      const [[unchanged]] = await db.query('SELECT phone FROM customers WHERE id=?', [customer2]);
+      assert.equal(unchanged.phone, '3000000001');
     } finally {
       globalThis.fetch = realFetch;
       for (const [key, value] of Object.entries(previous)) {

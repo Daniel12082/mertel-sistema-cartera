@@ -9,6 +9,7 @@ import { collectionStageCatalog } from './collectionPolicy.js';
 import { collectionMessage } from './collectionMessages.service.js';
 import { renderMessageTemplate } from '../utils/messageTemplate.js';
 import { normalizePhone, whatsappProvider } from './whatsappProvider.service.js';
+import { describeWhatsAppTextTemplate, prepareWhatsAppTextTemplate } from './whatsappTextTemplate.js';
 import { buildMertelInvoiceMessage, isMertelInvoiceTemplate, MERTEL_INVOICE_BODY, MERTEL_INVOICE_TEMPLATE } from './mertelInvoiceWhatsApp.js';
 import { defaultWhatsAppSettings, publicWhatsAppSettings, encryptCredentials, positiveLimit, validateRule,
   bogotaDate, nextWindow, idempotencyKey, retryAt, deliveryTransition, MESSAGE_STATES, RETRY_POLICY } from './whatsappPolicy.js';
@@ -72,8 +73,8 @@ function requireAutomationProvider(settings) {
   return provider;
 }
 async function hasWhatsAppOptOut(db, scope, settings, customer) {
-  if (!validMobile(customer.phone)) return false;
-  const recipient = normalizePhone(customer.phone);
+  let recipient;
+  try { recipient = normalizePhone(customer.phone); } catch { return false; }
   // A renewed authorization supersedes a previous opt-out. The webhook clears it on a new opt-out.
   if (settings.authorized_recipients?.[String(customer.id)]?.recipient === recipient) return false;
   const [[row]] = await db.query(`SELECT (
@@ -123,29 +124,51 @@ async function customersAtNumber(db, scope, recipient) {
 async function metaConversationCustomer(db, scope, settings, recipient) {
   const matches = await customersAtNumber(db, scope, recipient);
   const confirmed = settings.conversation_customers?.[recipient];
+  if (confirmed && !matches.length) {
+    const [[customer]] = await db.query("SELECT CAST(id AS CHAR) id FROM customers WHERE company_id=? AND id=? AND status='active' AND deleted_at IS NULL", [scope.companyId, confirmed]);
+    if (customer) return customer.id;
+  }
   return matches.find(customer => customer.id === confirmed)?.id ?? (matches.length === 1 ? matches[0].id : null);
 }
 
+export async function findMetaConversationInvoice({ scope, filters }, dbPool = pool) {
+  const number = filters.invoice_number;
+  if (typeof number !== 'string' || !number.trim() || number.trim().length > 100) throw operationError(400, 'Escribe el número exacto de la factura.');
+  const [[invoice]] = await dbPool.query(`SELECT CAST(i.id AS CHAR) id,i.invoice_number,i.balance,CAST(c.id AS CHAR) customer_id,c.name customer_name
+    FROM invoices i JOIN customers c ON c.id=i.customer_id AND c.company_id=i.company_id
+    WHERE i.company_id=? AND i.invoice_number=? AND i.deleted_at IS NULL AND i.balance>0 AND LOWER(i.status) NOT IN ('cancelled','inactive','void','paid')
+      AND c.deleted_at IS NULL AND c.status='active'`, [scope.companyId, number.trim()]);
+  if (!invoice) throw operationError(404, 'No se encontró una factura pendiente con ese número.');
+  return invoice;
+}
+
 export async function associateMetaConversation({ scope, actorId, body }, dbPool = pool) {
-  if (!body || Object.keys(body).some(key => !['recipient', 'customer_id'].includes(key))) throw operationError(400, 'Selecciona el número y el cliente.');
+  if (!body || Object.keys(body).some(key => !['recipient', 'customer_id', 'invoice_id'].includes(key))) throw operationError(400, 'Selecciona el número y el cliente.');
   const customerId = operationId(body.customer_id, 'customer_id');
+  const invoiceId = body.invoice_id === undefined ? null : operationId(body.invoice_id, 'invoice_id');
   let recipient;
   try { recipient = normalizePhone(body.recipient); }
   catch { throw operationError(400, 'Número de WhatsApp inválido.'); }
   return transaction(scope, async (db, settings) => {
     if (automationProvider(settings) !== 'WHATSAPP_CLOUD_API') throw operationError(409, 'Conecta el canal real de WhatsApp.');
     const matches = await customersAtNumber(db, scope, recipient);
-    if (!matches.some(customer => customer.id === customerId)) throw operationError(409, 'El número no corresponde a ese cliente activo.');
-    const confirmed = settings.conversation_customers[recipient];
-    if (confirmed !== customerId && matches.some(customer => customer.id === confirmed)) {
+    if (invoiceId) {
+      const [[invoice]] = await db.query(`SELECT i.id FROM invoices i JOIN customers c ON c.id=i.customer_id AND c.company_id=i.company_id
+        WHERE i.company_id=? AND i.id=? AND c.id=? AND i.deleted_at IS NULL AND i.balance>0 AND LOWER(i.status) NOT IN ('cancelled','inactive','void','paid')
+          AND c.deleted_at IS NULL AND c.status='active' FOR UPDATE`, [scope.companyId, invoiceId, customerId]);
+      if (!invoice) throw operationError(409, 'La factura ya no está pendiente o no pertenece al cliente seleccionado.');
+    }
+    if ((!invoiceId || matches.length) && !matches.some(customer => customer.id === customerId)) throw operationError(409, 'El número no corresponde a ese cliente activo.');
+    const owner = await metaConversationCustomer(db, scope, settings, recipient);
+    if (owner && owner !== customerId) {
       throw operationError(409, 'Otro administrador ya vinculó esta conversación. Actualiza la bandeja.');
     }
     const [updated] = await db.query(`UPDATE messages SET customer_id=? WHERE company_id=? AND recipient=?
       AND channel='whatsapp' AND provider='WHATSAPP_CLOUD_API' AND customer_id IS NULL`, [customerId, scope.companyId, recipient]);
-    if (confirmed !== customerId || updated.affectedRows) {
+    if (settings.conversation_customers[recipient] !== customerId || updated.affectedRows || invoiceId) {
       settings.conversation_customers[recipient] = customerId;
       await saveSettings(db, scope, actorId, settings, 'conversation_associated',
-        { recipient, customer_id: customerId, messages_linked: updated.affectedRows });
+        { recipient, customer_id: customerId, messages_linked: updated.affectedRows, ...(invoiceId ? { invoice_id: invoiceId } : {}) });
     }
     return { customer_id: customerId, recipient, messages_linked: updated.affectedRows };
   }, dbPool);
@@ -358,14 +381,15 @@ export async function sendMetaTestMessage({ scope, actorId, messageId, body, now
   return deliverMetaText({ scope, actorId, message: claimed.message, now, testMode: true }, dbPool);
 }
 
-async function deliverMetaText({ scope, actorId, message, now, testMode, template, sendBefore, clock, attachment }, dbPool) {
+async function deliverMetaText({ scope, actorId, message, now, testMode, template, textTemplate, sendBefore, clock, attachment }, dbPool) {
   const { id, recipient, content } = message;
   let result;
   try {
     const provider = whatsappProvider('WHATSAPP_CLOUD_API');
     if (template) {
-      result = await provider.sendTemplateMessage({ recipient, manual: message.message_mode !== 'AUTOMATICO', template, expectedBody: MERTEL_INVOICE_BODY,
-        callbackId: `mertel-invoice:${id}`, sendBefore, clock });
+      result = await provider.sendTemplateMessage({ recipient, manual: message.message_mode !== 'AUTOMATICO', template,
+        ...(textTemplate ? { textTemplate } : { expectedBody: MERTEL_INVOICE_BODY }),
+        callbackId: `mertel-${textTemplate ? 'template' : 'invoice'}:${id}`, sendBefore, clock });
     } else if (attachment) {
       const mediaId = await provider.uploadMedia(attachment);
       if (Date.now() >= sendBefore.getTime()) throw operationError(409, 'La ventana de respuesta terminó durante la carga del archivo.');
@@ -454,8 +478,48 @@ export async function listMetaMessageTemplates({ scope }, dbPool = pool) {
   }, dbPool);
 }
 
+export async function sendMetaChatTemplate({ scope, actorId, body, now = new Date() }, dbPool = pool) {
+  if (!body || Object.keys(body).some(key => !['recipient', 'name', 'language', 'values'].includes(key)) ||
+      !/^[a-z0-9_]{1,150}$/.test(body.name || '') || !/^[a-z]{2,3}(?:_[A-Z]{2})?$/.test(body.language || '')) {
+    throw operationError(400, 'Selecciona una plantilla aprobada de WhatsApp.');
+  }
+  if (body.name === MERTEL_INVOICE_TEMPLATE) throw operationError(400, 'Usa Enviar aviso de facturas para completar esta plantilla con los datos de cartera.');
+  let recipient;
+  try { recipient = normalizePhone(body.recipient); } catch { throw operationError(400, 'Número de WhatsApp inválido.'); }
+  const day = bogotaDate(now);
+  const claimed = await transaction(scope, async (db, settings) => {
+    if (requireAutomationProvider(settings) !== 'WHATSAPP_CLOUD_API') throw operationError(409, 'El canal real de WhatsApp no está activo.');
+    const customerId = await metaConversationCustomer(db, scope, settings, recipient);
+    if (settings.excluded_customers?.[customerId] || await hasWhatsAppOptOut(db, scope, settings, { id: customerId, phone: recipient })) {
+      throw operationError(409, 'Este número está excluido de los avisos por WhatsApp.');
+    }
+    const templates = await whatsappProvider('WHATSAPP_CLOUD_API').listMessageTemplates();
+    const template = templates.find(row => row.name === body.name && row.language === body.language);
+    const definitions = describeWhatsAppTextTemplate(template);
+    if (!definitions) throw operationError(409, 'La plantilla requiere componentes que este chat no admite o dejó de estar aprobada.');
+    const prepared = prepareWhatsAppTextTemplate(definitions, body.values);
+    if (!prepared) throw operationError(400, 'Completa todas las variables de la plantilla con texto en una sola línea.');
+    const key = createHash('sha256').update(JSON.stringify(['meta-chat-template', scope.companyId, recipient,
+      template.name, template.language, prepared.components, now.toISOString().slice(0, 16)])).digest('hex');
+    const [[duplicate]] = await db.query('SELECT CAST(id AS CHAR) id FROM messages WHERE company_id=? AND idempotency_key=?', [scope.companyId, key]);
+    if (duplicate) return { message: await messageById(db, scope, duplicate.id), duplicate: true };
+    const [[counts]] = await db.query(`SELECT COUNT(*) AS total,COALESCE(SUM(recipient=?),0) AS per_number
+      FROM messages WHERE company_id=? AND direction='outbound' AND budget_date=? AND UPPER(status)<>'CANCELLED'`, [recipient, scope.companyId, day]);
+    if ((settings.global_daily_limit && Number(counts.total) >= settings.global_daily_limit) ||
+        (settings.customer_daily_limit && Number(counts.per_number) >= settings.customer_daily_limit)) throw operationError(429, 'Límite diario alcanzado.');
+    const [inserted] = await db.query(`INSERT INTO messages(company_id,customer_id,created_by,channel,recipient,subject,content,status,provider,direction,message_mode,idempotency_key,scheduled_at,budget_date,attempts,last_attempt_at)
+      VALUES (?,?,?,'whatsapp',?,?,?,'PROCESSING','WHATSAPP_CLOUD_API','outbound','MANUAL',?,?,?,1,?)`,
+    [scope.companyId, customerId, actorId, recipient, `Plantilla: ${template.name}`, prepared.content, key, now, day, now]);
+    const id = String(inserted.insertId);
+    await audit(db, scope, actorId, 'meta_request', 'whatsapp_message', id, { recipient, template_name: template.name, language: template.language, attempts: 1, test_mode: false });
+    return { message: { id, recipient, content: prepared.content }, template, textTemplate: { definitions, values: body.values } };
+  }, dbPool);
+  if (claimed.duplicate) return { ...claimed, accepted: ['SENT', 'DELIVERED', 'READ'].includes(claimed.message.status) };
+  return deliverMetaText({ scope, actorId, now, testMode: false, ...claimed }, dbPool);
+}
+
 export async function sendMetaInvoiceNotice({ scope, actorId, body, now = new Date() }, dbPool = pool) {
-  if (!body || Object.keys(body).some(key => !['customer_id', 'invoice_ids', 'preview_token'].includes(key)) ||
+  if (!body || Object.keys(body).some(key => !['customer_id', 'invoice_ids', 'preview_token', 'recipient'].includes(key)) ||
       !Array.isArray(body.invoice_ids) || !body.invoice_ids.length || body.invoice_ids.length > 25 ||
       (body.preview_token !== undefined && !/^[a-f0-9]{64}$/.test(body.preview_token))) {
     throw operationError(400, 'Selecciona entre 1 y 25 facturas y revisa el aviso.');
@@ -466,13 +530,16 @@ export async function sendMetaInvoiceNotice({ scope, actorId, body, now = new Da
   const claimed = await transaction(scope, async (db, settings) => {
     if (requireAutomationProvider(settings) !== 'WHATSAPP_CLOUD_API') throw operationError(409, 'El canal real de WhatsApp no está activo.');
     const input = await automaticInput(db, scope, settings, customerId, day);
-    if (!validMobile(input.customer.phone)) throw operationError(409, 'El cliente no tiene un celular válido.');
-    if (input.contactOptedOut || settings.excluded_customers?.[customerId]) throw operationError(409, 'El cliente está excluido de los avisos por WhatsApp.');
-    if (await hasSharedWhatsAppNumber(db, scope, input.customer)) throw operationError(409, 'El teléfono está asociado a más de un cliente.');
+    let recipient;
+    try { recipient = normalizePhone(body.recipient ?? input.customer.phone); } catch { throw operationError(409, 'El cliente no tiene un celular válido.'); }
+    if (settings.excluded_customers?.[customerId] || await hasWhatsAppOptOut(db, scope, settings, { id: customerId, phone: recipient })) {
+      throw operationError(409, 'El cliente está excluido de los avisos por WhatsApp.');
+    }
+    if ((body.recipient && await metaConversationCustomer(db, scope, settings, recipient) !== customerId) ||
+        await hasSharedWhatsAppNumber(db, scope, { id: customerId, phone: recipient })) throw operationError(409, 'El número no es exclusivo del cliente seleccionado.');
     const invoices = input.invoices.filter(invoice => invoiceIds.includes(String(invoice.id)) && Number(invoice.balance) > 0);
     if (invoices.length !== invoiceIds.length) throw operationError(409, 'Una factura seleccionada ya no tiene saldo o no pertenece al cliente.');
     const prepared = buildMertelInvoiceMessage(input.customer, invoices, { referenceDate: day, contactPhone: requireCollectionContactPhone(settings) });
-    const recipient = normalizePhone(input.customer.phone);
     const previewToken = createHash('sha256').update(JSON.stringify([String(scope.companyId), customerId, recipient, invoiceIds, prepared.content])).digest('hex');
     if (!body.preview_token) return { content: prepared.content, preview_token: previewToken };
     if (previewToken !== body.preview_token) throw operationError(409, 'La cartera cambió. Vuelve a revisar el aviso antes de enviarlo.');

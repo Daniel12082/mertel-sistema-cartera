@@ -4,12 +4,14 @@ import { getCustomers } from '../../services/customer.service';
 import { whatsappRequest, sendMetaTestMessage, sendManualWhatsApp, sendConversationSimulation, associateConversationSimulation } from '../../services/whatsappCenter.service';
 import WhatsAppQuickReplies from './WhatsAppQuickReplies';
 import WhatsAppInvoiceNotice from './WhatsAppInvoiceNotice';
+import WhatsAppInvoiceLink from './WhatsAppInvoiceLink';
+import WhatsAppTemplatePicker from './WhatsAppTemplatePicker';
 import { WhatsAppAttachmentPicker, WhatsAppMediaPreview } from './WhatsAppMedia';
 import { discardDraftMedia, temporaryWhatsAppMedia, MEDIA_UNAVAILABLE } from '../../services/whatsappMedia.service';
 import { collectionResultsRequest } from '../../services/collectionResults.service';
 import { useAppDataMode } from '../../simulation/useAppDataMode';
 import { simulationAvailable } from '../../simulation/store';
-import { buildConversations, conversationMessageStatus, messageTime, phoneKey, conversationStatus } from './whatsappConversation.presentation';
+import { buildConversations, conversationMessageStatus, customerConversationKey, messageTime, phoneKey, conversationStatus } from './whatsappConversation.presentation';
 import './WhatsAppConversations.css';
 
 const time = value => value && Number.isFinite(new Date(value).getTime()) ? new Intl.DateTimeFormat('es-CO', { dateStyle: 'short', timeStyle: 'short', timeZone: 'America/Bogota' }).format(new Date(value)) : 'Fecha no disponible';
@@ -91,6 +93,8 @@ export default function WhatsAppConversations({ settings, conversationCustomers,
   }
   const [customers, setCustomers] = useState([]), [records, setRecords] = useState([]);
   const [confirmedOwners, setConfirmedOwners] = useState({});
+  const [invoiceFocus, setInvoiceFocus] = useState(null);
+  const [templatesOpen, setTemplatesOpen] = useState(false);
   const [selection, setSelection] = useState(''), [search, setSearch] = useState(''), [filter, setFilter] = useState(''), [customerFilter, setCustomerFilter] = useState('');
   const [loading, setLoading] = useState(true), [error, setError] = useState(''), [revision, setRevision] = useState(0);
   const [page, setPage] = useState(1), [hasNext, setHasNext] = useState(false);
@@ -108,7 +112,7 @@ export default function WhatsAppConversations({ settings, conversationCustomers,
   const openedInitialCustomer = useRef(false);
   const conversations = useMemo(() => {
     const newPhones = new Set(newChats.map(row => phoneKey(row.phone)).filter(Boolean));
-    const rows = buildConversations(customers, records).map(row => {
+    const rows = buildConversations(customers, records, metaProduction ? { ...conversationCustomers, ...confirmedOwners } : null).map(row => {
       const phone = phoneKey(row.phone);
       // Keep the draft and selection when a new number first appears in the message history.
       return !row.customer && newPhones.has(phone) ? { ...row, key: `unlinked:new:${phone}` } : row;
@@ -126,17 +130,19 @@ export default function WhatsAppConversations({ settings, conversationCustomers,
   }, [customers, records, newChats, metaProduction, confirmedOwners, conversationCustomers]);
   const conversation = conversations.find(row => row.key === selection) || null;
   const customerId = conversation?.customer ? String(conversation.customer.id) : '';
+  const recipient = phoneKey(conversation?.phone);
   const filtered = conversations.filter(row => (!chatOnly || Boolean(preferences[row.key]?.removed) === showRemoved) && (!customerFilter || String(row.customer?.id) === customerFilter) && (!filter || (filter === 'empty' ? !row.last : filter === 'history' ? Boolean(row.last) : row.last?.status === filter)) &&
     `${row.name} ${row.nit} ${row.phone}`.toLocaleLowerCase().includes(search.toLocaleLowerCase().trim())).sort((a, b) => Number(Boolean(preferences[b.key]?.pinned)) - Number(Boolean(preferences[a.key]?.pinned)));
-  const messages = merge(conversation?.messages || [], detail.messages).sort((a, b) => (new Date(messageTime(a)).getTime() || 0) - (new Date(messageTime(b)).getTime() || 0));
+  const history = metaProduction && recipient ? detail.messages.filter(row => phoneKey(row.recipient || row.phone) === recipient) : detail.messages;
+  const messages = merge(conversation?.messages || [], history).sort((a, b) => (new Date(messageTime(a)).getTime() || 0) - (new Date(messageTime(b)).getTime() || 0));
   const latestContact = messages.filter(row => row.direction === 'inbound' ? Boolean(row.received_at) : Boolean(row.sent_at)).at(-1);
   const lastContact = latestContact ? { date: messageTime(latestContact), label: latestContact.direction === 'inbound' ? 'Mensaje recibido' : latestContact.template_name || 'WhatsApp' } : detail.sequence?.last_contact;
-  const recipient = phoneKey(conversation?.phone);
   const assignedCustomer = confirmedOwners[`+${recipient}`] ?? conversationCustomers?.[`+${recipient}`];
   const otherCustomerOwnsChat = Boolean(metaProduction && customerId && assignedCustomer && assignedCustomer !== customerId &&
-    customers.some(row => String(row.id) === assignedCustomer && phoneKey(row.phone) === recipient));
+    customers.some(row => String(row.id) === assignedCustomer));
   const metaTestChat = metaConnected && settings.test_mode && Boolean(recipient) && recipient === phoneKey(settings.test_allowed_recipient);
   const draft = drafts[selection] || '';
+  const templateCommand = metaProduction && /^\/[a-z0-9_]*$/i.test(draft);
   const realAttachment = realAttachments[selection];
   const attachmentProblem = realAttachment?.type.startsWith('audio/') && draft.trim() ? 'Envía el texto y el audio en mensajes separados.'
     : realAttachment && draft.length > 1024 ? 'El texto de un adjunto admite hasta 1.024 caracteres.' : '';
@@ -214,7 +220,7 @@ export default function WhatsAppConversations({ settings, conversationCustomers,
     if (chatOnly && preferences[key]?.unread) updatePreference(key, { unread: false });
     if (chosen.current === key) setRevision(value => value + 1);
     chosen.current = key; setSelection(key); setMobile('chat'); setNotice(''); setSendError(''); setAssociateId('');
-    setQuickBusy(false);
+    setQuickBusy(false); setInvoiceFocus(null); setTemplatesOpen(false);
     setMediaBusy(false);
     setDetail({ messages: [], context: null, sequence: null, error: '', historyError: '', loading: key.startsWith('customer:'), page: 1, hasNext: false });
   }
@@ -231,7 +237,7 @@ export default function WhatsAppConversations({ settings, conversationCustomers,
     finally { pagePending.current = false; if (active.current) setLoadingMore(false); }
   }
   async function send() {
-    if (pending.current) return;
+    if (pending.current || templateCommand) return;
     if (metaConnected) {
       if (!canReplyToMeta || (!draft.trim() && !realAttachment) || draft.length > 4096 || attachmentProblem) return;
       if (metaTestChat && !window.confirm('¿Enviar este mensaje real al número de prueba autorizado?')) return;
@@ -282,26 +288,33 @@ export default function WhatsAppConversations({ settings, conversationCustomers,
     setSendError('');
     setRealAttachments(current => ({ ...current, [selection]: file }));
   }
-  async function associate() {
-    if (pending.current || !conversation || !associateId || (!simulated && !metaProduction)) return;
+  async function associate(invoice) {
+    const newCustomerId = invoice?.customer_id || associateId;
+    if (pending.current || !conversation || !newCustomerId || (!simulated && !metaProduction)) return;
     const key = selection; pending.current = true; setBusy(true); setSendError('');
     try {
-      if (simulated) await associateConversationSimulation(conversation.messages.map(row => row.id), associateId);
+      if (simulated) await associateConversationSimulation(conversation.messages.map(row => row.id), newCustomerId);
       else {
         const result = await whatsappRequest('/meta/conversations/association', {
-          method: 'put', body: { recipient: `+${recipient}`, customer_id: associateId },
+          method: 'put', body: { recipient: `+${recipient}`, customer_id: newCustomerId, ...(invoice ? { invoice_id: invoice.id } : {}) },
         });
         if (active.current) setConfirmedOwners(current => ({ ...current, [result.recipient]: result.customer_id }));
       }
       if (active.current && chosen.current === key) {
-        const nextKey = `customer:${associateId}`;
+        const customer = customers.find(row => String(row.id) === newCustomerId);
+        const nextKey = invoice && customer ? customerConversationKey(customer, recipient) : `customer:${newCustomerId}`;
         if (draft && !drafts[nextKey]) setDrafts(current => ({ ...current, [nextKey]: draft }));
         choose(nextKey);
+        if (invoice) setInvoiceFocus({ id: invoice.id });
         if (!simulated) setNotice('Conversación vinculada al cliente. La decisión quedó registrada en el Historial de WhatsApp.');
         setRevision(value => value + 1);
       }
     } catch (failure) { if (active.current) setSendError(failure.message); }
     finally { pending.current = false; if (active.current) setBusy(false); }
+  }
+  function closeTemplates() {
+    setTemplatesOpen(false);
+    if (templateCommand) setDrafts(current => ({ ...current, [selection]: '' }));
   }
   function openNumber(event) {
     event.preventDefault();
@@ -366,14 +379,21 @@ export default function WhatsAppConversations({ settings, conversationCustomers,
             {(simulated || metaProduction) && conversation.candidates.length > 1 && <>
               {metaProduction && <p>Confirma quién usa este chat. Se vincularán sus mensajes pendientes de asignación.</p>}
               <label>Cliente para asociar<select aria-label="Cliente para asociar" value={associateId} onChange={event => setAssociateId(event.target.value)}><option value="">Seleccionar cliente</option>{conversation.candidates.map(row => <option key={row.id} value={row.id}>{row.name} · {row.nit}</option>)}</select></label>
-              <button disabled={busy || !associateId} onClick={associate}>{simulated ? 'Asociar en esta demo' : 'Vincular conversación'}</button>
+              <button disabled={busy || !associateId} onClick={() => associate()}>{simulated ? 'Asociar en esta demo' : 'Vincular conversación'}</button>
             </>}
+            {metaProduction && recipient && <WhatsAppInvoiceLink key={selection} busy={busy} onLink={associate} />}
           </div>}
           {detail.historyError && <p className="wa-warning" role="alert">{detail.historyError}<button onClick={() => setRevision(value => value + 1)}>Reintentar historial</button></p>}
           {detail.hasNext && <button className="wa-chat-more" disabled={loadingMore} onClick={() => loadMore(true)}>Cargar mensajes anteriores</button>}
           <ChatMessages messages={messages} />
-          {metaProduction && <WhatsAppInvoiceNotice key={selection} customerId={customerId}
-            invoices={detail.context?.open_invoices || []} blocked={detail.sequence?.contact_opted_out || detail.sequence?.excluded}
+          {metaProduction && customerId && recipient && <WhatsAppInvoiceNotice key={`${selection}:${Boolean(invoiceFocus)}`} customerId={customerId}
+            recipient={`+${recipient}`} initialOpen={Boolean(invoiceFocus)} initialInvoiceId={invoiceFocus?.id}
+            invoices={detail.context?.open_invoices || []}
+            blocked={detail.sequence?.excluded || (recipient === phoneKey(conversation.customer.phone) && detail.sequence?.contact_opted_out)}
+            onMessage={message => setRecords(current => merge(current, [message]))} />}
+          {metaProduction && recipient && !otherCustomerOwnsChat && (templateCommand || templatesOpen) && <WhatsAppTemplatePicker
+            key={selection} recipient={`+${recipient}`} query={templateCommand ? draft.slice(1).toLowerCase() : ''}
+            onClose={closeTemplates} canUseInvoice={Boolean(customerId)} onInvoice={() => { closeTemplates(); setInvoiceFocus({}); }}
             onMessage={message => setRecords(current => merge(current, [message]))} />}
           {metaConnected ? <form className="wa-chat-compose" onSubmit={event => { event.preventDefault(); void send(); }}>
             {notice && <p className="wa-success" role="status">{notice}</p>}
@@ -381,12 +401,13 @@ export default function WhatsAppConversations({ settings, conversationCustomers,
             {canWriteMetaDraft ? <>
               <label htmlFor="wa-meta-reply">{metaTestChat ? 'Respuesta de prueba por WhatsApp' : 'Mensaje de WhatsApp'}</label>
               <div>
-                <textarea id="wa-meta-reply" value={draft} maxLength={4096} disabled={busy} placeholder="Escribe un mensaje…"
+                <textarea id="wa-meta-reply" value={draft} maxLength={4096} disabled={busy} placeholder={metaProduction ? 'Escribe un mensaje o / para plantillas…' : 'Escribe un mensaje…'}
                   aria-describedby={canReplyToMeta ? undefined : 'wa-meta-draft-note'}
                   onChange={event => setDrafts(current => ({ ...current, [selection]: event.target.value }))} />
-                <button type="submit" disabled={busy || !canReplyToMeta || (!draft.trim() && !realAttachment) || Boolean(attachmentProblem)}><Send size={18} />{busy ? 'Enviando…' : metaTestChat ? 'Enviar prueba por WhatsApp' : 'Enviar mensaje'}</button>
+                <button type="submit" disabled={busy || templateCommand || !canReplyToMeta || (!draft.trim() && !realAttachment) || Boolean(attachmentProblem)}><Send size={18} />{busy ? 'Enviando…' : metaTestChat ? 'Enviar prueba por WhatsApp' : 'Enviar mensaje'}</button>
               </div>
               {metaProduction && <div className="wa-chat-draft-actions">
+                {!otherCustomerOwnsChat && <button type="button" disabled={busy} onClick={() => setTemplatesOpen(true)}>Plantillas</button>}
                 <input ref={realFileInput} type="file" aria-label="Archivo para enviar por WhatsApp" accept={realAttachmentTypes.join(',')} hidden onChange={pickRealFile} />
                 <button type="button" disabled={busy || !canReplyToMeta} onClick={() => realFileInput.current?.click()}><Paperclip size={16} /> Adjuntar archivo o audio</button>
                 {realAttachment && <><span>{realAttachment.name}</span><button type="button" disabled={busy}

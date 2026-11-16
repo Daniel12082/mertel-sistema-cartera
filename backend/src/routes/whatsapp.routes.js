@@ -24,6 +24,8 @@ adminWhatsAppRoutes.get('/status', respond(center.getWhatsAppCenter));
 adminWhatsAppRoutes.patch('/settings', respond(center.updateWhatsAppSettings));
 adminWhatsAppRoutes.post('/test', respond(center.testWhatsAppConnection));
 adminWhatsAppRoutes.get('/meta/templates', respond(center.listMetaMessageTemplates));
+adminWhatsAppRoutes.post('/meta/templates/send', respond(center.sendMetaChatTemplate));
+adminWhatsAppRoutes.get('/meta/conversations/invoice', requirePermission('invoices.view'), respond(center.findMetaConversationInvoice));
 adminWhatsAppRoutes.post('/meta/replies', respond(center.replyToMetaConversation));
 adminWhatsAppRoutes.post('/meta/replies/media',
   express.raw({ type: 'multipart/form-data', limit: MAX_WHATSAPP_UPLOAD_BYTES + 64 * 1024 }),

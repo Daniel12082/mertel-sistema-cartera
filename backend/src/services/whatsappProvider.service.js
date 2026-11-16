@@ -1,4 +1,5 @@
 import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
+import { describeWhatsAppTextTemplate, prepareWhatsAppTextTemplate } from './whatsappTextTemplate.js';
 
 // Providers normalize transport details; credentials are always read from server-only env.
 export class WhatsAppProvider {
@@ -122,7 +123,7 @@ export class MetaWhatsAppProvider extends WhatsAppProvider {
     return data.id;
   }
 
-  async sendTemplateMessage({ recipient, manual = false, template, expectedBody, callbackId, sendBefore, clock = () => new Date(), signal } = {}) {
+  async sendTemplateMessage({ recipient, manual = false, template, expectedBody, textTemplate, callbackId, sendBefore, clock = () => new Date(), signal } = {}) {
     const to = this.assertTestRecipient(recipient, { manual });
     const approved = (await this.listMessageTemplates()).find(row => row.name === template?.name && row.language === template?.language && row.status === 'APPROVED');
     if (!approved) throw providerError('META_TEMPLATE_NOT_APPROVED', 'La plantilla no está aprobada por Meta para este idioma.');
@@ -130,10 +131,19 @@ export class MetaWhatsAppProvider extends WhatsAppProvider {
         approved.components[0].type !== 'BODY' || approved.components[0].text !== expectedBody)) {
       throw providerError('META_TEMPLATE_CHANGED', 'La plantilla aprobada en Meta cambió de contenido o categoría.');
     }
-    validateTemplateParameters(approved, template.components || []);
+    let components = template.components || [];
+    if (textTemplate) {
+      const definitions = describeWhatsAppTextTemplate(approved);
+      if (JSON.stringify(definitions) !== JSON.stringify(textTemplate.definitions)) {
+        throw providerError('META_TEMPLATE_CHANGED', 'La plantilla cambió en Meta. Vuelve a seleccionarla antes de enviarla.');
+      }
+      const prepared = prepareWhatsAppTextTemplate(definitions, textTemplate.values);
+      if (!prepared) throw providerError('META_TEMPLATE_PARAMETERS_INVALID', 'Completa las variables de la plantilla.');
+      components = prepared.components;
+    } else validateTemplateParameters(approved, components);
     if (sendBefore && clock() >= sendBefore) throw providerError('META_SCHEDULE_CLOSED', 'Terminó el horario de envío antes de contactar a Meta.');
     return this.sendMessage({ recipient: to, manual, payload: { type: 'template', ...(callbackId ? { biz_opaque_callback_data: callbackId } : {}),
-      template: { name: approved.name, language: { code: approved.language }, ...(template.components?.length ? { components: template.components } : {}) } }, signal });
+      template: { name: approved.name, language: { code: approved.language }, ...(components.length ? { components } : {}) } }, signal });
   }
 
   verifyWebhookSignature(rawBody, signature) {
@@ -207,9 +217,9 @@ function normalizeMetaStatus(status, acceptCallback = false) {
   const timestamp = new Date(Number(status.timestamp) * 1000);
   if (Number.isNaN(timestamp.getTime())) throw providerError('META_STATUS_INVALID', 'Marca de tiempo de Meta inválida.');
   const callback = acceptCallback && typeof status.biz_opaque_callback_data === 'string'
-    ? /^mertel-(invoice|media):([1-9]\d{0,19})$/.exec(status.biz_opaque_callback_data) : null;
+    ? /^mertel-(invoice|media|template):([1-9]\d{0,19})$/.exec(status.biz_opaque_callback_data) : null;
   return { kind: 'status', provider_message_id: status.id, status: values[status.status], recipient: status.recipient_id ? normalizePhone(status.recipient_id) : null, timestamp,
-    ...(callback ? { callback_id: callback[2], ...(callback[1] === 'media' ? { callback_media: true } : {}) } : {}),
+    ...(callback ? { callback_id: callback[2], ...(callback[1] !== 'invoice' ? { callback_media: true } : {}) } : {}),
     errors: Array.isArray(status.errors) ? status.errors.map(row => ({ code: String(row.code || ''), title: String(row.title || '').slice(0, 200), message: String(row.message || '').slice(0, 500) })) : [] };
 }
 
