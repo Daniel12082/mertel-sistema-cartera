@@ -59,6 +59,22 @@ describe('WhatsApp administrative center', () => {
     await user.selectOptions(screen.getByLabelText('Filtrar estado'), 'FAILED');
     await waitFor(() => expect(whatsappRequest).toHaveBeenCalledWith('/messages', expect.objectContaining({ params: expect.objectContaining({ status: 'FAILED' }) })));
   });
+  it('shows real automatic sends of the Bogotá day and refreshes the section', async () => {
+    const row = { id: '4', customer_name: 'Cliente cartera', recipient: '+573000000001', stage: 'overdue',
+      provider: 'WHATSAPP_CLOUD_API', status: 'DELIVERED', sent_at: '2026-11-16T14:00:00Z', content: 'Aviso de factura' };
+    let messages = [row];
+    whatsappRequest.mockImplementation(path => Promise.resolve(path === '/messages' ? { messages, page: 1, sent_date: '2026-11-16' } : center));
+    const user = userEvent.setup();
+    view();
+    await user.click(screen.getByRole('button', { name: 'Enviados hoy' }));
+    expect(await screen.findByText('Aviso de factura')).toBeVisible();
+    expect(screen.getByText('Cliente cartera')).toBeVisible();
+    expect(screen.getByText('Entregado')).toBeVisible();
+    expect(whatsappRequest).toHaveBeenCalledWith('/messages', expect.objectContaining({ params: { automatic_sent_today: 'true', page: 1 } }));
+    messages = [];
+    await user.click(screen.getByRole('button', { name: 'Actualizar envíos de hoy' }));
+    expect(await screen.findByText('No se han enviado avisos automáticos hoy.')).toBeVisible();
+  });
   it('reuses existing template editor and displays audit events', async () => {
     whatsappRequest.mockImplementation(path => Promise.resolve(path === '/audit' ? [{ id: '1', action: 'automation_update', entity_type: 'whatsapp_setting', entity_id: '1', created_at: '2026-10-07T15:00:00Z' }] : center));
     const user = userEvent.setup(); view(); await user.click(await screen.findByRole('button', { name: 'Plantillas', exact: true }));

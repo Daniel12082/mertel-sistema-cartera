@@ -753,8 +753,16 @@ export async function mockIncomingWhatsApp({ scope, actorId, body }, dbPool = po
     return { message: await messageById(db, scope, result.insertId), duplicate: false };
   }, dbPool);
 }
-export async function listWhatsAppMessages({ scope, filters = {}, customerId }, dbPool = pool) {
+export async function listWhatsAppMessages({ scope, filters = {}, customerId, now = new Date() }, dbPool = pool) {
   const clauses = ["m.company_id=?", "m.channel='whatsapp'"]; const values = [scope.companyId];
+  let sentDate;
+  if (filters.automatic_sent_today !== undefined) {
+    if (filters.automatic_sent_today !== 'true') throw operationError(400, 'Filtro de envíos automáticos inválido.');
+    sentDate = bogotaDate(now);
+    const tomorrow = dateFromDay(dateDay(sentDate) + 1);
+    clauses.push("m.provider='WHATSAPP_CLOUD_API'", "m.direction='outbound'", "m.message_mode='AUTOMATICO'", 'm.sent_at>=?', 'm.sent_at<?');
+    values.push(`${sentDate} 05:00:00`, `${tomorrow} 05:00:00`);
+  }
   for (const [key, column] of [['customer_id', 'm.customer_id'], ['template_id', 'm.template_id'], ['stage', 'm.stage'], ['status', 'UPPER(m.status)']]) {
     const value = key === 'customer_id' && customerId ? customerId : filters[key];
     if (!value) continue;
@@ -770,9 +778,10 @@ export async function listWhatsAppMessages({ scope, filters = {}, customerId }, 
   const page = Number(filters.page ?? 1);
   if (!Number.isSafeInteger(page) || page < 1 || page > 100000) throw operationError(400, 'Página inválida.');
   return transaction(scope, async db => {
+    const order = sentDate ? 'm.sent_at' : 'm.created_at';
     const [rows] = await db.query(`SELECT ${messageColumns} FROM messages m LEFT JOIN customers c ON c.id=m.customer_id AND c.company_id=m.company_id
-      LEFT JOIN message_templates t ON t.id=m.template_id AND t.company_id=m.company_id WHERE ${clauses.join(' AND ')} ORDER BY m.created_at DESC,m.id DESC LIMIT 51 OFFSET ?`, [...values, (page - 1) * 50]);
-    return { messages: rows.slice(0, 50), page, has_next: rows.length > 50 };
+      LEFT JOIN message_templates t ON t.id=m.template_id AND t.company_id=m.company_id WHERE ${clauses.join(' AND ')} ORDER BY ${order} DESC,m.id DESC LIMIT 51 OFFSET ?`, [...values, (page - 1) * 50]);
+    return { messages: rows.slice(0, 50), page, has_next: rows.length > 50, ...(sentDate ? { sent_date: sentDate } : {}) };
   }, dbPool);
 }
 export async function listWhatsAppAudit({ scope }, dbPool = pool) {

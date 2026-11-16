@@ -70,6 +70,34 @@ describe('WhatsApp center HTTP / MySQL, no real sends', { skip: !(process.env.DB
     assert.equal((await request('POST', `/whatsapp/customers/${customerId}/queue`, { mode: 'AUTOMATICO', template_id: '1' }, collector)).status, 403);
     assert.equal((await request('GET', '/admin/whatsapp?company_id=999')).status, 403);
   });
+  test('automatic send history uses actual send time and the Bogotá day', async () => {
+    const path = '/admin/whatsapp/messages?automatic_sent_today=';
+    assert.equal((await request('GET', path + 'true', undefined, collector)).status, 403);
+    assert.equal((await request('GET', path + 'invalid')).status, 400);
+    const rows = [
+      ['antes de medianoche', 'WHATSAPP_CLOUD_API', 'outbound', 'AUTOMATICO', 'SENT', '2026-10-07 04:59:59'],
+      ['inicio del día', 'WHATSAPP_CLOUD_API', 'outbound', 'AUTOMATICO', 'DELIVERED', '2026-10-07 05:00:00'],
+      ['aceptado y luego fallido', 'WHATSAPP_CLOUD_API', 'outbound', 'AUTOMATICO', 'FAILED', '2026-10-08 04:59:59'],
+      ['día siguiente', 'WHATSAPP_CLOUD_API', 'outbound', 'AUTOMATICO', 'SENT', '2026-10-08 05:00:00'],
+      ['manual', 'WHATSAPP_CLOUD_API', 'outbound', 'MANUAL', 'SENT', '2026-10-07 12:00:00'],
+      ['simulado', 'MOCK', 'outbound', 'AUTOMATICO', 'SENT', '2026-10-07 12:00:00'],
+      ['entrante', 'WHATSAPP_CLOUD_API', 'inbound', 'AUTOMATICO', 'DELIVERED', '2026-10-07 12:00:00'],
+      ['en cola', 'WHATSAPP_CLOUD_API', 'outbound', 'AUTOMATICO', 'PENDING', null],
+    ];
+    const ids = [];
+    try {
+      for (const row of rows) {
+        const [inserted] = await db.query(`INSERT INTO messages(company_id,channel,recipient,content,provider,direction,message_mode,status,sent_at,created_at)
+          VALUES (?,'whatsapp','+573000000001',?,?,?,?,?,?,'2026-10-06 12:00:00')`, [companyId, ...row]);
+        ids.push(inserted.insertId);
+      }
+      const result = await services.listWhatsAppMessages({ scope: scope(), filters: { automatic_sent_today: 'true' }, now: new Date('2026-10-08T04:59:59Z') });
+      assert.equal(result.sent_date, '2026-10-07');
+      assert.deepEqual(result.messages.map(row => row.content), ['aceptado y luego fallido', 'inicio del día']);
+    } finally {
+      if (ids.length) await db.query('DELETE FROM messages WHERE company_id=? AND id IN (?)', [companyId, ids]);
+    }
+  });
   test('configuration, connection failure/success, secrets redaction and no direct status forgery', async () => {
     assert.equal((await request('PATCH', settingsPath, { connection_status: 'CONNECTED' })).status, 400);
     assert.equal((await request('PATCH', settingsPath, { provider: 'MOCK', global_daily_limit: 100, customer_daily_limit: 10 })).body.data.connection_status, 'CONFIGURED');
