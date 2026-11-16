@@ -9,7 +9,7 @@ import { collectionStageCatalog } from './collectionPolicy.js';
 import { collectionMessage } from './collectionMessages.service.js';
 import { renderMessageTemplate } from '../utils/messageTemplate.js';
 import { normalizePhone, whatsappProvider } from './whatsappProvider.service.js';
-import { describeWhatsAppTextTemplate, prepareWhatsAppTextTemplate } from './whatsappTextTemplate.js';
+import { describeWhatsAppTextTemplate, META_TEST_TEMPLATE_MESSAGE, META_TEST_TEMPLATE_NAME, prepareWhatsAppTextTemplate } from './whatsappTextTemplate.js';
 import { buildMertelInvoiceMessage, isMertelInvoiceTemplate, MERTEL_INVOICE_BODY, MERTEL_INVOICE_TEMPLATE } from './mertelInvoiceWhatsApp.js';
 import { defaultWhatsAppSettings, publicWhatsAppSettings, encryptCredentials, positiveLimit, validateRule,
   bogotaDate, nextWindow, idempotencyKey, retryAt, deliveryTransition, MESSAGE_STATES, RETRY_POLICY } from './whatsappPolicy.js';
@@ -485,6 +485,7 @@ export async function sendMetaChatTemplate({ scope, actorId, body, now = new Dat
     throw operationError(400, 'Selecciona una plantilla aprobada de WhatsApp.');
   }
   if (body.name === MERTEL_INVOICE_TEMPLATE) throw operationError(400, 'Usa Enviar aviso de facturas para completar esta plantilla con los datos de cartera.');
+  if (body.name === META_TEST_TEMPLATE_NAME) throw operationError(409, META_TEST_TEMPLATE_MESSAGE);
   let recipient;
   try { recipient = normalizePhone(body.recipient); } catch { throw operationError(400, 'Número de WhatsApp inválido.'); }
   const day = bogotaDate(now);

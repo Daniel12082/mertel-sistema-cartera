@@ -1,5 +1,5 @@
 import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
-import { describeWhatsAppTextTemplate, prepareWhatsAppTextTemplate } from './whatsappTextTemplate.js';
+import { describeWhatsAppTextTemplate, META_TEST_TEMPLATE_MESSAGE, prepareWhatsAppTextTemplate } from './whatsappTextTemplate.js';
 
 // Providers normalize transport details; credentials are always read from server-only env.
 export class WhatsAppProvider {
@@ -42,7 +42,8 @@ export class MetaWhatsAppProvider extends WhatsAppProvider {
         const error = data?.error || {};
         const code = response.status === 401 || response.status === 403 ? 'META_AUTH_FAILED' :
           response.status === 429 ? 'META_RATE_LIMITED' : `META_HTTP_${response.status}`;
-        const safe = new Error(typeof error.error_user_msg === 'string' ? error.error_user_msg.slice(0, 500) : 'Meta rechazó la solicitud.');
+        const message = error.code === 131058 ? META_TEST_TEMPLATE_MESSAGE : error.error_user_msg;
+        const safe = new Error(typeof message === 'string' ? message.slice(0, 500) : 'Meta rechazó la solicitud.');
         safe.code = typeof error.code === 'number' ? String(error.code) : code;
         safe.httpStatus = response.status;
         safe.retryAfter = response.headers.get('retry-after');

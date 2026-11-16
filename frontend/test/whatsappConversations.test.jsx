@@ -246,7 +246,8 @@ it('opens approved templates with a slash and links an unknown number by invoice
     if (config.url.endsWith('/messages')) return respond({ messages: history });
     if (config.url.endsWith('/sequence')) return respond({ customer, steps: [] });
     if (config.url.endsWith('/context')) return respond({ customer, total_balance: '100.00', open_invoices: [invoice] });
-    if (config.url.endsWith('/meta/templates')) return respond({ templates: [approved, { ...approved, name: 'pendiente', status: 'PENDING' }] });
+    if (config.url.endsWith('/meta/templates')) return respond({ templates: [approved,
+      { ...approved, name: 'pendiente', status: 'PENDING' }, { ...approved, name: 'hello_world', language: 'en_US' }] });
     if (config.url.endsWith('/meta/templates/send')) {
       expect(JSON.parse(config.data)).toEqual({ recipient, name: approved.name, language: 'es', values: ['Daniel'] });
       history = [message];
@@ -272,6 +273,8 @@ it('opens approved templates with a slash and links an unknown number by invoice
   await user.type(screen.getByLabelText('Número de WhatsApp'), recipient);
   await user.click(screen.getByRole('button', { name: 'Iniciar chat' }));
   await user.type(screen.getByLabelText('Mensaje de WhatsApp'), '/');
+  await screen.findByRole('button', { name: 'saludo_mertel (es)' });
+  expect(screen.queryByRole('button', { name: /hello_world/ })).toBeNull();
   await user.click(await screen.findByRole('button', { name: 'saludo_mertel (es)' }));
   expect(screen.queryByRole('button', { name: /pendiente \(es\)/ })).toBeNull();
   await user.type(screen.getByLabelText('Mensaje · 1'), 'Daniel');

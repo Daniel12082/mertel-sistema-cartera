@@ -1,3 +1,6 @@
+export const META_TEST_TEMPLATE_NAME = 'hello_world';
+export const META_TEST_TEMPLATE_MESSAGE = 'La plantilla hello_world solo se puede enviar desde un número de prueba de Meta. Elige una plantilla aprobada de MERTEL.';
+
 export function describeWhatsAppTextTemplate(template) {
   if (template?.status !== 'APPROVED' || template.category === 'AUTHENTICATION') return null;
   const components = [];

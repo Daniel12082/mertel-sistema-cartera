@@ -281,6 +281,9 @@ describe('WhatsApp center HTTP / MySQL, no real sends', { skip: !(process.env.DB
         return Response.json({ messages: [{ id: 'wamid.template-fixture' }] });
       };
       const templateBody = { recipient: newNumber, name: approved.name, language: 'es', values: ['Daniel'] };
+      const testTemplate = await request('POST', sendTemplatePath, { ...templateBody, name: 'hello_world', language: 'en_US', values: [] });
+      assert.equal(testTemplate.status, 409);
+      assert.match(testTemplate.body.message, /solo se puede enviar desde un número de prueba de Meta/);
       assert.equal((await request('POST', sendTemplatePath, { ...templateBody, values: [] })).status, 400);
       const sentTemplate = await request('POST', sendTemplatePath, templateBody);
       assert.equal(sentTemplate.status, 200, JSON.stringify(sentTemplate));

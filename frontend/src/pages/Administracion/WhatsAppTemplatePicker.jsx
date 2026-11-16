@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { MERTEL_INVOICE_TEMPLATE } from '../../../../backend/src/services/mertelInvoiceWhatsApp';
-import { describeWhatsAppTextTemplate, prepareWhatsAppTextTemplate } from '../../../../backend/src/services/whatsappTextTemplate';
+import { describeWhatsAppTextTemplate, META_TEST_TEMPLATE_NAME, prepareWhatsAppTextTemplate } from '../../../../backend/src/services/whatsappTextTemplate';
 import { whatsappRequest } from '../../services/whatsappCenter.service';
 
 export default function WhatsAppTemplatePicker({ recipient, query, onClose, canUseInvoice, onInvoice, onMessage }) {
@@ -12,7 +12,7 @@ export default function WhatsAppTemplatePicker({ recipient, query, onClose, canU
   useEffect(() => {
     const controller = new AbortController();
     whatsappRequest('/meta/templates', { signal: controller.signal }).then(result => {
-      if (!controller.signal.aborted) setTemplates(result.templates.filter(template => template.status === 'APPROVED'));
+      if (!controller.signal.aborted) setTemplates(result.templates.filter(template => template.status === 'APPROVED' && template.name !== META_TEST_TEMPLATE_NAME));
     }).catch(failure => {
       if (!controller.signal.aborted) { setTemplates([]); setError(failure.message); }
     });
