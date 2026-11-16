@@ -71,8 +71,18 @@ function requireAutomationProvider(settings) {
   if (!provider) throw operationError(409, 'Conecta WhatsApp Cloud API y habilita el envío real antes de automatizar.');
   return provider;
 }
-function hasWhatsAppConsent(settings, customer) {
-  return validMobile(customer.phone) && settings.authorized_recipients?.[String(customer.id)]?.recipient === normalizePhone(customer.phone);
+async function hasWhatsAppOptOut(db, scope, settings, customer) {
+  if (!validMobile(customer.phone)) return false;
+  const recipient = normalizePhone(customer.phone);
+  // A renewed authorization supersedes a previous opt-out. The webhook clears it on a new opt-out.
+  if (settings.authorized_recipients?.[String(customer.id)]?.recipient === recipient) return false;
+  const [[row]] = await db.query(`SELECT (
+    EXISTS(SELECT 1 FROM messages WHERE company_id=? AND recipient=? AND direction='inbound'
+      AND provider='WHATSAPP_CLOUD_API' AND UPPER(TRIM(content)) IN ('BAJA','STOP','CANCELAR'))
+    OR EXISTS(SELECT 1 FROM audit_logs WHERE company_id=? AND entity_type='customer' AND entity_id=?
+      AND action='whatsapp_opt_out' AND JSON_UNQUOTE(JSON_EXTRACT(new_values,'$.recipient'))=?)
+    ) AS opted_out`, [scope.companyId, recipient, scope.companyId, customer.id, recipient]);
+  return Boolean(Number(row.opted_out));
 }
 function collectionContactPhone(settings) {
   try { return settings.collection_contact_phone ? normalizePhone(settings.collection_contact_phone) : null; }
@@ -456,7 +466,8 @@ export async function sendMetaInvoiceNotice({ scope, actorId, body, now = new Da
   const claimed = await transaction(scope, async (db, settings) => {
     if (requireAutomationProvider(settings) !== 'WHATSAPP_CLOUD_API') throw operationError(409, 'El canal real de WhatsApp no está activo.');
     const input = await automaticInput(db, scope, settings, customerId, day);
-    if (!input.contactAuthorized || settings.excluded_customers?.[customerId]) throw operationError(409, 'El cliente no está habilitado para recibir avisos por WhatsApp.');
+    if (!validMobile(input.customer.phone)) throw operationError(409, 'El cliente no tiene un celular válido.');
+    if (input.contactOptedOut || settings.excluded_customers?.[customerId]) throw operationError(409, 'El cliente está excluido de los avisos por WhatsApp.');
     if (await hasSharedWhatsAppNumber(db, scope, input.customer)) throw operationError(409, 'El teléfono está asociado a más de un cliente.');
     const invoices = input.invoices.filter(invoice => invoiceIds.includes(String(invoice.id)) && Number(invoice.balance) > 0);
     if (invoices.length !== invoiceIds.length) throw operationError(409, 'Una factura seleccionada ya no tiene saldo o no pertenece al cliente.');
@@ -744,7 +755,8 @@ async function automaticInput(db, scope, settings, customerId, day) {
   const rules = await loadCompanyCollectionRules(scope.companyId, db);
   const real = runtimeProvider(settings) === 'WHATSAPP_CLOUD_API';
   return { customer, invoices, templates, messages: real ? messages.filter(row => row.provider !== 'MOCK') : messages, rules, settings,
-    referenceDate: day, realTemplateName: real ? MERTEL_INVOICE_TEMPLATE : null, contactAuthorized: !real || hasWhatsAppConsent(settings, customer) };
+    referenceDate: day, realTemplateName: real ? MERTEL_INVOICE_TEMPLATE : null,
+    contactOptedOut: real && await hasWhatsAppOptOut(db, scope, settings, customer) };
 }
 
 async function oneAutomaticPerDay(db, scope, customerId, day, excludeId = null) {
@@ -814,7 +826,7 @@ async function enqueueAutomatic(db, scope, settings, customerId, now, metaLimit)
   const input = await automaticInput(db, scope, settings, customerId, bogotaDate(now));
   if (settings.excluded_customers?.[customerId]) throw operationError(409, 'Cliente excluido de mensajes automáticos.');
   if (!validMobile(input.customer.phone)) throw operationError(409, 'Cliente sin celular válido; no consume cupo.');
-  if (!input.contactAuthorized) throw operationError(409, 'El cliente no tiene autorización registrada para avisos por WhatsApp.');
+  if (input.contactOptedOut) throw operationError(409, 'El cliente solicitó dejar de recibir avisos por WhatsApp.');
   const notice = automaticSelection(input);
   if (!notice) throw operationError(409, 'No hay un aviso automático vigente pendiente de envío.');
   if (notice.message) return { message: notice.message, duplicate: true };
@@ -852,7 +864,7 @@ async function dispatchAutomatic(db, scope, settings, message, now, fail, metaLi
   if (day > context.expires_on) return cancel('Aviso descartado: superó su ventana máxima de 3 días o el día calendario 10.');
   if (!settings.automations_enabled || settings.excluded_customers?.[message.customer_id]) return cancel('Automatización desactivada o cliente excluido.');
   if (!validMobile(input.customer.phone)) return cancel('Cliente sin celular válido; no consume cupo.');
-  if (!input.contactAuthorized) return cancel('El número ya no tiene autorización para avisos por WhatsApp.');
+  if (input.contactOptedOut) return cancel('El cliente solicitó dejar de recibir avisos por WhatsApp.');
   if (!simulated && await hasSharedWhatsAppNumber(db, scope, input.customer)) return cancel('El teléfono está asociado a más de un cliente.');
   const notice = automaticNotices(input).find(row => row.stage === message.stage && row.date === context.notice_date);
   if (!notice?.applicable) return cancel(notice?.reason || 'La cartera aplicable ya fue pagada o el aviso dejó de aplicar.');
@@ -910,7 +922,7 @@ export async function getCustomerWhatsAppSequence({ scope, customerId, filters =
   return transaction(scope, async (db, settings) => {
     const input = await automaticInput(db, scope, settings, customerId, day);
     const result = buildWhatsAppSequence(input, input.realTemplateName ? (notice, date) => realAutomaticMessage(notice, date, settings).content : undefined);
-    return input.realTemplateName ? { ...result, real_provider: true, contact_authorized: input.contactAuthorized } : result;
+    return input.realTemplateName ? { ...result, real_provider: true, contact_opted_out: input.contactOptedOut } : result;
   }, dbPool);
 }
 export async function setWhatsAppCustomerConsent({ scope, actorId, customerId, body }, dbPool = pool) {
@@ -923,7 +935,7 @@ export async function setWhatsAppCustomerConsent({ scope, actorId, customerId, b
     if (runtimeProvider(settings) !== 'WHATSAPP_CLOUD_API') throw operationError(409, 'Configura WhatsApp Cloud API antes de registrar autorizaciones.');
     const [[customer]] = await db.query("SELECT CAST(id AS CHAR) id,phone FROM customers WHERE company_id=? AND id=? AND status='active' AND deleted_at IS NULL FOR UPDATE", [scope.companyId, customerId]);
     if (!customer) throw operationError(404, 'Cliente no encontrado.');
-    let recipient = settings.authorized_recipients[customerId]?.recipient ?? null;
+    let recipient = validMobile(customer.phone) ? normalizePhone(customer.phone) : null;
     if (body.authorized) {
       if (!validMobile(customer.phone) || await hasSharedWhatsAppNumber(db, scope, customer)) throw operationError(409, 'Registra un celular válido asociado únicamente a este cliente.');
       recipient = normalizePhone(customer.phone);

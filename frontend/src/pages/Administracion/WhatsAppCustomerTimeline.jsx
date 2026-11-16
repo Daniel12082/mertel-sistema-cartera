@@ -55,17 +55,16 @@ export default function WhatsAppCustomerTimeline() {
           if (data.real_provider && !window.confirm('¿Procesar ahora los avisos pendientes de los clientes autorizados? Se podrán enviar mensajes reales.')) return;
           return act(() => whatsappRequest('/automations/process', { method: 'post', body: simulation ? { reference_date: day } : {} }));
         }}>{simulation ? 'Simular evaluación del día' : 'Procesar avisos pendientes ahora'}</button></div>
-      {data.real_provider && <form onSubmit={event => {
+      {data.contact_opted_out && <form onSubmit={event => {
         event.preventDefault();
-        const authorized = !data.contact_authorized;
         void act(async () => {
-          await whatsappRequest(`/customers/${customerId}/consent`, { method: 'patch', body: { authorized, ...(authorized ? { source: consentSource.trim() } : {}) } });
+          await whatsappRequest(`/customers/${customerId}/consent`, { method: 'patch', body: { authorized: true, source: consentSource.trim() } });
           setConsentSource('');
         });
       }}>
-        <p>{data.contact_authorized ? 'Autorización de WhatsApp registrada para este número.' : 'El cliente aún no tiene autorización de WhatsApp registrada para este número.'}</p>
-        {!data.contact_authorized && <label>Referencia del consentimiento<input required maxLength={200} value={consentSource} onChange={event => setConsentSource(event.target.value)} /></label>}
-        <button disabled={busy || (!data.contact_authorized && !consentSource.trim())}>{data.contact_authorized ? 'Revocar autorización de WhatsApp' : 'Registrar consentimiento del cliente'}</button>
+        <p>El cliente solicitó dejar de recibir avisos por WhatsApp.</p>
+        <label>Referencia de la nueva autorización<input required maxLength={200} value={consentSource} onChange={event => setConsentSource(event.target.value)} /></label>
+        <button disabled={busy || !consentSource.trim()}>Registrar nueva autorización</button>
       </form>}
       {data.excluded && <p className="wa-warning">Cliente excluido: el backend bloquea los mensajes automáticos.</p>}
       <p>FACTURA / CARTERA ↓ PRONTO PAGO ↓ RECORDATORIO ↓ VENCE HOY ↓ MORA</p>

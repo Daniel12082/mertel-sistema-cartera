@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { MERTEL_INVOICE_LANGUAGE, MERTEL_INVOICE_TEMPLATE, isMertelInvoiceTemplate } from '../../../../backend/src/services/mertelInvoiceWhatsApp';
 import { whatsappRequest } from '../../services/whatsappCenter.service';
 
-export default function WhatsAppInvoiceNotice({ customerId, invoices, authorized, onMessage }) {
+export default function WhatsAppInvoiceNotice({ customerId, invoices, blocked, onMessage }) {
   const [invoiceIds, setInvoiceIds] = useState([]);
   const [template, setTemplate] = useState({ status: '', approved: false });
   const [preview, setPreview] = useState(null);
@@ -50,7 +50,7 @@ export default function WhatsAppInvoiceNotice({ customerId, invoices, authorized
     <summary>Enviar aviso de facturas</summary>
     {!customerId ? <p>Selecciona una conversación vinculada al cliente para consultar sus facturas.</p> : <>
       <p>Estado en Meta: {({ PENDING: 'Pendiente', APPROVED: 'Aprobada', REJECTED: 'Rechazada' })[template.status] || template.status || 'Consultando…'}</p>
-      {!authorized && <p>Registra la autorización del cliente en Configuración → WhatsApp → Timeline.</p>}
+      {blocked && <p>Este cliente está excluido de los avisos por WhatsApp.</p>}
       {!invoices.length && <p>No hay facturas pendientes disponibles para este cliente.</p>}
       {invoices.length > 0 && <fieldset disabled={busy}>
         <legend>Facturas pendientes</legend>
@@ -64,8 +64,8 @@ export default function WhatsAppInvoiceNotice({ customerId, invoices, authorized
       </fieldset>}
       {error && <p role="alert" className="wa-error">{error}</p>}
       {preview
-        ? <><p style={{ whiteSpace: 'pre-wrap' }}>{preview.content}</p><button type="button" disabled={busy || !template.approved || !authorized} onClick={() => request(true)}>Confirmar envío del aviso</button></>
-        : <button type="button" disabled={busy || !authorized || !invoiceIds.length} onClick={() => request(false)}>Revisar aviso</button>}
+        ? <><p style={{ whiteSpace: 'pre-wrap' }}>{preview.content}</p><button type="button" disabled={busy || !template.approved || blocked} onClick={() => request(true)}>Confirmar envío del aviso</button></>
+        : <button type="button" disabled={busy || blocked || !invoiceIds.length} onClick={() => request(false)}>Revisar aviso</button>}
     </>}
   </details>;
 }

@@ -129,7 +129,7 @@ describe('MERTEL automation authority on an isolated MySQL schema', { skip: !(pr
     assert.equal(sequence.steps[1].message.status, 'SENT'); assert.equal(sequence.last_contact.message.stage, 'five_days_before_due');
     assert.equal((await db.query("SELECT COUNT(*) count FROM audit_logs WHERE action='sent'"))[0][0].count, 1);
   });
-  test('production notice waits for approval and opt-in, sends live values once, and records the webhook', async t => {
+  test('production notices require approval, respect opt-outs and send without individual registration', async t => {
     const env = {
       WHATSAPP_PROVIDER: 'meta', WHATSAPP_TEST_MODE: 'false', WHATSAPP_API_VERSION: 'v27.0',
       WHATSAPP_PHONE_NUMBER_ID: '12345678', WHATSAPP_BUSINESS_ACCOUNT_ID: '12345679', WHATSAPP_APP_ID: '12345680',
@@ -161,8 +161,6 @@ describe('MERTEL automation authority on an isolated MySQL schema', { skip: !(pr
     await assert.rejects(activate(), /todavía no tiene aprobada/);
     templateStatus = 'APPROVED';
     await activate();
-    assert.equal((await service.processWhatsAppAutomations({ scope, now }, pool)).sent, 0);
-    await service.setWhatsAppCustomerConsent({ scope, customerId: '1', body: { authorized: true, source: 'Consentimiento de prueba' } }, pool);
     const preview = await service.sendMetaInvoiceNotice({ scope, now, body: { customer_id: '1', invoice_ids: ['1'] } }, pool);
     assert.match(preview.content, /Factura AUTO-DEMO-1 · emisión 2026-09-01 · vence 2026-10-13/);
     assert.equal(requests.length, 0);
@@ -182,11 +180,16 @@ describe('MERTEL automation authority on an isolated MySQL schema', { skip: !(pr
     assert.equal(requests.length, 2);
     await service.receiveMetaWebhook({ events: [{ kind: 'message', provider_message_id: 'wamid.stop', phone: '+573001234567',
       timestamp: now, type: 'text', content: 'BAJA' }] }, pool);
-    assert.equal((await service.getCustomerWhatsAppSequence({ scope, customerId: '1', now }, pool)).contact_authorized, false);
+    const sequence = () => service.getCustomerWhatsAppSequence({ scope, customerId: '1', now }, pool);
+    assert.equal((await sequence()).contact_opted_out, true);
+    await assert.rejects(sendManual(), /excluido/);
+    await service.setWhatsAppCustomerConsent({ scope, customerId: '1', body: { authorized: true, source: 'Nueva autorización de prueba' } }, pool);
+    assert.equal((await sequence()).contact_opted_out, false);
+    await service.setWhatsAppCustomerConsent({ scope, customerId: '1', body: { authorized: false } }, pool);
+    assert.equal((await sequence()).contact_opted_out, true);
 
     // Production reserves 40 slots 15 minutes apart and carries the other 10 to Friday.
     await db.query('DELETE FROM messages');
-    const authorized = {};
     for (let id = 1; id <= 50; id++) {
       const phone = `310000${String(id).padStart(4, '0')}`;
       if (id === 1) await db.query('UPDATE customers SET phone=? WHERE id=1', [phone]);
@@ -195,10 +198,9 @@ describe('MERTEL automation authority on an isolated MySQL schema', { skip: !(pr
         await db.query(`INSERT INTO invoices(company_id,customer_id,invoice_number,issue_date,due_date,document_value,base_value,iva_value,balance)
           VALUES (1,?,?,'2026-09-01','2026-10-13',1190,1000,190,1190)`, [id, `AVISO-${id}`]);
       }
-      authorized[id] = { recipient: `+57${phone}` };
     }
     await freeze();
-    await db.query("UPDATE settings SET setting_value=? WHERE setting_key='whatsapp_center'", [JSON.stringify({ ...configured, authorized_recipients: authorized })]);
+    await db.query("UPDATE settings SET setting_value=? WHERE setting_key='whatsapp_center'", [JSON.stringify(configured)]);
     await assert.rejects(service.configureAutomaticSchedule({ scope, body: { daily_limit: 251 } }, pool), /máximo 250/);
     const savedSchedule = await service.configureAutomaticSchedule({ scope, body: { daily_limit: 40 } }, pool);
     assert.equal(savedSchedule.automatic_daily_limit, 40);

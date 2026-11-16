@@ -116,7 +116,7 @@ export function automaticNotices(input) {
     if (notice.stage === 'prompt_payment' && current.pending.every(promo18)) reason = 'Toda la cartera tiene PROMO 18 = SI; no aplica pronto pago.';
     if (settings.excluded_customers?.[String(customer.id)]) reason = 'Cliente excluido de mensajes automáticos.';
     if (!validMobile(customer.phone)) reason = 'Cliente sin celular válido; no consume cupo.';
-    if (input.contactAuthorized === false) reason = 'El cliente no tiene autorización registrada para avisos por WhatsApp.';
+    if (input.contactOptedOut) reason = 'El cliente solicitó dejar de recibir avisos por WhatsApp.';
     if (input.referenceDate > notice.expires_on) reason = 'Aviso descartado: superó su ventana máxima.';
     if (!notice.template) reason ||= `Plantilla activa ${notice.template_name} no disponible.`;
     if (!notice.rule || !settings.automations_enabled) reason ||= 'Automatización no activada para esta etapa.';

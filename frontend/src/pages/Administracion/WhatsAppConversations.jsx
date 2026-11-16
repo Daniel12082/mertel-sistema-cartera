@@ -373,7 +373,7 @@ export default function WhatsAppConversations({ settings, conversationCustomers,
           {detail.hasNext && <button className="wa-chat-more" disabled={loadingMore} onClick={() => loadMore(true)}>Cargar mensajes anteriores</button>}
           <ChatMessages messages={messages} />
           {metaProduction && <WhatsAppInvoiceNotice key={selection} customerId={customerId}
-            invoices={detail.context?.open_invoices || []} authorized={detail.sequence?.contact_authorized && !detail.sequence?.excluded}
+            invoices={detail.context?.open_invoices || []} blocked={detail.sequence?.contact_opted_out || detail.sequence?.excluded}
             onMessage={message => setRecords(current => merge(current, [message]))} />}
           {metaConnected ? <form className="wa-chat-compose" onSubmit={event => { event.preventDefault(); void send(); }}>
             {notice && <p className="wa-success" role="status">{notice}</p>}
