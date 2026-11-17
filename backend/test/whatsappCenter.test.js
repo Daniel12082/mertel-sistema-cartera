@@ -340,11 +340,14 @@ describe('WhatsApp center HTTP / MySQL, no real sends', { skip: !(process.env.DB
       assert.equal(alternate.customer_id, customer2);
       const [[unchanged]] = await db.query('SELECT phone FROM customers WHERE id=?', [customer2]);
       assert.equal(unchanged.phone, '3000000001');
-      const invoiceNotice = { customer_id: customer2, recipient: newNumber, invoice_ids: [String(invoice.insertId)] };
+      const [secondInvoice] = await db.query(`INSERT INTO invoices(company_id,customer_id,invoice_number,document_value,base_value,iva_value,balance)
+        SELECT company_id,id,'LINK-CHAT-2',100,100,0,100 FROM customers WHERE id=?`, [customer2]);
+      const invoiceNotice = { customer_id: customer2, recipient: newNumber, invoice_ids: [String(invoice.insertId), String(secondInvoice.insertId)] };
       const noticePath = '/admin/whatsapp/meta/invoice-notices';
       const preview = await request('POST', noticePath, invoiceNotice);
       assert.equal(preview.status, 200, JSON.stringify(preview));
       assert.match(preview.body.data.content, /Factura LINK-CHAT-1/);
+      assert.match(preview.body.data.content, /Factura LINK-CHAT-1; Factura LINK-CHAT-2/);
       globalThis.fetch = async (url, options) => {
         if (!String(url).startsWith('https://graph.facebook.com/')) return realFetch(url, options);
         if (options.method === 'GET') return Response.json({ data: [{ name: MERTEL_INVOICE_TEMPLATE, language: MERTEL_INVOICE_LANGUAGE,
@@ -352,6 +355,9 @@ describe('WhatsApp center HTTP / MySQL, no real sends', { skip: !(process.env.DB
         const payload = JSON.parse(options.body);
         assert.equal(payload.to, newNumber.slice(1));
         assert.equal(payload.template.name, MERTEL_INVOICE_TEMPLATE);
+        const values = payload.template.components[0].parameters.map(parameter => parameter.text);
+        assert.equal(values[1], 'Factura LINK-CHAT-1; Factura LINK-CHAT-2');
+        assert.ok(values.every(value => !/[\r\n\t]/.test(value)));
         return Response.json({ messages: [{ id: 'wamid.linked-invoice-fixture' }] });
       };
       const sentInvoice = await request('POST', noticePath, { ...invoiceNotice, preview_token: preview.body.data.preview_token });

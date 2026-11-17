@@ -53,7 +53,7 @@ export function buildMertelInvoiceMessage(customer, invoices, { referenceDate, c
   const contact = clean(contactPhone);
   if (!contact) throw operationError(409, 'Configura el número de contacto de cobranza antes de preparar el mensaje.');
   const parts = invoiceNoticeParts(invoices, referenceDate);
-  const values = [clean(customer.name), parts.documents];
+  const values = [clean(customer.name), parts.documents.replaceAll('\n', '; ')];
   const content = MERTEL_INVOICE_BODY.replace(/\{\{([1-2])\}\}/g, (_, index) => values[Number(index) - 1]);
   if (values.some(value => !value || value.length > 1024) || content.length > 1024) throw operationError(409, 'El aviso excede el espacio de la plantilla de WhatsApp. Reduce la cantidad de facturas antes de enviarlo.');
   return { content, template: { name: MERTEL_INVOICE_TEMPLATE, language: MERTEL_INVOICE_LANGUAGE,

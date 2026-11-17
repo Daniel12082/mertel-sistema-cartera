@@ -1,6 +1,11 @@
 import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import { describeWhatsAppTextTemplate, META_TEST_TEMPLATE_MESSAGE, prepareWhatsAppTextTemplate } from './whatsappTextTemplate.js';
 
+const TEMPLATE_ERROR_MESSAGES = new Map([
+  [131058, META_TEST_TEMPLATE_MESSAGE],
+  [132018, 'Meta rechazó el formato de los datos de la plantilla (132018). Vuelve a preparar el aviso antes de enviarlo.'],
+]);
+
 // Providers normalize transport details; credentials are always read from server-only env.
 export class WhatsAppProvider {
   async sendMessage() { throw new Error('Provider method not implemented'); }
@@ -42,7 +47,7 @@ export class MetaWhatsAppProvider extends WhatsAppProvider {
         const error = data?.error || {};
         const code = response.status === 401 || response.status === 403 ? 'META_AUTH_FAILED' :
           response.status === 429 ? 'META_RATE_LIMITED' : `META_HTTP_${response.status}`;
-        const message = error.code === 131058 ? META_TEST_TEMPLATE_MESSAGE : error.error_user_msg;
+        const message = TEMPLATE_ERROR_MESSAGES.get(error.code) ?? error.error_user_msg;
         const safe = new Error(typeof message === 'string' ? message.slice(0, 500) : 'Meta rechazó la solicitud.');
         safe.code = typeof error.code === 'number' ? String(error.code) : code;
         safe.httpStatus = response.status;
