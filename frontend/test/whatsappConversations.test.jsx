@@ -1,5 +1,5 @@
 import { beforeEach, afterEach, describe, it, expect, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import api from '../src/services/api';
 import WhatsAppConversations from '../src/pages/Administracion/WhatsAppConversations';
@@ -321,7 +321,7 @@ it('keeps a new chat draft when the first incoming message opens the Meta reply 
     const send = screen.getByRole('button', { name: 'Enviar mensaje' });
     expect(send).toBeDisabled();
     history = [incoming];
-    await user.click(screen.getByRole('button', { name: 'Actualizar conversación' }));
+    fireEvent.focus(window);
     expect(await screen.findByLabelText('Mensaje entrante 21')).toBeVisible();
     expect(screen.getByLabelText('Mensaje de WhatsApp')).toHaveValue('Hola, soy de MERTEL.');
     expect(send).toBeEnabled();

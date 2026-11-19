@@ -755,6 +755,11 @@ export async function mockIncomingWhatsApp({ scope, actorId, body }, dbPool = po
 }
 export async function listWhatsAppMessages({ scope, filters = {}, customerId, now = new Date() }, dbPool = pool) {
   const clauses = ["m.company_id=?", "m.channel='whatsapp'"]; const values = [scope.companyId];
+  if (filters.recipient !== undefined) {
+    let recipient;
+    try { recipient = normalizePhone(filters.recipient); } catch { throw operationError(400, 'Número de WhatsApp inválido.'); }
+    clauses.push('m.recipient=?'); values.push(recipient);
+  }
   let sentDate;
   if (filters.automatic_sent_today !== undefined) {
     if (filters.automatic_sent_today !== 'true') throw operationError(400, 'Filtro de envíos automáticos inválido.');

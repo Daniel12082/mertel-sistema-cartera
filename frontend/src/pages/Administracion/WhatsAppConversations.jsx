@@ -220,6 +220,44 @@ export default function WhatsAppConversations({ settings, conversationCustomers,
     });
     return () => controller.abort();
   }, [customerId, revision, chatOnly]);
+  useEffect(() => {
+    if (!metaConnected) return;
+    const controller = new AbortController();
+    let running = false;
+    async function refreshHistory() {
+      if (running || document.hidden || controller.signal.aborted) return;
+      running = true;
+      try {
+        const requests = [whatsappRequest('/messages', { params: { page: 1 }, signal: controller.signal })];
+        if (recipient) requests.push(whatsappRequest('/messages', {
+          params: { page: 1, recipient: `+${recipient}`, ...(customerId ? { customer_id: customerId } : {}) }, signal: controller.signal,
+        }));
+        const [inbox, selected] = await Promise.all(requests);
+        checkMessages(inbox);
+        if (selected) checkMessages(selected, customerId);
+        if (controller.signal.aborted) return;
+        setRecords(current => merge(current, inbox.messages));
+        if (selected) {
+          setRecords(current => merge(current, selected.messages));
+          if (chosen.current === selection) setDetail(current => ({ ...current, messages: merge(current.messages, selected.messages), historyError: '' }));
+        }
+        setWindowClock(Date.now());
+      } catch {
+        if (!controller.signal.aborted && chosen.current === selection) {
+          setDetail(current => ({ ...current, historyError: 'No se pudo actualizar el chat. Comprueba la conexión y vuelve a intentarlo.' }));
+        }
+      } finally { running = false; }
+    }
+    const interval = setInterval(() => { void refreshHistory(); }, 10000);
+    window.addEventListener('focus', refreshHistory);
+    document.addEventListener('visibilitychange', refreshHistory);
+    return () => {
+      controller.abort();
+      clearInterval(interval);
+      window.removeEventListener('focus', refreshHistory);
+      document.removeEventListener('visibilitychange', refreshHistory);
+    };
+  }, [metaConnected, customerId, recipient, selection]);
 
   function choose(key) {
     if (chatOnly && preferences[key]?.unread) updatePreference(key, { unread: false });

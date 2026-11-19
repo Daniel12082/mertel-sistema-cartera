@@ -69,6 +69,7 @@ describe('WhatsApp center HTTP / MySQL, no real sends', { skip: !(process.env.DB
     assert.equal((await request('PATCH', settingsPath, { provider: 'MOCK' }, collector)).status, 403);
     assert.equal((await request('POST', `/whatsapp/customers/${customerId}/queue`, { mode: 'AUTOMATICO', template_id: '1' }, collector)).status, 403);
     assert.equal((await request('GET', '/admin/whatsapp?company_id=999')).status, 403);
+    assert.equal((await request('GET', '/admin/whatsapp/messages?recipient=invalid')).status, 400);
   });
   test('automatic send history uses actual send time and the Bogotá day', async () => {
     const path = '/admin/whatsapp/messages?automatic_sent_today=';
@@ -94,6 +95,8 @@ describe('WhatsApp center HTTP / MySQL, no real sends', { skip: !(process.env.DB
       const result = await services.listWhatsAppMessages({ scope: scope(), filters: { automatic_sent_today: 'true' }, now: new Date('2026-10-08T04:59:59Z') });
       assert.equal(result.sent_date, '2026-10-07');
       assert.deepEqual(result.messages.map(row => row.content), ['aceptado y luego fallido', 'inicio del día']);
+      const recipient = await services.listWhatsAppMessages({ scope: scope(), filters: { recipient: '+573000000002' } });
+      assert.deepEqual(recipient.messages, []);
     } finally {
       if (ids.length) await db.query('DELETE FROM messages WHERE company_id=? AND id IN (?)', [companyId, ids]);
     }
