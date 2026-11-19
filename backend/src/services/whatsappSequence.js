@@ -9,7 +9,7 @@ export const MERTEL_CONTACTS=Object.freeze([
   {stage:'prompt_payment',label:'Pronto pago',template_name:'mertel_pronto_pago',description:'Día hábil 7 desde emisión; límite día calendario 10'},
   {stage:'five_days_before_due',label:'Recordatorio',template_name:'mertel_aviso_previo',description:'Exactamente 5 días calendario antes del vencimiento'},
   {stage:'due_today',label:'Vence hoy',template_name:'mertel_vence_hoy',description:'El día calendario del vencimiento'},
-  {stage:'overdue',label:'Mora',template_name:'mertel_mora',description:'El día calendario siguiente al vencimiento'},
+  {stage:'overdue',label:'Mora',template_name:'mertel_mora',description:'Desde el día siguiente al vencimiento; cada 2 días calendario desde el último envío mientras exista saldo pendiente'},
 ]);
 const amount=cents=>`${cents/100n}.${String(cents%100n).padStart(2,'0')}`;
 const id=invoice=>String(invoice.invoice_id??invoice.id);
@@ -74,7 +74,7 @@ export function noticeContext(message) {
   if (!message?.automation_context) return null;
   return typeof message.automation_context === 'string' ? JSON.parse(message.automation_context) : message.automation_context;
 }
-const success = message => Boolean(message.sent_at) || ['SENT', 'DELIVERED', 'READ'].includes(message.status);
+const success = message => !['FAILED', 'CANCELLED'].includes(message.status) && (Boolean(message.sent_at) || ['SENT', 'DELIVERED', 'READ'].includes(message.status));
 const engineInvoices = rows => rows.map(row => ({ ...row, promo_18: promo18(row) ? '1.00' : '0.00' }));
 export const invoiceKey = id;
 const cop = value => {
@@ -83,14 +83,47 @@ const cop = value => {
 };
 
 // Message policy adapter around evaluateCollectionCase. It never changes classification or balances.
+function recurringOverdueNotice(input, pending) {
+  const invoices = pending.filter(invoice => invoice.due_date && invoice.due_date < input.referenceDate);
+  if (!invoices.length) return null;
+  const history = (input.messages || []).filter(message => message.message_mode === 'AUTOMATICO' && message.stage === 'overdue');
+  const waiting = history.find(message => ['PENDING', 'PROCESSING'].includes(message.status) ||
+    message.status === 'FAILED' && message.next_attempt_at);
+  const waitingContext = noticeContext(waiting);
+  let date = input.referenceDate;
+  if (waitingContext?.notice_date && waitingContext.expires_on >= input.referenceDate &&
+      waitingContext.invoice_ids?.some(key => invoices.some(invoice => id(invoice) === String(key)))) {
+    date = waitingContext.notice_date;
+  } else {
+    const lastSent = history.filter(message => success(message) && message.sent_at)
+      .reduce((latest, message) => Math.max(latest, new Date(message.sent_at).getTime()), 0);
+    if (lastSent) {
+      const lastDay = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Bogota', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(lastSent));
+      const next = dateFromDay(dateDay(lastDay) + 2);
+      if (next > date) date = next;
+    }
+    for (const message of history.filter(row => ['FAILED', 'CANCELLED'].includes(row.status) && !row.next_attempt_at)) {
+      const previousDate = noticeContext(message)?.notice_date;
+      if (previousDate) {
+        const next = dateFromDay(dateDay(previousDate) + 2);
+        if (next > date) date = next;
+      }
+    }
+  }
+  return { ...MERTEL_CONTACTS.find(step => step.stage === 'overdue'), date, notice_date: date,
+    trigger_invoices: invoices, recurring: true };
+}
+
 export function automaticNotices(input) {
   const { customer, invoices, rules, templates = [], settings, messages = [] } = input;
   const current = sequenceCase(input), groups = new Map();
-  for (const invoice of current.pending) for (const step of contactDates(invoice, rules).filter(row => row.date)) {
+  for (const invoice of current.pending) for (const step of contactDates(invoice, rules).filter(row => row.date && row.stage !== 'overdue')) {
     const key = `${step.stage}:${step.date}`;
     if (!groups.has(key)) groups.set(key, { ...step, notice_date: step.date, trigger_invoices: [] });
     groups.get(key).trigger_invoices.push(invoice);
   }
+  const overdue = recurringOverdueNotice(input, current.pending);
+  if (overdue) groups.set(`overdue:${overdue.date}`, overdue);
   const catalog = collectionStageCatalog(rules);
   return [...groups.values()].map(notice => {
     const expiry = dateFromDay(dateDay(notice.date) + 3);
@@ -109,6 +142,7 @@ export function automaticNotices(input) {
     notice.message = messages.find(row => {
       if (row.message_mode !== 'AUTOMATICO' || row.stage !== notice.stage) return false;
       const saved = noticeContext(row);
+      if (notice.recurring) return saved?.notice_date === notice.date;
       return saved?.notice_date === notice.date || (success(row) || !saved) && (saved?.invoice_ids || [row.invoice_id]).some(key => notice.invoice_ids.includes(String(key)));
     });
     let reason = notice.reason;
@@ -130,7 +164,7 @@ export function automaticNotices(input) {
 }
 
 export function automaticSelection(input) {
-  const notice = automaticNotices(input).find(row => row.applicable && row.date <= input.referenceDate && row.expires_on >= input.referenceDate && (!row.message || ['PENDING', 'FAILED'].includes(row.message.status)));
+  const notice = automaticNotices(input).find(row => row.applicable && (row.recurring || row.date <= input.referenceDate) && row.expires_on >= input.referenceDate && (!row.message || ['PENDING', 'FAILED'].includes(row.message.status)));
   return notice ? { ...notice.current, ...notice, step: notice, balance: amount(notice.matched.reduce((sum, row) => sum + moneyCents(row.balance), 0n)) } : null;
 }
 
@@ -169,12 +203,12 @@ export function buildWhatsAppSequence(input, render = renderAutomaticNotice) {
     });
   });
   const contactDay = value => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Bogota', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(value));
-  const last = (input.messages || []).filter(row => row.direction === 'outbound' && row.sent_at && contactDay(row.sent_at) <= input.referenceDate).sort((a, b) => new Date(b.sent_at) - new Date(a.sent_at))[0];
+  const last = (input.messages || []).filter(row => row.direction === 'outbound' && success(row) && row.sent_at && contactDay(row.sent_at) <= input.referenceDate).sort((a, b) => new Date(b.sent_at) - new Date(a.sent_at))[0];
   const next = notices.filter(row => row.applicable && !success(row.message || {}) && row.date >= input.referenceDate).sort((a, b) => a.date.localeCompare(b.date))[0] || automaticSelection(input);
   return { customer: input.customer, total_balance: current.total, stage: current.item.stage, stage_label: current.item.stage_label,
     reference_date: input.referenceDate, steps, last_contact: last ? { date: last.sent_at, label: last.template_name, message: last } : null,
     next_contact: next ? { date: next.message?.scheduled_at || next.date, label: next.label, template_name: next.template_name } : null,
-    excluded: Boolean(input.settings.excluded_customers?.[String(input.customer.id)]), notice: 'Fechas calculadas con cartera vigente; los avisos enviados no se repiten.' };
+    excluded: Boolean(input.settings.excluded_customers?.[String(input.customer.id)]), notice: 'Fechas calculadas con cartera vigente. La mora se recuerda cada dos días mientras quede saldo pendiente.' };
 }
 
 export function automaticHours(notice, date, production = false) {
@@ -187,6 +221,7 @@ export function automaticHours(notice, date, production = false) {
 export function automaticWindow(notice, rules, now, previousMessages = [], production = false) {
   const latest = previousMessages.filter(row => row.message_mode === 'AUTOMATICO' && row.sent_at).reduce((last, row) => Math.max(last, new Date(row.sent_at).getTime()), 0);
   if (latest) now = new Date(Math.max(now.getTime(), latest + Number(notice.rule.interval_hours || 0) * 3600000));
+  if (notice.recurring) now = new Date(Math.max(now.getTime(), new Date(`${notice.date}T00:00:00-05:00`).getTime()));
   const day = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Bogota', year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);
   for (let offset = 0; offset <= 3; offset++) {
     const date = dateFromDay(dateDay(day) + offset);

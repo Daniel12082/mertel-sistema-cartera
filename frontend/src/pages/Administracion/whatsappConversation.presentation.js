@@ -57,3 +57,13 @@ export function conversationMessageStatus(message) {
   }
   return conversationStatus[message?.status] || message?.status || 'Sin estado registrado';
 }
+
+export function conversationMessageError(message) {
+  if (message.status !== 'FAILED') return '';
+  const descriptions = {
+    '132018': 'Meta rechazó el formato de los datos de la plantilla.',
+    '131058': 'La plantilla hello_world solo se puede enviar desde un número de prueba de Meta.',
+    '131047': 'La ventana de respuesta había terminado. Envía una plantilla aprobada para retomar la conversación.',
+  };
+  return descriptions[message.error_code] || message.error_message || 'El envío falló. Consulta el historial de WhatsApp para ver el detalle.';
+}

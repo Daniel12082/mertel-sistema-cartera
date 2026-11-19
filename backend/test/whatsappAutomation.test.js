@@ -69,8 +69,30 @@ describe('MERTEL automation authority on an isolated MySQL schema', { skip: !(pr
     await invoices([{ due: '2026-10-07' }, { due: '2026-10-08' }, { due: '2026-10-13' }, { issue: '2026-09-29', due: '2026-11-03' }]);
     const message = (await enqueue()).message; assert.equal(message.stage, 'overdue');
     assert.equal((await dispatch(message.id)).message.status, 'SENT');
-    await assert.rejects(enqueue(), /Máximo un mensaje automático/);
+    const next = (await enqueue()).message;
+    assert.equal(new Date(next.scheduled_at).toISOString(), '2026-10-10T13:00:00.000Z');
     assert.equal((await db.query("SELECT COUNT(*) count FROM messages WHERE status='SENT'"))[0][0].count, 1);
+  });
+  test('old overdue balances repeat two days after sending and paid invoices leave the next notice', async () => {
+    await invoices([{ due: '2026-09-15' }, { due: '2026-09-18' }]);
+    const first = (await enqueue()).message;
+    assert.equal(first.stage, 'overdue');
+    assert.equal((await dispatch(first.id)).message.status, 'SENT');
+    const [second, duplicate] = await Promise.all([enqueue(), enqueue()]);
+    assert.equal(second.message.id, duplicate.message.id);
+    assert.equal(new Date(second.message.scheduled_at).toISOString(), '2026-10-10T13:00:00.000Z');
+    assert.equal((await dispatch(second.message.id, new Date('2026-10-09T15:00:00Z'))).scheduled, true);
+    await db.query('UPDATE invoices SET balance=0 WHERE id=1'); await freeze();
+    const sent = (await dispatch(second.message.id, new Date('2026-10-10T15:00:00Z'))).message;
+    assert.equal(sent.status, 'SENT');
+    assert.match(sent.content, /AUTO-DEMO-2/);
+    assert.doesNotMatch(sent.content, /AUTO-DEMO-1/);
+    const third = (await enqueue(new Date('2026-10-10T15:00:00Z'))).message;
+    assert.equal(new Date(third.scheduled_at).toISOString(), '2026-10-13T13:00:00.000Z');
+    await db.query('UPDATE invoices SET balance=0'); await freeze();
+    assert.equal((await dispatch(third.id, new Date('2026-10-13T15:00:00Z'))).cancelled, true);
+    await assert.rejects(enqueue(new Date('2026-10-13T15:00:00Z')), /No hay un aviso/);
+    assert.equal((await db.query("SELECT COUNT(*) count FROM messages WHERE status='SENT'"))[0][0].count, 2);
   });
   test('Sunday and holiday defer at most three days; dispatch rereads actual financial balances and wording', async () => {
     await invoices([{ due: '2026-10-16' }]);

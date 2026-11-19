@@ -50,7 +50,7 @@ export default function WhatsAppAutomationPreview({ settings, templates, busy, a
     </form>
     <h3>Fechas de los avisos</h3>
     <ul>{MERTEL_CONTACTS.map(step => <li key={step.stage}><strong>{step.label}</strong> · {step.description}</li>)}</ul>
-    <p>Plantilla: <code>{MERTEL_INVOICE_TEMPLATE}</code>. Los avisos no calculan descuentos: solo recuerdan el 3% hasta 10 días y el 10% condicionado hasta 60 días cuando el dato real aplique. Los clientes deben tener autorización registrada en Timeline.</p>
+    <p>Plantilla: <code>{MERTEL_INVOICE_TEMPLATE}</code>. Los avisos recuerdan el 3% hasta 10 días y el 10% condicionado hasta 60 días cuando el dato real aplique. La mora se recuerda cada dos días mientras quede saldo pendiente.</p>
     <p>{settings.automations_enabled ? 'Envíos automáticos activos.' : 'Envíos automáticos desactivados.'}</p>
     <button disabled={busy || settings.connection_status !== 'CONNECTED' || !settings.real_sending_enabled || !settings.rules.some(rule => rule.enabled && rule.mode === 'AUTOMATICO')}
       onClick={() => act(() => whatsappRequest('/settings', { method: 'patch', body: { automations_enabled: !settings.automations_enabled } }),

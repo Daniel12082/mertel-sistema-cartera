@@ -26,6 +26,10 @@
 .wa-conversation-text small { font-size: 10px; color: #738392; }
 .wa-list-empty { padding: 18px; color: #738392; font-size: 13px; }
 .wa-chat { display: flex; flex-direction: column; background: #f0f5f2; }
+.wa-chat > :not(.wa-chat-messages) { flex-shrink: 0; }
+.wa-chat > details.wa-chat-compose { max-height: 40dvh; overflow-y: auto; }
+.wa-message-failure { color: #9c302d; margin-bottom: 8px; font-size: 12px; }
+.wa-message-failure summary { cursor: pointer; }
 .wa-chat-header { background: #fff; display: flex; align-items: center; gap: 10px; padding: 15px; min-height: 68px; border-bottom: 1px solid #dce5e9; }
 .wa-chat-header > div { min-width: 0; flex: 1; }
 .wa-chat-header strong { display: block; font-size: 13px; overflow-wrap: anywhere; }
@@ -84,7 +88,7 @@
 }
 
 .mertel-content:has(> .wa-center-expanded) {
-  padding: clamp(12px, 1.2vw, 24px);
+  padding: 8px;
   min-width: 0;
   background-image: none;
 }

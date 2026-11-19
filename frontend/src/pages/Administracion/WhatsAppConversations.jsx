@@ -11,7 +11,7 @@ import { discardDraftMedia, temporaryWhatsAppMedia, MEDIA_UNAVAILABLE } from '..
 import { collectionResultsRequest } from '../../services/collectionResults.service';
 import { useAppDataMode } from '../../simulation/useAppDataMode';
 import { simulationAvailable } from '../../simulation/store';
-import { buildConversations, conversationMessageStatus, customerConversationKey, messageTime, phoneKey, conversationStatus } from './whatsappConversation.presentation';
+import { buildConversations, conversationMessageError, conversationMessageStatus, customerConversationKey, messageTime, phoneKey, conversationStatus } from './whatsappConversation.presentation';
 import './WhatsAppConversations.css';
 
 const time = value => value && Number.isFinite(new Date(value).getTime()) ? new Intl.DateTimeFormat('es-CO', { dateStyle: 'short', timeStyle: 'short', timeZone: 'America/Bogota' }).format(new Date(value)) : 'Fecha no disponible';
@@ -45,7 +45,11 @@ function ChatMessages({ messages }) {
   return <div className="wa-chat-messages" role="log" aria-label="Mensajes de la conversación" aria-live="polite">
     {!messages.length && <div className="wa-chat-empty"><MessageCircle size={32} /><h3>Una conversación por comenzar</h3><p>No hay mensajes registrados para este cliente.</p></div>}
     {messages.map(message => <article key={message.id} className={`wa-chat-bubble ${message.direction === 'inbound' ? 'incoming' : 'outgoing'}`} aria-label={`${message.direction === 'inbound' ? 'Mensaje entrante' : 'Mensaje saliente'} ${message.id}`}>
-      {message.content && <p>{message.content}</p>}{message.attachment && <WhatsAppMediaPreview key={message.attachment.id} attachment={message.attachment} />}<footer><time>{time(messageTime(message))}</time><span>{message.attachment ? 'Multimedia simulada · sin entrega real' : conversationMessageStatus(message)}{message.status === 'READ' && <CheckCheck size={14} aria-hidden="true" />}</span></footer>
+      {message.content && <p>{message.content}</p>}{message.attachment && <WhatsAppMediaPreview key={message.attachment.id} attachment={message.attachment} />}
+      {message.status === 'FAILED' && <details className="wa-message-failure"><summary>Motivo del fallo{message.error_code ? ` (${message.error_code})` : ''}</summary><p>{conversationMessageError(message)}</p></details>}
+      <footer><time>{time(messageTime(message))}</time>
+        {message.direction === 'outbound' && ['AUTOMATICO', 'MANUAL'].includes(message.message_mode) && <span>{message.message_mode === 'AUTOMATICO' ? 'Envío automático' : 'Envío manual'}</span>}
+        <span>{message.attachment ? 'Multimedia simulada · sin entrega real' : conversationMessageStatus(message)}{message.status === 'READ' && <CheckCheck size={14} aria-hidden="true" />}</span></footer>
     </article>)}<div ref={end} />
   </div>;
 }
@@ -135,7 +139,7 @@ export default function WhatsAppConversations({ settings, conversationCustomers,
     `${row.name} ${row.nit} ${row.phone}`.toLocaleLowerCase().includes(search.toLocaleLowerCase().trim())).sort((a, b) => Number(Boolean(preferences[b.key]?.pinned)) - Number(Boolean(preferences[a.key]?.pinned)));
   const history = metaProduction && recipient ? detail.messages.filter(row => phoneKey(row.recipient || row.phone) === recipient) : detail.messages;
   const messages = merge(conversation?.messages || [], history).sort((a, b) => (new Date(messageTime(a)).getTime() || 0) - (new Date(messageTime(b)).getTime() || 0));
-  const latestContact = messages.filter(row => row.direction === 'inbound' ? Boolean(row.received_at) : Boolean(row.sent_at)).at(-1);
+  const latestContact = messages.filter(row => row.direction === 'inbound' ? Boolean(row.received_at) : row.status !== 'FAILED' && Boolean(row.sent_at)).at(-1);
   const lastContact = latestContact ? { date: messageTime(latestContact), label: latestContact.direction === 'inbound' ? 'Mensaje recibido' : latestContact.template_name || 'WhatsApp' } : detail.sequence?.last_contact;
   const assignedCustomer = confirmedOwners[`+${recipient}`] ?? conversationCustomers?.[`+${recipient}`];
   const otherCustomerOwnsChat = Boolean(metaProduction && customerId && assignedCustomer && assignedCustomer !== customerId &&
@@ -340,8 +344,8 @@ export default function WhatsAppConversations({ settings, conversationCustomers,
     choose(''); setMobile('list');
   }
   return <section className="wa-inbox" aria-label="Bandeja de conversaciones">
-    <header className="wa-inbox-heading"><div><span className="wa-eyebrow">ATENCIÓN A CLIENTES · MERTEL</span><h2>{chatOnly ? "WhatsApp" : "Conversaciones"}</h2><p>{chatOnly ? "Bandeja de conversaciones" : "Cada conversación, con el contexto de su cartera."}</p></div><span className="wa-inbox-mode"><ShieldCheck size={16} />{modeLabel}</span></header>
-    <p className="wa-inbox-warning">{modeNotice}</p>
+    {!chatOnly && <><header className="wa-inbox-heading"><div><span className="wa-eyebrow">ATENCIÓN A CLIENTES · MERTEL</span><h2>Conversaciones</h2><p>Cada conversación, con el contexto de su cartera.</p></div><span className="wa-inbox-mode"><ShieldCheck size={16} />{modeLabel}</span></header>
+      <p className="wa-inbox-warning">{modeNotice}</p></>}
     {error && <div className="wa-error" role="alert">{error}<button onClick={() => { setError(''); setLoading(true); setRevision(value => value + 1); }}>Reintentar conversaciones</button></div>}
     <div className={`wa-inbox-layout mobile-${mobile}${chatOnly ? " wa-chat-only" : ""}`}>
       <aside className="wa-conversation-list" aria-label="Lista de conversaciones"><div className="wa-list-controls">

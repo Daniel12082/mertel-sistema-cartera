@@ -143,10 +143,12 @@ it('replies to a regular number in production using the Meta reply route', async
   const incoming = { id: '11', recipient, provider: 'WHATSAPP_CLOUD_API', direction: 'inbound',
     status: 'DELIVERED', content: 'Hola', received_at: new Date().toISOString() };
   const outgoing = { ...incoming, id: '12', direction: 'outbound', status: 'SENT', content: 'Hola desde MERTEL' };
+  const failed = { ...incoming, id: '10', direction: 'outbound', status: 'FAILED', received_at: null,
+    error_code: '132018', error_message: 'Meta rechazó la solicitud.', content: 'Aviso anterior', created_at: '2026-11-16T00:00:00Z' };
   const respond = data => Promise.resolve({ status: 200, data: { success: true, data } });
   network.mockImplementation(config => {
     if (config.url === '/customers') return respond([]);
-    if (config.url === '/admin/whatsapp/messages') return respond({ messages: [incoming] });
+    if (config.url === '/admin/whatsapp/messages') return respond({ messages: [incoming, failed] });
     if (config.url === '/admin/whatsapp/meta/replies') {
       expect(JSON.parse(config.data)).toEqual({ recipient, content: outgoing.content });
       return respond({ message: outgoing });
@@ -155,9 +157,14 @@ it('replies to a regular number in production using the Meta reply route', async
   });
   const user = userEvent.setup();
   render(<SimulationContext.Provider value={{ mode: 'REAL' }}>
-    <WhatsAppConversations settings={{ provider: 'WHATSAPP_CLOUD_API', connection_status: 'CONNECTED', real_sending_enabled: true }} />
+    <WhatsAppConversations chatOnly preferenceOwner="regular-production-reply"
+      settings={{ provider: 'WHATSAPP_CLOUD_API', connection_status: 'CONNECTED', real_sending_enabled: true }} />
   </SimulationContext.Provider>);
   await open(user, 'Conversación sin asociar');
+  expect(screen.queryByText('ATENCIÓN A CLIENTES · MERTEL')).toBeNull();
+  expect(screen.queryByText('Puedes responder con texto durante las 24 horas siguientes al último mensaje recibido.')).toBeNull();
+  await user.click(screen.getByText('Motivo del fallo (132018)'));
+  expect(screen.getByText('Meta rechazó el formato de los datos de la plantilla.')).toBeVisible();
   await user.type(screen.getByLabelText('Mensaje de WhatsApp'), outgoing.content);
   await user.click(screen.getByRole('button', { name: 'Enviar mensaje' }));
   expect(await screen.findByLabelText('Mensaje saliente 12')).toHaveTextContent(outgoing.content);
