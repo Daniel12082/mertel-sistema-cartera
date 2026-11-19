@@ -37,6 +37,8 @@
 .wa-chat-messages { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; padding: 22px 18px; background-image: radial-gradient(#d7e4dd 1px, transparent 1px); background-size: 22px 22px; }
 .wa-chat-bubble { max-width: 88%; border-radius: 12px; padding: 12px 14px; background: white; box-shadow: 0 2px 5px #20354c08; align-self: flex-start; min-width: 0; }
 .wa-chat-bubble.outgoing { align-self: flex-end; background: #ddf3e5; border-top-right-radius: 3px; }
+.wa-chat-bubble.outgoing.queued { background: #fff8e6; border: 1px solid #eaddb7; }
+.wa-chat-bubble .wa-chat-scheduled { font-weight: 600; color: #765b19; font-size: 12px; }
 .wa-chat-bubble.incoming { border-top-left-radius: 3px; }
 .wa-chat-bubble p { margin: 0 0 8px; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; line-height: 1.6; }
 .wa-chat-bubble footer { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; font-size: 10px; color: #738392; }

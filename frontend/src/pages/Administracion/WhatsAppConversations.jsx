@@ -44,10 +44,11 @@ function ChatMessages({ messages }) {
   useEffect(() => { end.current?.scrollIntoView({ block: 'nearest' }); }, [messages.length]);
   return <div className="wa-chat-messages" role="log" aria-label="Mensajes de la conversación" aria-live="polite">
     {!messages.length && <div className="wa-chat-empty"><MessageCircle size={32} /><h3>Una conversación por comenzar</h3><p>No hay mensajes registrados para este cliente.</p></div>}
-    {messages.map(message => <article key={message.id} className={`wa-chat-bubble ${message.direction === 'inbound' ? 'incoming' : 'outgoing'}`} aria-label={`${message.direction === 'inbound' ? 'Mensaje entrante' : 'Mensaje saliente'} ${message.id}`}>
+    {messages.map(message => <article key={message.id} className={`wa-chat-bubble ${message.direction === 'inbound' ? 'incoming' : 'outgoing'}${message.status === 'PENDING' ? ' queued' : ''}`} aria-label={`${message.direction === 'inbound' ? 'Mensaje entrante' : 'Mensaje saliente'} ${message.id}`}>
       {message.content && <p>{message.content}</p>}{message.attachment && <WhatsAppMediaPreview key={message.attachment.id} attachment={message.attachment} />}
+      {message.status === 'PENDING' && message.scheduled_at && <p className="wa-chat-scheduled">Programado para {time(message.scheduled_at)} · hora de Bogotá</p>}
       {message.status === 'FAILED' && <details className="wa-message-failure"><summary>Motivo del fallo{message.error_code ? ` (${message.error_code})` : ''}</summary><p>{conversationMessageError(message)}</p></details>}
-      <footer><time>{time(messageTime(message))}</time>
+      <footer><time>{message.status === 'PENDING' ? 'Creado ' : ''}{time(messageTime(message))}</time>
         {message.direction === 'outbound' && ['AUTOMATICO', 'MANUAL'].includes(message.message_mode) && <span>{message.message_mode === 'AUTOMATICO' ? 'Envío automático' : 'Envío manual'}</span>}
         <span>{message.attachment ? 'Multimedia simulada · sin entrega real' : conversationMessageStatus(message)}{message.status === 'READ' && <CheckCheck size={14} aria-hidden="true" />}</span></footer>
     </article>)}<div ref={end} />

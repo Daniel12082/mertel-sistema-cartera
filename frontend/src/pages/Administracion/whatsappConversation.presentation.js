@@ -53,7 +53,7 @@ export const conversationStatus = { PENDING: 'Pendiente', PROCESSING: 'Procesand
 
 export function conversationMessageStatus(message) {
   if (message?.provider === 'WHATSAPP_CLOUD_API') {
-    return { PENDING: 'Pendiente de prueba Meta', PROCESSING: 'Solicitud enviada a Meta', SENT: 'Aceptado por Meta', DELIVERED: 'Entregado', READ: 'Leído', FAILED: 'Fallido', CANCELLED: 'Cancelado' }[message.status] || message.status || 'Sin estado registrado';
+    return { PENDING: message.scheduled_at ? 'Programado' : 'En cola', PROCESSING: 'Enviando a Meta', SENT: 'Aceptado por Meta', DELIVERED: 'Entregado', READ: 'Leído', FAILED: 'Fallido', CANCELLED: 'Cancelado' }[message.status] || message.status || 'Sin estado registrado';
   }
   return conversationStatus[message?.status] || message?.status || 'Sin estado registrado';
 }
