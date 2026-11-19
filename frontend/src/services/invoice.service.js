@@ -29,3 +29,13 @@ export async function voidInvoice(id, reason) {
   const response = await api.post(`/invoices/${id}/void`, { reason });
   return response.data;
 }
+
+export async function markInvoicePaid(id) {
+  const response = await api.post(`/invoices/${id}/paid`, {});
+  return response.data;
+}
+
+export async function getInvoiceHistory(id) {
+  const response = await api.get(`/invoices/${id}/history`);
+  return response.data;
+}

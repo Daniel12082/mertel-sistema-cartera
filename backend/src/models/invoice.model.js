@@ -1,6 +1,8 @@
 import pool from "../config/database.js";
 import { financialError, lockActiveCustomer, validateCompanyCustomer } from "../utils/financialIntegrity.js";
 import { assertCompanyCustomerReference, companyFilter, documentCompany } from "../utils/companyScope.js";
+import { createPayment } from './payment.model.js';
+import { insertAllocation, reduceInvoiceBalance } from './paymentAllocation.model.js';
 
 const invoiceColumns = `
   i.id,
@@ -62,6 +64,58 @@ export async function getInvoiceById(id, scope, db = pool) {
   );
 
   return rows[0] || null;
+}
+
+export async function getInvoiceHistory(id, scope, db = pool) {
+  if (!(await getInvoiceById(id, scope, db))) return null;
+  const filter = companyFilter(scope, 'a.company_id');
+  const [rows] = await db.query(`SELECT CAST(a.id AS CHAR) id,a.action,CAST(a.user_id AS CHAR) user_id,
+    COALESCE(JSON_UNQUOTE(JSON_EXTRACT(a.new_values,'$.actor_name')),NULLIF(CONCAT_WS(' ',u.first_name,u.last_name),''),'Sistema') actor,
+    CONCAT(DATE_FORMAT(a.created_at,'%Y-%m-%dT%H:%i:%s'),'Z') occurred_at,a.old_values,a.new_values
+    FROM audit_logs a LEFT JOIN users u ON u.id=a.user_id
+    WHERE a.entity_type='invoice' AND a.entity_id=? ${filter.sql} ORDER BY a.created_at DESC,a.id DESC`, [id, ...filter.values]);
+  return rows;
+}
+
+// The payment, allocation, zero balance and named audit entry succeed together.
+export async function markInvoicePaid(id, scope, dbPool = pool) {
+  const filter = companyFilter(scope, 'company_id');
+  const db = await dbPool.getConnection();
+  try {
+    await db.beginTransaction();
+    const initial = await getInvoiceById(id, scope, db);
+    if (!initial) { await db.commit(); return null; }
+    const customer = await lockActiveCustomer(initial.customer_id, db, scope);
+    const [[existing]] = await db.query(`SELECT * FROM invoices WHERE id=? AND deleted_at IS NULL ${filter.sql} FOR UPDATE`, [id, ...filter.values]);
+    if (!existing) { await db.commit(); return null; }
+    if (String(existing.customer_id) !== String(customer.id)) throw financialError('INVOICE_CHANGED', 'La factura cambió. Actualiza el listado e inténtalo de nuevo.');
+    await validateCompanyCustomer(existing.company_id, customer, db);
+    if (['cancelled', 'inactive', 'void'].includes(String(existing.status).toLowerCase())) throw financialError('INVOICE_INACTIVE', 'La factura no está activa.');
+    if (existing.status === 'paid' && Number(existing.balance) === 0) {
+      await db.commit();
+      return { ...initial, balance: existing.balance, status: 'paid' };
+    }
+    const [[actor]] = await db.query("SELECT CONCAT_WS(' ',first_name,last_name) name FROM users WHERE id=?", [scope.actorId]);
+    if (!actor) throw financialError('ACTOR_REQUIRED', 'No se pudo identificar al usuario.', 403);
+    let paymentId = null;
+    if (Number(existing.balance) > 0) {
+      const [[date]] = await db.query("SELECT DATE_FORMAT(CONVERT_TZ(UTC_TIMESTAMP(),'+00:00','-05:00'),'%Y-%m-%d') day");
+      paymentId = await createPayment({ company_id: existing.company_id, customer_id: existing.customer_id,
+        payment_date: date.day, amount: existing.balance, status: 'confirmed', created_by: scope.actorId,
+        reference: `Factura ${existing.invoice_number}`.slice(0, 150), notes: 'Pago total registrado desde la acción Marcar pagada.' }, db);
+      await insertAllocation(paymentId, id, existing.balance, db);
+      if (!(await reduceInvoiceBalance(id, existing.balance, db))) throw financialError('INVOICE_BALANCE_CONFLICT', 'El saldo cambió. Actualiza el listado.');
+    }
+    await db.query("UPDATE invoices SET status='paid' WHERE id=?", [id]);
+    const updated = await getInvoiceById(id, scope, db);
+    await auditInvoice(db, scope, 'invoice_marked_paid', updated, invoiceSnapshot(existing), {
+      ...invoiceSnapshot(updated), actor_name: actor.name, payment_id: paymentId,
+      amount: existing.balance, source: 'invoice_quick_payment',
+    });
+    await db.commit();
+    return updated;
+  } catch (error) { await db.rollback(); throw error; }
+  finally { db.release(); }
 }
 
 export async function createInvoice(invoice, scope) {

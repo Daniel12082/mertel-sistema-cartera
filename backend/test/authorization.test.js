@@ -74,6 +74,7 @@ describe("role authorization and internal admin provisioning HTTP / MySQL", { sk
     ["GET", "/customers", "customers.view", 200], ["GET", "/customers/999999", "customers.view", 404],
     ["POST", "/customers", "customers.create", 400], ["PUT", "/customers/999999", "customers.update", 400], ["DELETE", "/customers/999999", "customers.delete", 404],
     ["GET", "/invoices", "invoices.view", 200], ["GET", "/invoices/999999", "invoices.view", 404],
+    ["GET", "/invoices/999999/history", "invoices.view", 404], ["POST", "/invoices/999999/paid", "invoices.update", 404],
     ["POST", "/invoices", "invoices.create", 400], ["PUT", "/invoices/999999", "invoices.update", 400], ["DELETE", "/invoices/999999", "invoices.delete", 404],
     ["GET", "/payments", "payments.view", 200], ["GET", "/payments/999999", "payments.view", 404],
     ["POST", "/payments", "payments.create", 400], ["PUT", "/payments/999999", "payments.update", 400], ["DELETE", "/payments/999999", "payments.delete", 404],

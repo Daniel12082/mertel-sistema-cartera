@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Eye, FileText, LoaderCircle, Pencil, Plus, Search, Trash2, X } from "lucide-react";
+import { Check, Eye, FileText, LoaderCircle, Pencil, Plus, Search, Trash2, X } from "lucide-react";
 import { useAuth } from "../../auth/useAuth";
 import { useAppDataMode } from "../../simulation/useAppDataMode";
 import { getCustomers } from "../../services/customer.service";
-import { createInvoice, deleteInvoice, getInvoiceById, getInvoices, updateInvoice, voidInvoice } from "../../services/invoice.service";
+import { createInvoice, deleteInvoice, getInvoiceById, getInvoices, updateInvoice, voidInvoice, markInvoicePaid, getInvoiceHistory } from "../../services/invoice.service";
 import "./Facturas.css";
 
 const blankInvoice = { customer_id: "", invoice_number: "", issue_date: "", due_date: "", document_value: "", base_value: "", iva_value: "", credit_days: "", status: "pending", promo_18: "", discount: "", email: "", notes: "" };
@@ -29,10 +29,30 @@ function Detail({ label, value, full = false }) {
   return <div className={`factura-detail${full ? " factura-detail-full" : ""}`}><span>{label}</span><strong>{value || "—"}</strong></div>;
 }
 
+const statusLabel = status => ({ paid: 'Pagada', pending: 'Pendiente', cancelled: 'Anulada' }[status] || status || '—');
+function InvoiceHistory({ invoiceId }) {
+  const [history, setHistory] = useState(null);
+  const [error, setError] = useState('');
+  useEffect(() => {
+    let active = true;
+    getInvoiceHistory(invoiceId).then(result => { if (active) setHistory(unwrap(result)); })
+      .catch(requestError => { if (active) setError(errorMessage(requestError)); });
+    return () => { active = false; };
+  }, [invoiceId]);
+  const actions = { invoice_created: 'Factura creada', invoice_updated: 'Factura editada', invoice_voided: 'Factura anulada', invoice_deleted: 'Factura eliminada', invoice_marked_paid: 'Marcada como pagada' };
+  return <section className="factura-history" aria-label="Historial de la factura"><h3>Historial de la factura</h3>
+    {error ? <p role="alert">{error}</p> : !history ? <p>Cargando historial…</p> : !history.length ? <p>No hay movimientos registrados.</p> :
+      <ol>{history.map(event => <li key={event.id}><strong>{actions[event.action] || event.action}</strong><span>{event.actor}</span>
+        <time dateTime={event.occurred_at}>{new Intl.DateTimeFormat('es-CO', { timeZone: 'America/Bogota', dateStyle: 'medium', timeStyle: 'medium' }).format(new Date(event.occurred_at))} · Bogotá</time>
+      </li>)}</ol>}
+  </section>;
+}
+
 export default function Facturas() {
   const { permissions = [] } = useAuth();
   const { mode } = useAppDataMode();
   const canDelete = permissions.includes("invoices.delete");
+  const canMarkPaid = ['invoices.update', 'payments.create', 'payment_allocations.create'].every(permission => permissions.includes(permission));
   const [invoices, setInvoices] = useState([]);
   const [customers, setCustomers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -101,6 +121,16 @@ export default function Facturas() {
     catch (requestError) { setError(errorMessage(requestError)); }
     finally { setSaving(false); }
   }
+  async function markPaid(invoice) {
+    if (saving || !window.confirm(`¿Marcar la factura ${invoice.invoice_number} como pagada? Se registrará un pago por el saldo restante de ${currency(invoice.balance)} y dejará de incluirse en los cobros automáticos.`)) return;
+    setSaving(true); setError(''); setNotice('');
+    try {
+      const updated = unwrap(await markInvoicePaid(invoice.id));
+      setInvoices(current => current.map(item => String(item.id) === String(invoice.id) ? updated : item));
+      setNotice(`Factura ${invoice.invoice_number} pagada. El usuario, la fecha y la hora quedaron registrados en su historial. Ya no se incluirá en cobros automáticos.`);
+    } catch (requestError) { setError(errorMessage(requestError)); }
+    finally { setSaving(false); }
+  }
   function change(event) { setForm((current) => ({ ...current, [event.target.name]: event.target.value })); }
   async function submit(event) {
     event.preventDefault(); setError(""); setNotice("");
@@ -151,8 +181,8 @@ export default function Facturas() {
     {notice && <div className="factura-alert factura-alert-success" role="status">{notice}<button onClick={() => setNotice("")} aria-label="Cerrar"><X size={16} /></button></div>}
     {error && !voiding && <div className="factura-alert factura-alert-error" role="alert">{error}<button onClick={() => setError("")} aria-label="Cerrar"><X size={16} /></button></div>}
     <section className="factura-card">
-      <div className="factura-toolbar"><div className="factura-card-title"><FileText size={17} /> Facturas registradas <span>({filteredInvoices.length})</span></div><div className="factura-controls"><label className="factura-search"><Search size={16} /><input aria-label="Buscar factura" placeholder="Buscar número, cliente o NIT" value={query} onChange={(event) => setQuery(event.target.value)} /></label><select aria-label="Filtrar por estado" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}><option value="">Todos los estados</option>{statuses.map((status) => <option key={status} value={status}>{status}</option>)}</select></div></div>
-      {loading ? <div className="factura-empty"><LoaderCircle className="factura-spin" size={25} /><p>Cargando facturas…</p></div> : error && invoices.length === 0 ? <div className="factura-empty"><p>No se pudo cargar el listado.</p><button className="factura-secondary" onClick={loadInvoices}>Reintentar</button></div> : filteredInvoices.length === 0 ? <div className="factura-empty"><FileText size={28} /><h3>{invoices.length ? "No hay resultados" : "No hay facturas registradas."}</h3><p>{invoices.length ? "Prueba con otra búsqueda o filtro." : "Cuando registres una factura, aparecerá en este listado."}</p></div> : <div className="factura-table-wrap"><table className="factura-table"><thead><tr><th>Número</th><th>Cliente</th><th>NIT</th><th>Emisión</th><th>Vencimiento</th><th>Valor</th><th>Saldo</th><th>Estado</th><th>Acciones</th></tr></thead><tbody>{filteredInvoices.map((invoice) => <tr key={invoice.id}><td><strong>{invoice.invoice_number}</strong></td><td>{invoice.customer_name || "—"}</td><td>{invoice.customer_nit || "—"}</td><td>{formatDate(invoice.issue_date)}</td><td>{formatDate(invoice.due_date)}</td><td>{currency(invoice.document_value)}</td><td>{currency(invoice.balance)}</td><td><span className="factura-status">{invoice.status || "—"}</span></td><td><div className="factura-actions"><button title="Ver detalle" aria-label={`Ver factura ${invoice.invoice_number}`} onClick={() => openDetail(invoice)}><Eye size={16} /></button><button title="Editar" aria-label={`Editar factura ${invoice.invoice_number}`} onClick={() => openEdit(invoice)}><Pencil size={16} /></button>{canDelete && <button title={needsVoid(invoice) ? "Anular" : "Eliminar"} aria-label={`${needsVoid(invoice) ? "Anular" : "Eliminar"} factura ${invoice.invoice_number}`} onClick={() => remove(invoice)}><Trash2 size={16} /></button>}</div></td></tr>)}</tbody></table></div>}
+      <div className="factura-toolbar"><div className="factura-card-title"><FileText size={17} /> Facturas registradas <span>({filteredInvoices.length})</span></div><div className="factura-controls"><label className="factura-search"><Search size={16} /><input aria-label="Buscar factura" placeholder="Buscar número, cliente o NIT" value={query} onChange={(event) => setQuery(event.target.value)} /></label><select aria-label="Filtrar por estado" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}><option value="">Todos los estados</option>{statuses.map((status) => <option key={status} value={status}>{statusLabel(status)}</option>)}</select></div></div>
+      {loading ? <div className="factura-empty"><LoaderCircle className="factura-spin" size={25} /><p>Cargando facturas…</p></div> : error && invoices.length === 0 ? <div className="factura-empty"><p>No se pudo cargar el listado.</p><button className="factura-secondary" onClick={loadInvoices}>Reintentar</button></div> : filteredInvoices.length === 0 ? <div className="factura-empty"><FileText size={28} /><h3>{invoices.length ? "No hay resultados" : "No hay facturas registradas."}</h3><p>{invoices.length ? "Prueba con otra búsqueda o filtro." : "Cuando registres una factura, aparecerá en este listado."}</p></div> : <div className="factura-table-wrap"><table className="factura-table"><thead><tr><th>Número</th><th>Cliente</th><th>NIT</th><th>Emisión</th><th>Vencimiento</th><th>Valor</th><th>Saldo</th><th>Estado</th><th>Acciones</th></tr></thead><tbody>{filteredInvoices.map((invoice) => <tr key={invoice.id}><td><strong>{invoice.invoice_number}</strong></td><td>{invoice.customer_name || "—"}</td><td>{invoice.customer_nit || "—"}</td><td>{formatDate(invoice.issue_date)}</td><td>{formatDate(invoice.due_date)}</td><td>{currency(invoice.document_value)}</td><td>{currency(invoice.balance)}</td><td><span className={`factura-status${invoice.status === "paid" ? " factura-status-paid" : ""}`}>{statusLabel(invoice.status)}</span></td><td><div className="factura-actions">{canMarkPaid && invoice.status !== "paid" && !["cancelled", "inactive", "void"].includes(invoice.status) && Number(invoice.balance) > 0 && <button className="factura-mark-paid" title="Marcar como pagada" aria-label={`Marcar pagada factura ${invoice.invoice_number}`} disabled={saving} onClick={() => markPaid(invoice)}><Check size={16} /> Marcar pagada</button>}<button title="Ver detalle" aria-label={`Ver factura ${invoice.invoice_number}`} onClick={() => openDetail(invoice)}><Eye size={16} /></button><button title="Editar" aria-label={`Editar factura ${invoice.invoice_number}`} onClick={() => openEdit(invoice)}><Pencil size={16} /></button>{canDelete && <button title={needsVoid(invoice) ? "Anular" : "Eliminar"} aria-label={`${needsVoid(invoice) ? "Anular" : "Eliminar"} factura ${invoice.invoice_number}`} onClick={() => remove(invoice)}><Trash2 size={16} /></button>}</div></td></tr>)}</tbody></table></div>}
     </section>
     {modal && <div className="factura-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) setModal(null); }}><section className="factura-modal" role="dialog" aria-modal="true" aria-labelledby="factura-modal-title">
       <header className="factura-modal-header"><div><h2 id="factura-modal-title">{voiding ? `Anular factura ${voiding.invoice_number}` : detail ? `Factura ${detail.invoice_number}` : modal.editing ? "Editar factura" : "Nueva factura"}</h2><p>{voiding ? "Registra el motivo de la anulación." : detail ? "Detalle de la factura." : "Completa la información de la factura."}</p></div><button className="factura-close" disabled={saving} onClick={() => setModal(null)} aria-label="Cerrar"><X size={19} /></button></header>
@@ -170,7 +200,7 @@ export default function Facturas() {
           <button type="submit" className="factura-primary" disabled={saving || !voidReason.trim()}>{saving ? "Anulando…" : "Confirmar anulación"}</button>
         </footer>
       </form> :
-      detail ? <><div className="factura-modal-body"><div className="factura-detail-grid"><Detail label="Cliente" value={detail.customer_name} /><Detail label="NIT" value={detail.customer_nit} /><Detail label="Fecha de emisión" value={formatDate(detail.issue_date)} /><Detail label="Fecha de vencimiento" value={formatDate(detail.due_date)} /><Detail label="Valor del documento" value={currency(detail.document_value)} /><Detail label="Valor base" value={currency(detail.base_value)} /><Detail label="IVA" value={currency(detail.iva_value)} /><Detail label="Saldo" value={currency(detail.balance)} /><Detail label="Días de crédito" value={detail.credit_days} /><Detail label="Estado" value={detail.status} /><Detail label="Descuento" value={currency(detail.discount)} /><Detail label="PROMO 18" value={currency(detail.promo_18)} /><Detail label="Correo" value={detail.email} /><Detail label="Notas" value={detail.notes} full /></div></div><footer className="factura-modal-footer"><button className="factura-secondary" onClick={() => setModal(null)}>Cerrar</button></footer></> : <form onSubmit={submit}><div className="factura-modal-body"><div className="factura-form-grid">
+      detail ? <><div className="factura-modal-body"><div className="factura-detail-grid"><Detail label="Cliente" value={detail.customer_name} /><Detail label="NIT" value={detail.customer_nit} /><Detail label="Fecha de emisión" value={formatDate(detail.issue_date)} /><Detail label="Fecha de vencimiento" value={formatDate(detail.due_date)} /><Detail label="Valor del documento" value={currency(detail.document_value)} /><Detail label="Valor base" value={currency(detail.base_value)} /><Detail label="IVA" value={currency(detail.iva_value)} /><Detail label="Saldo" value={currency(detail.balance)} /><Detail label="Días de crédito" value={detail.credit_days} /><Detail label="Estado" value={statusLabel(detail.status)} /><Detail label="Descuento" value={currency(detail.discount)} /><Detail label="PROMO 18" value={currency(detail.promo_18)} /><Detail label="Correo" value={detail.email} /><Detail label="Notas" value={detail.notes} full /></div><InvoiceHistory key={detail.id} invoiceId={detail.id} /></div><footer className="factura-modal-footer"><button className="factura-secondary" onClick={() => setModal(null)}>Cerrar</button></footer></> : <form onSubmit={submit}><div className="factura-modal-body"><div className="factura-form-grid">
         <Field label="Cliente" name="customer_id" value={form.customer_id} onChange={change} required><select id="customer_id" name="customer_id" value={form.customer_id} onChange={change} required><option value="">Selecciona un cliente</option>{activeCustomers.map((customer) => <option key={customer.id} value={customer.id}>{customer.name}{customer.nit ? ` — ${customer.nit}` : ""}</option>)}</select></Field>
         <Field label="Número de factura" name="invoice_number" value={form.invoice_number} onChange={change} required />
         <Field label="Fecha de emisión" name="issue_date" value={form.issue_date} onChange={change} type="date" />

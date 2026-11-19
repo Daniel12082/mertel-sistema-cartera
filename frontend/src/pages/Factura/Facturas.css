@@ -28,6 +28,15 @@
 .factura-actions button, .factura-close { width: 32px; height: 32px; display: inline-flex; align-items: center; justify-content: center; padding: 0; border: 1px solid #cbd5e1; border-radius: 6px; background: #fff; color: #475569; cursor: pointer; }
 .factura-actions button:hover, .factura-close:hover { background: #f8fafc; color: #b3262d; }
 .factura-actions button:last-child:hover { border-color: #f1b8bc; background: #fff5f5; }
+.factura-actions .factura-mark-paid { width: auto; padding: 0 10px; gap: 5px; border-color: #a7d9c4; color: #116449; white-space: nowrap; }
+.factura-actions .factura-mark-paid:hover { background: #ecfdf5; color: #116449; }
+.factura-actions button:disabled { opacity: .6; cursor: wait; }
+.factura-status-paid { background: #dcfce7; color: #166534; }
+.factura-history { margin-top: 22px; }
+.factura-history h3 { color: #10233f; font-size: 16px; }
+.factura-history ol { margin: 0; padding: 0; list-style: none; }
+.factura-history li { display: flex; flex-direction: column; gap: 5px; padding: 12px 0; border-bottom: 1px solid #e2e8f0; font-size: 14px; }
+.factura-history time { color: #64748b; font-size: 12px; }
 .factura-empty { min-height: 220px; padding: 24px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: #64748b; text-align: center; }
 .factura-empty h3 { margin: 4px 0 0; color: #334155; font-size: 16px; }
 .factura-empty p { margin: 0 0 8px; font-size: 13px; }

@@ -4,7 +4,23 @@ import {
   addInvoice,
   editInvoice,
   removeInvoice,
+  payInvoice,
+  invoiceHistory,
 } from "../services/invoice.service.js";
+
+async function invoiceAction(req, res, action) {
+  const id = parsePositiveId(req.params.id);
+  if (id === null) return res.status(400).json({ success: false, message: 'ID inválido' });
+  try {
+    const data = await action(id, req.companyScope);
+    if (!data) return res.status(404).json({ success: false, message: 'Factura no encontrada' });
+    return res.json({ success: true, data });
+  } catch (error) {
+    return res.status(error.status || 500).json({ success: false, message: error.status ? error.message : 'No se pudo completar la operación de la factura.' });
+  }
+}
+export const markPaid = (req, res) => invoiceAction(req, res, payInvoice);
+export const getHistory = (req, res) => invoiceAction(req, res, invoiceHistory);
 
 function parsePositiveId(value) {
   if (typeof value !== "string" || !/^[1-9]\d*$/.test(value)) {

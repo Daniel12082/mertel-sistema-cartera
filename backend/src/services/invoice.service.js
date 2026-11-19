@@ -4,6 +4,8 @@ import {
   createInvoice,
   updateInvoice,
   deleteInvoice,
+  markInvoicePaid,
+  getInvoiceHistory,
 } from "../models/invoice.model.js";
 
 export function calculateDiscountFromRule(baseValue, rule) {
@@ -58,3 +60,6 @@ export async function editInvoice(id, invoice, scope) {
 export async function removeInvoice(id, scope, options) {
   return await deleteInvoice(id, scope, options);
 }
+
+export const payInvoice = (id, scope) => markInvoicePaid(id, scope);
+export const invoiceHistory = (id, scope) => getInvoiceHistory(id, scope);

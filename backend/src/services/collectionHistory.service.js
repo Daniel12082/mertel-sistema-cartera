@@ -198,13 +198,13 @@ function globalSelects({ companyId, type, dateFrom, dateTo, actorId, query }) {
       CONCAT_WS(' ',u.first_name,u.last_name) AS actor,c.name AS customer_name,c.nit AS customer_nit,
       JSON_UNQUOTE(JSON_EXTRACT(a.new_values,'$.invoice_number')) AS invoice_number,
       CASE a.action WHEN 'invoice_created' THEN 'Factura creada' WHEN 'invoice_updated' THEN 'Factura editada'
-        WHEN 'invoice_voided' THEN 'Factura anulada' ELSE 'Factura eliminada' END AS title,
+        WHEN 'invoice_voided' THEN 'Factura anulada' WHEN 'invoice_marked_paid' THEN 'Factura marcada pagada' ELSE 'Factura eliminada' END AS title,
       NULL AS description,a.action AS status,NULL AS promised_date,NULL AS amount,NULL AS notes,a.old_values,a.new_values,
       NULL AS file_name,NULL AS total_rows,NULL AS failed_rows
       FROM audit_logs a JOIN invoices i ON i.id=a.entity_id AND i.company_id=a.company_id
       LEFT JOIN customers c ON c.id=JSON_UNQUOTE(JSON_EXTRACT(a.new_values,'$.customer_id')) AND c.company_id=a.company_id
       LEFT JOIN users u ON u.id=a.user_id AND (u.company_id=a.company_id OR u.company_id IS NULL)
-      WHERE ${where.sql} AND a.entity_type='invoice' AND a.action IN ('invoice_created','invoice_updated','invoice_voided','invoice_deleted')`, values: where.values });
+      WHERE ${where.sql} AND a.entity_type='invoice' AND a.action IN ('invoice_created','invoice_updated','invoice_voided','invoice_deleted','invoice_marked_paid')`, values: where.values });
   }
   return defs;
 }
@@ -242,7 +242,7 @@ export async function getAdministrativeHistoryActors({ scope }, dbPool = pool) {
       SELECT a.user_id AS actor_id,CONCAT_WS(' ',u.first_name,u.last_name) AS actor_name FROM collection_actions a JOIN users u ON u.id=a.user_id WHERE a.company_id=?
       UNION SELECT p.created_by,CONCAT_WS(' ',u.first_name,u.last_name) FROM payment_promises p JOIN users u ON u.id=p.created_by WHERE p.company_id=?
       UNION SELECT a.user_id,CONCAT_WS(' ',u.first_name,u.last_name) FROM audit_logs a JOIN settings s ON s.id=a.entity_id AND s.setting_key='collection_rules' JOIN users u ON u.id=a.user_id WHERE a.company_id=? AND a.entity_type='setting'
-      UNION SELECT a.user_id,CONCAT_WS(' ',u.first_name,u.last_name) FROM audit_logs a JOIN users u ON u.id=a.user_id WHERE a.company_id=? AND a.entity_type='invoice' AND a.action IN ('invoice_created','invoice_updated','invoice_voided','invoice_deleted')
+      UNION SELECT a.user_id,CONCAT_WS(' ',u.first_name,u.last_name) FROM audit_logs a JOIN users u ON u.id=a.user_id WHERE a.company_id=? AND a.entity_type='invoice' AND a.action IN ('invoice_created','invoice_updated','invoice_voided','invoice_deleted','invoice_marked_paid')
       UNION SELECT b.user_id,CONCAT_WS(' ',u.first_name,u.last_name) FROM import_batches b JOIN users u ON u.id=b.user_id WHERE b.company_id=?
     ) actors WHERE actor_id IS NOT NULL AND actor_name<>'' GROUP BY actor_id,actor_name ORDER BY actor_name,actor_id LIMIT 500`,
     [scope.companyId, scope.companyId, scope.companyId, scope.companyId, scope.companyId]);

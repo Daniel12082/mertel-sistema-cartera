@@ -117,6 +117,46 @@ describe("financial integrity HTTP / MySQL integration", { skip: !configured }, 
     return { i, p, a };
   }
 
+  test('quick paid action settles only the remaining balance, is idempotent and records actor and time', async () => {
+    const { i } = await pair('35.25');
+    const results = await Promise.all([request('POST', `/invoices/${i.id}/paid`, {}), request('POST', `/invoices/${i.id}/paid`, {})]);
+    for (const result of results) {
+      assert.equal(result.status, 200, JSON.stringify(result.body));
+      assert.equal(result.body.data.status, 'paid');
+      assert.equal(Number(result.body.data.balance), 0);
+    }
+    const [[ledger]] = await pool.query('SELECT SUM(amount) amount,COUNT(*) count FROM payment_allocations WHERE invoice_id=? AND deleted_at IS NULL', [i.id]);
+    assert.equal(Number(ledger.amount), 100); assert.equal(Number(ledger.count), 2);
+    const history = await expectStatus('GET', `/invoices/${i.id}/history`, undefined, 200);
+    const paid = history.filter(event => event.action === 'invoice_marked_paid');
+    assert.equal(paid.length, 1); assert.equal(paid[0].actor, 'Financial test');
+    assert.match(paid[0].occurred_at, /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$/);
+    const after = typeof paid[0].new_values === 'string' ? JSON.parse(paid[0].new_values) : paid[0].new_values;
+    assert.equal(Number(after.amount), 64.75); assert.ok(after.payment_id);
+    const events = await expectStatus('GET', `/admin/collection/history?type=invoice&q=${encodeURIComponent(i.invoice_number)}`, undefined, 200);
+    assert.ok(events.events.some(event => event.title === 'Factura marcada pagada' && event.actor === 'Financial test'));
+    await expectStatus('POST', '/invoices/999999999/paid', {}, 404);
+    await expectStatus('GET', '/invoices/999999999/history', undefined, 404);
+    const hidden = await invoice();
+    const [outside] = await pool.query("INSERT INTO companies(name) VALUES ('Outside fixture')");
+    await pool.query('UPDATE invoices SET company_id=? WHERE id=?', [outside.insertId, hidden.id]);
+    await expectStatus('POST', `/invoices/${hidden.id}/paid`, {}, 404);
+    await expectStatus('GET', `/invoices/${hidden.id}/history`, undefined, 404);
+  });
+  test('quick paid action rolls back payment, allocation and status if audit cannot be saved', async () => {
+    const i = await invoice();
+    const [[before]] = await pool.query('SELECT COUNT(*) count FROM payments');
+    await pool.query("CREATE TRIGGER reject_paid_audit BEFORE INSERT ON audit_logs FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='Test audit failure'");
+    try { await expectStatus('POST', `/invoices/${i.id}/paid`, {}, 500); }
+    finally { await pool.query('DROP TRIGGER reject_paid_audit'); }
+    const current = await expectStatus('GET', `/invoices/${i.id}`, undefined, 200);
+    assert.equal(current.status, 'pending'); assert.equal(Number(current.balance), 100);
+    const [[after]] = await pool.query('SELECT COUNT(*) count FROM payments');
+    assert.equal(after.count, before.count);
+    const [[allocations]] = await pool.query('SELECT COUNT(*) count FROM payment_allocations WHERE invoice_id=?', [i.id]);
+    assert.equal(Number(allocations.count), 0);
+  });
+
   test("customer without debt can be soft-deleted; paid invoice and historical promises survive", async () => {
     const i = await invoice();
     await pool.query("UPDATE invoices SET balance = 0 WHERE id = ?", [i.id]);

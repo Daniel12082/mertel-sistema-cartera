@@ -9,6 +9,7 @@ import * as service from '../src/services/whatsappCenter.service.js';
 import { MERTEL_CONTACTS } from '../src/services/whatsappSequence.js';
 import { startWhatsAppAutomationRunner } from '../src/services/whatsappAutomationRunner.js';
 import { MERTEL_INVOICE_BODY, MERTEL_INVOICE_TEMPLATE } from '../src/services/mertelInvoiceWhatsApp.js';
+import { markInvoicePaid } from '../src/models/invoice.model.js';
 dotenv.config({ path: new URL('../.env', import.meta.url), quiet: true });
 
 describe('MERTEL automation authority on an isolated MySQL schema', { skip: !(process.env.DB_HOST && process.env.DB_USER) }, () => {
@@ -25,6 +26,7 @@ describe('MERTEL automation authority on an isolated MySQL schema', { skip: !(pr
     for (const match of sql.matchAll(/CREATE TABLE (\w+) \([\s\S]*?;/g)) if (names.has(match[1])) await db.query(match[0]);
     await applyWhatsAppMigration(db); assert.equal((await applyWhatsAppMigration(db)).applied, false);
     await db.query("INSERT INTO companies(id,name) VALUES (1,'MERTEL IMPORTACIONES')");
+    await db.query("INSERT INTO users(id,company_id,first_name,email,password_hash) VALUES (1,1,'Marjori','payment-fixture@example.test','unusable')");
     await db.query("INSERT INTO customers(id,company_id,nit,name,phone) VALUES (1,1,'DEMO-AUTO','Cliente automatización DEMO','3001234567')");
     for (const [index, step] of MERTEL_CONTACTS.entries()) await db.query("INSERT INTO message_templates(id,company_id,name,channel,stage,content,status) VALUES (?,1,?,'whatsapp',?,'Hola {{cliente_nombre}}.','active')", [index + 1, step.template_name, step.stage]);
     const rules = await readFile(new URL('../config/mertel-collection-rules.json', import.meta.url), 'utf8');
@@ -46,6 +48,7 @@ describe('MERTEL automation authority on an isolated MySQL schema', { skip: !(pr
   }
   beforeEach(async () => {
     await db.query('DELETE FROM messages'); await db.query('DELETE FROM audit_logs');
+    await db.query('DELETE FROM payment_allocations'); await db.query('DELETE FROM payments');
     await db.query("UPDATE customers SET phone='3001234567' WHERE id=1");
     await db.query("UPDATE settings SET setting_value=? WHERE setting_key='whatsapp_center'", [JSON.stringify(defaults)]);
     await invoices([{}]);
@@ -53,6 +56,22 @@ describe('MERTEL automation authority on an isolated MySQL schema', { skip: !(pr
   afterEach(async () => assert.deepEqual(await financial(), originalFinances, 'Automating messages must not modify financial tables'));
   const enqueue = (day = now) => service.enqueueWhatsApp({ scope, body: { customer_id: '1', mode: 'AUTOMATICO' }, now: day }, pool);
   const dispatch = (id, day = now, extra = {}) => service.mockSendWhatsApp({ scope, messageId: id, now: day, ...extra }, pool);
+
+  test('quick payment removes that invoice from a queued notice and paying the remainder cancels future sends', async () => {
+    await invoices([{ due: '2026-10-07' }, { due: '2026-10-07' }]);
+    const queued = (await enqueue()).message;
+    const paid = await markInvoicePaid('1', { ...scope, actorId: 1 }, pool);
+    assert.equal(paid.status, 'paid'); assert.equal(Number(paid.balance), 0);
+    await freeze();
+    const sent = (await dispatch(queued.id)).message;
+    assert.equal(sent.status, 'SENT');
+    assert.doesNotMatch(sent.content, /AUTO-DEMO-1/); assert.match(sent.content, /AUTO-DEMO-2/);
+    const next = (await enqueue()).message;
+    await markInvoicePaid('2', { ...scope, actorId: 1 }, pool); await freeze();
+    const result = await dispatch(next.id, new Date(next.scheduled_at));
+    assert.equal(result.cancelled, true); assert.equal(result.message.status, 'CANCELLED');
+    await assert.rejects(enqueue(new Date(next.scheduled_at)), /No hay un aviso/);
+  });
 
   test('concurrent queue and dispatch calls produce one effective operation, permanent idempotency and one daily slot', async () => {
     const queued = await Promise.all([enqueue(), enqueue(), enqueue()]);
