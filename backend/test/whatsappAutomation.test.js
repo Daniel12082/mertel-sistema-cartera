@@ -89,28 +89,32 @@ describe('MERTEL automation authority on an isolated MySQL schema', { skip: !(pr
     const message = (await enqueue()).message; assert.equal(message.stage, 'overdue');
     assert.equal((await dispatch(message.id)).message.status, 'SENT');
     const next = (await enqueue()).message;
-    assert.equal(new Date(next.scheduled_at).toISOString(), '2026-10-10T13:00:00.000Z');
+    assert.equal(new Date(next.scheduled_at).toISOString(), '2026-10-13T13:00:00.000Z');
     assert.equal((await db.query("SELECT COUNT(*) count FROM messages WHERE status='SENT'"))[0][0].count, 1);
   });
-  test('old overdue balances repeat two days after sending and paid invoices leave the next notice', async () => {
+  test('old overdue balances repeat three days after sending and paid invoices leave the next notice', async () => {
     await invoices([{ due: '2026-09-15' }, { due: '2026-09-18' }]);
     const first = (await enqueue()).message;
     assert.equal(first.stage, 'overdue');
     assert.equal((await dispatch(first.id)).message.status, 'SENT');
     const [second, duplicate] = await Promise.all([enqueue(), enqueue()]);
     assert.equal(second.message.id, duplicate.message.id);
-    assert.equal(new Date(second.message.scheduled_at).toISOString(), '2026-10-10T13:00:00.000Z');
+    assert.equal(new Date(second.message.scheduled_at).toISOString(), '2026-10-13T13:00:00.000Z');
+    await db.query("UPDATE messages SET scheduled_at='2026-10-10 13:00:00',automation_context=JSON_REMOVE(automation_context,'$.interval_days') WHERE id=?", [second.message.id]);
+    assert.equal((await service.processWhatsAppAutomations({ scope, now: new Date('2026-10-09T15:00:00Z') }, pool)).sent, 0);
+    const [[replanned]] = await db.query('SELECT scheduled_at,automation_context FROM messages WHERE id=?', [second.message.id]);
+    assert.equal(replanned.scheduled_at.toISOString(), '2026-10-13T13:00:00.000Z');
     assert.equal((await dispatch(second.message.id, new Date('2026-10-09T15:00:00Z'))).scheduled, true);
     await db.query('UPDATE invoices SET balance=0 WHERE id=1'); await freeze();
-    const sent = (await dispatch(second.message.id, new Date('2026-10-10T15:00:00Z'))).message;
+    const sent = (await dispatch(second.message.id, new Date('2026-10-13T15:00:00Z'))).message;
     assert.equal(sent.status, 'SENT');
     assert.match(sent.content, /AUTO-DEMO-2/);
     assert.doesNotMatch(sent.content, /AUTO-DEMO-1/);
-    const third = (await enqueue(new Date('2026-10-10T15:00:00Z'))).message;
-    assert.equal(new Date(third.scheduled_at).toISOString(), '2026-10-13T13:00:00.000Z');
+    const third = (await enqueue(new Date('2026-10-13T15:00:00Z'))).message;
+    assert.equal(new Date(third.scheduled_at).toISOString(), '2026-10-16T15:00:00.000Z');
     await db.query('UPDATE invoices SET balance=0'); await freeze();
-    assert.equal((await dispatch(third.id, new Date('2026-10-13T15:00:00Z'))).cancelled, true);
-    await assert.rejects(enqueue(new Date('2026-10-13T15:00:00Z')), /No hay un aviso/);
+    assert.equal((await dispatch(third.id, new Date('2026-10-16T15:00:00Z'))).cancelled, true);
+    await assert.rejects(enqueue(new Date('2026-10-16T15:00:00Z')), /No hay un aviso/);
     assert.equal((await db.query("SELECT COUNT(*) count FROM messages WHERE status='SENT'"))[0][0].count, 2);
   });
   test('Sunday and holiday defer at most three days; dispatch rereads actual financial balances and wording', async () => {
@@ -212,7 +216,8 @@ describe('MERTEL automation authority on an isolated MySQL schema', { skip: !(pr
     const parameters = requests[0].template.components[0].parameters.map(row => row.text);
     assert.equal(parameters[0], 'Cliente automatización DEMO');
     assert.match(parameters[1], /Factura AUTO-DEMO-1 · emisión 2026-09-01 · vence 2026-10-13/);
-    assert.equal(parameters.length, 2);
+    assert.match(parameters[2], /No hay condiciones vigentes de 3% por pronto pago ni 10% condicionado/);
+    assert.equal(parameters.length, 3);
     assert.equal((await db.query("SELECT status FROM messages WHERE provider_message_id='wamid.notice1'"))[0][0].status, 'DELIVERED');
     const sendManual = () => service.sendMetaInvoiceNotice({ scope, now,
       body: { customer_id: '1', invoice_ids: ['1'], preview_token: preview.preview_token } }, pool);

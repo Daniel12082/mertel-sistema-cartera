@@ -5,11 +5,13 @@ import {moneyCents} from './collectionMoney.js';
 import {collectionStageCatalog} from './collectionPolicy.js';
 import { invoiceNoticeParts } from './mertelInvoiceWhatsApp.js';
 
+export const MERTEL_AUTOMATIC_INTERVAL_DAYS = 3;
+
 export const MERTEL_CONTACTS=Object.freeze([
   {stage:'prompt_payment',label:'Pronto pago',template_name:'mertel_pronto_pago',description:'Día hábil 7 desde emisión; límite día calendario 10'},
   {stage:'five_days_before_due',label:'Recordatorio',template_name:'mertel_aviso_previo',description:'Exactamente 5 días calendario antes del vencimiento'},
   {stage:'due_today',label:'Vence hoy',template_name:'mertel_vence_hoy',description:'El día calendario del vencimiento'},
-  {stage:'overdue',label:'Mora',template_name:'mertel_mora',description:'Desde el día siguiente al vencimiento; cada 2 días calendario desde el último envío mientras exista saldo pendiente'},
+  {stage:'overdue',label:'Mora',template_name:'mertel_mora',description:'Desde el día siguiente al vencimiento; cada 3 días desde el último envío mientras exista saldo pendiente'},
 ]);
 const amount=cents=>`${cents/100n}.${String(cents%100n).padStart(2,'0')}`;
 const id=invoice=>String(invoice.invoice_id??invoice.id);
@@ -99,13 +101,13 @@ function recurringOverdueNotice(input, pending) {
       .reduce((latest, message) => Math.max(latest, new Date(message.sent_at).getTime()), 0);
     if (lastSent) {
       const lastDay = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Bogota', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(lastSent));
-      const next = dateFromDay(dateDay(lastDay) + 2);
+      const next = dateFromDay(dateDay(lastDay) + MERTEL_AUTOMATIC_INTERVAL_DAYS);
       if (next > date) date = next;
     }
     for (const message of history.filter(row => ['FAILED', 'CANCELLED'].includes(row.status) && !row.next_attempt_at)) {
       const previousDate = noticeContext(message)?.notice_date;
       if (previousDate) {
-        const next = dateFromDay(dateDay(previousDate) + 2);
+        const next = dateFromDay(dateDay(previousDate) + MERTEL_AUTOMATIC_INTERVAL_DAYS);
         if (next > date) date = next;
       }
     }
@@ -208,7 +210,7 @@ export function buildWhatsAppSequence(input, render = renderAutomaticNotice) {
   return { customer: input.customer, total_balance: current.total, stage: current.item.stage, stage_label: current.item.stage_label,
     reference_date: input.referenceDate, steps, last_contact: last ? { date: last.sent_at, label: last.template_name, message: last } : null,
     next_contact: next ? { date: next.message?.scheduled_at || next.date, label: next.label, template_name: next.template_name } : null,
-    excluded: Boolean(input.settings.excluded_customers?.[String(input.customer.id)]), notice: 'Fechas calculadas con cartera vigente. La mora se recuerda cada dos días mientras quede saldo pendiente.' };
+    excluded: Boolean(input.settings.excluded_customers?.[String(input.customer.id)]), notice: 'Fechas calculadas con cartera vigente. Los avisos automáticos se separan por al menos tres días; la mora se recuerda cada tres días mientras quede saldo pendiente.' };
 }
 
 export function automaticHours(notice, date, production = false) {
@@ -220,7 +222,7 @@ export function automaticHours(notice, date, production = false) {
 
 export function automaticWindow(notice, rules, now, previousMessages = [], production = false) {
   const latest = previousMessages.filter(row => row.message_mode === 'AUTOMATICO' && row.sent_at).reduce((last, row) => Math.max(last, new Date(row.sent_at).getTime()), 0);
-  if (latest) now = new Date(Math.max(now.getTime(), latest + Number(notice.rule.interval_hours || 0) * 3600000));
+  if (latest) now = new Date(Math.max(now.getTime(), latest + Math.max(MERTEL_AUTOMATIC_INTERVAL_DAYS * 24, Number(notice.rule.interval_hours || 0)) * 3600000));
   if (notice.recurring) now = new Date(Math.max(now.getTime(), new Date(`${notice.date}T00:00:00-05:00`).getTime()));
   const day = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Bogota', year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);
   for (let offset = 0; offset <= 3; offset++) {

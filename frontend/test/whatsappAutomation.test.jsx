@@ -5,7 +5,7 @@ import api from '../src/services/api';
 import { enterSimulation, leaveSimulation, simulationData } from '../src/simulation/store';
 import { SimulationContext } from '../src/simulation/simulation.context';
 import { permissionsForRoles } from '../../backend/src/config/permissions';
-import { createSimulationDataset } from '../src/simulation/dataset';
+import { createSimulationDataset, shiftDay } from '../src/simulation/dataset';
 import { MERTEL_CONTACTS, contactDates } from '../../backend/src/services/whatsappSequence';
 import { whatsappRequest } from '../src/services/whatsappCenter.service';
 import WhatsAppCustomerTimeline from '../src/pages/Administracion/WhatsAppCustomerTimeline';
@@ -23,14 +23,15 @@ describe('complete automation simulation using shared backend notice policy', ()
     const data = simulationData(), before = finances(data), invoice = data.invoices.find(row => row.customer_id === '91003'), dates = contactDates(invoice, data.configuration);
     expect(dates.every(row => row.applicable)).toBe(true);
     for (const step of dates) {
-      await whatsappRequest('/automations/process', { method: 'post', body: { reference_date: step.date } });
-      const result = await whatsappRequest('/customers/91003/sequence', { params: { reference_date: step.date } });
+      const day = step.stage === 'overdue' ? shiftDay(step.date, 2) : step.date;
+      await whatsappRequest('/automations/process', { method: 'post', body: { reference_date: day } });
+      const result = await whatsappRequest('/customers/91003/sequence', { params: { reference_date: day } });
       expect(result.steps.find(row => row.stage === step.stage).message.status).toBe('SENT');
-      const count = data.messages.filter(row => row.customer_id === '91003' && row.message_mode === 'AUTOMATICO').length;
-      await whatsappRequest('/automations/process', { method: 'post', body: { reference_date: step.date } });
-      expect(data.messages.filter(row => row.customer_id === '91003' && row.message_mode === 'AUTOMATICO')).toHaveLength(count);
+      const count = data.messages.filter(row => row.customer_id === '91003' && row.message_mode === 'AUTOMATICO' && row.status === 'SENT').length;
+      await whatsappRequest('/automations/process', { method: 'post', body: { reference_date: day } });
+      expect(data.messages.filter(row => row.customer_id === '91003' && row.message_mode === 'AUTOMATICO' && row.status === 'SENT')).toHaveLength(count);
     }
-    expect(data.messages.filter(row => row.customer_id === '91003' && row.message_mode === 'AUTOMATICO')).toHaveLength(4);
+    expect(data.messages.filter(row => row.customer_id === '91003' && row.message_mode === 'AUTOMATICO' && row.status === 'SENT')).toHaveLength(4);
     expect(finances(data)).toEqual(before); expect(network).not.toHaveBeenCalled();
   });
   it('shows client identity, balance, planned/actual dates and backend exclusion in the timeline', async () => {

@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import pool from '../config/database.js';
-import {buildWhatsAppSequence,automaticSelection,automaticNotices,automaticContent,automaticDayAllowed,automaticHours,noticeContext,validMobile,automaticWindow,renderAutomaticNotice,MERTEL_CONTACTS} from './whatsappSequence.js';
+import {buildWhatsAppSequence,automaticSelection,automaticNotices,automaticContent,automaticDayAllowed,automaticHours,noticeContext,validMobile,automaticWindow,renderAutomaticNotice,MERTEL_CONTACTS,MERTEL_AUTOMATIC_INTERVAL_DAYS} from './whatsappSequence.js';
 import {dateDay,dateFromDay} from './promptPayment.service.js';
 import { validCompanyId } from '../utils/companyScope.js';
 import { operationError, operationId } from './collectionOperations.validation.js';
@@ -810,7 +810,8 @@ export async function processWhatsAppAutomations({ scope, actorId, now, clock = 
   }
   const [messages]=await dbPool.query(`SELECT CAST(id AS CHAR) id FROM messages WHERE company_id=? AND provider=? AND message_mode='AUTOMATICO'
     AND attempts<3 AND (UPPER(status)='PENDING' OR (UPPER(status)='FAILED' AND next_attempt_at<=?))
-    AND (scheduled_at IS NULL OR scheduled_at<=?) ORDER BY scheduled_at,id`,[scope.companyId,provider,clock(),clock()]);
+    AND (scheduled_at IS NULL OR scheduled_at<=? OR (UPPER(status)='PENDING' AND
+      COALESCE(JSON_EXTRACT(automation_context,'$.interval_days'),0)<>?)) ORDER BY scheduled_at,id`,[scope.companyId,provider,clock(),clock(),MERTEL_AUTOMATIC_INTERVAL_DAYS]);
   for(const message of messages){
     try {
       const args = { scope: systemScope, messageId: message.id, now: clock(), metaLimit, clock };
@@ -919,7 +920,7 @@ async function enqueueAutomatic(db, scope, settings, customerId, now, metaLimit)
   if (duplicate) return { message: await messageById(db, scope, duplicate.id), duplicate: true };
   const scheduled = provider === 'MOCK' ? automaticWindow(notice, input.rules, now, input.messages)
     : await realAutomaticSlot(db, scope, input, notice, now, { metaLimit });
-  const context = { notice_date: notice.date, expires_on: notice.expires_on, invoice_ids: notice.invoice_ids, reason: notice.description,
+  const context = { notice_date: notice.date, expires_on: notice.expires_on, invoice_ids: notice.invoice_ids, reason: notice.description, interval_days: MERTEL_AUTOMATIC_INTERVAL_DAYS,
     cancellation_reason: scheduled ? null : 'No hay horario o cupo disponible dentro del plazo máximo del aviso.' };
   const content = provider === 'MOCK' ? renderAutomatic(notice, input.referenceDate) : realAutomaticMessage(notice, input.referenceDate, settings).content;
   if (scheduled && provider === 'MOCK') {
@@ -951,6 +952,8 @@ async function dispatchAutomatic(db, scope, settings, message, now, fail, metaLi
   if (input.contactOptedOut) return cancel('El cliente solicitó dejar de recibir avisos por WhatsApp.');
   if (!simulated && await hasSharedWhatsAppNumber(db, scope, input.customer)) return cancel('El teléfono está asociado a más de un cliente.');
   const notice = automaticNotices(input).find(row => row.stage === message.stage && row.date === context.notice_date);
+  // Preserve the reserved notice while a newly approved template is being connected.
+  if (input.realTemplateName && notice && !notice.template) throw operationError(409, notice.reason);
   if (!notice?.applicable) return cancel(notice?.reason || 'La cartera aplicable ya fue pagada o el aviso dejó de aplicar.');
   const winner = automaticSelection(input);
   if (winner && MERTEL_CONTACTS.findIndex(row => row.stage === winner.stage) > MERTEL_CONTACTS.findIndex(row => row.stage === notice.stage)) return cancel('Se priorizó un aviso de mayor urgencia.');
@@ -961,6 +964,11 @@ async function dispatchAutomatic(db, scope, settings, message, now, fail, metaLi
   if (!scheduled) return cancel('No hay horario o cupo disponible dentro del plazo máximo.');
   const prepared = simulated ? null : realAutomaticMessage(notice, day, settings);
   const content = prepared?.content ?? renderAutomatic(notice, day), recipient = normalizePhone(input.customer.phone);
+  if (context.interval_days !== MERTEL_AUTOMATIC_INTERVAL_DAYS || String(message.template_id) !== String(notice.template.id)) {
+    context.interval_days = MERTEL_AUTOMATIC_INTERVAL_DAYS;
+    await db.query('UPDATE messages SET automation_context=?,template_id=? WHERE id=? AND company_id=?', [JSON.stringify(context), notice.template.id, message.id, scope.companyId]);
+    await audit(db, scope, null, 'rescheduled', 'whatsapp_message', message.id, { interval_days: MERTEL_AUTOMATIC_INTERVAL_DAYS, previous_scheduled_at: message.scheduled_at, scheduled_at: scheduled, actor_type: 'SYSTEM' });
+  }
   if (simulated) {
     await oneAutomaticPerDay(db, scope, message.customer_id, bogotaDate(scheduled), message.id);
     await enforceLimits(db, scope, settings, notice.rule, message.customer_id, bogotaDate(scheduled), message.id);

@@ -1,5 +1,7 @@
 # Reglas oficiales de cobranza MERTEL
 
+Actualización del 20/11/2026 por instrucción del usuario: el aplicativo no calcula ni aplica descuentos. Solo recuerda pronto pago y las condiciones de descuento según las fechas de cada factura. Los avisos automáticos se separan por al menos tres días desde el último envío efectivo; la mora se recuerda cada tres días mientras exista saldo vencido, respetando los horarios y días de envío existentes. Una factura pagada sale de los avisos pendientes y futuros. Esta frecuencia sustituye la instrucción anterior de dos días y prevalece sobre las referencias históricas de este documento.
+
 Actualización técnica 4.9: implementados registro manual de gestiones de tipo libre, promesas pendientes e historial, según orden expresa del usuario. Sin aprobar catálogo ni evaluar cumplimiento/pausa/prioridad. Preparar mensaje es un borrador temporal sin envío. [Contrato y límites de 4.9](../architecture/MERTEL_PHASE_4_9.md). Las reglas comerciales confirmadas y pendientes de este documento permanecen intactas.
 
 Fecha: 05/10/2026. Fuente vigente: orden Fase 5 del usuario con reglas confirmadas por MERTEL y respuesta posterior que confirma redondeo al peso COP entero. Esta documentación distingue implementación, configuración empresarial, elegibilidad y aplicación financiera. Base publicada 4.9: `2db4e231835319b1348542fc2e60d4951c5c4cd9`. Los pendientes históricos siguientes se sustituyen solo donde la orden Fase 5 lo define expresamente.

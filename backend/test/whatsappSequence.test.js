@@ -14,6 +14,12 @@ test('real schedule starts Saturday at 8, closes at 15 and skips Sunday and holi
   assert.equal(automaticWindow(notice, rules, new Date('2026-10-10T20:00:00Z'), [], true).toISOString(), '2026-10-13T12:00:00.000Z');
 });
 
+test('automatic stages wait three full days after the last actual automatic send', () => {
+  const notice = { expires_on: '2026-11-28', recurring: true, date: '2026-11-24', rule: { weekdays: [1,2,3,4,5,6], start_time: '07:00', end_time: '17:00', interval_hours: 1 } };
+  const messages = [{ message_mode: 'AUTOMATICO', sent_at: '2026-11-23T15:30:00Z' }, { message_mode: 'MANUAL', sent_at: '2026-11-24T16:00:00Z' }];
+  assert.equal(automaticWindow(notice, rules, new Date('2026-11-24T12:00:00Z'), messages, true).toISOString(), '2026-11-26T15:30:00.000Z');
+});
+
 test('pronto pago is day business 7, before calendar 10; it lists documents and only reminds the condition', () => {
   const source = input([invoice(), invoice({ id: '2', invoice_id: '2', invoice_number: 'DEMO-2', issue_date: '2026-09-30' })]);
   const copy = structuredClone(source), notice = automaticSelection(source), body = automaticContent(notice, source.referenceDate);
@@ -64,8 +70,8 @@ test('daily priority is mora > due today > reminder > prompt payment', () => {
   const all = [invoice({ id: '1', due_date: '2026-10-07', issue_date: '2026-09-01' }), invoice({ id: '2', due_date: '2026-10-08', issue_date: '2026-09-01' }), invoice({ id: '3', due_date: '2026-10-13', issue_date: '2026-09-01' }), invoice({ id: '4' })];
   assert.equal(automaticSelection(input(all)).stage, 'overdue'); assert.equal(automaticSelection(input(all.slice(1))).stage, 'due_today'); assert.equal(automaticSelection(input(all.slice(2))).stage, 'five_days_before_due');
 });
-test('sent notice does not repeat after delivery failure, template editing or reruns', () => {
-  const source = input(); source.messages.push({ message_mode: 'AUTOMATICO', stage: 'prompt_payment', sent_at: '2026-10-08T15:00:00Z', status: 'FAILED', automation_context: { notice_date: '2026-10-08' } });
+test('delivered notice does not repeat after template editing or reruns', () => {
+  const source = input(); source.messages.push({ message_mode: 'AUTOMATICO', stage: 'prompt_payment', sent_at: '2026-10-08T15:00:00Z', status: 'DELIVERED', automation_context: { notice_date: '2026-10-08' } });
   assert.equal(automaticSelection(source), null); source.templates[0].content = 'Changed'; assert.equal(automaticSelection(source), null);
 });
 test('changing the due date cannot repeat an already sent stage for the same invoice', () => {
