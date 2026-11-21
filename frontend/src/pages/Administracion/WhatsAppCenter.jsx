@@ -64,7 +64,7 @@ export default function WhatsAppCenter({ chatOnly = false }) {
   const settings = data?.settings; const connected = settings?.connection_status === 'CONNECTED';
   const stages = data?.stage_catalog || [];
   const metaConfigured = settings?.provider === 'WHATSAPP_CLOUD_API';
-  const allowMock = simulationAvailable && !metaConfigured;
+  const allowMock = (simulationAvailable || mode === 'SIMULATION') && !metaConfigured;
   const metaTestMode = metaConfigured && settings?.test_mode;
   function changeFilter(key, value) { setFilters(current => ({ ...current, [key]: value, page: 1 })); }
   if (!authorized) return <section className="wa-center"><h1>Centro de WhatsApp MERTEL</h1><p role="alert">No tienes permiso para configurar WhatsApp.</p></section>;

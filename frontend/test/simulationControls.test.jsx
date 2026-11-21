@@ -5,7 +5,7 @@ import { AuthContext } from '../src/auth/auth.context';
 import { useAuth } from '../src/auth/useAuth';
 import SimulationProvider from '../src/simulation/SimulationProvider';
 import SimulationControls from '../src/simulation/SimulationControls';
-import { leaveSimulation, MODE_KEY, simulationData } from '../src/simulation/store';
+import { leaveSimulation, MODE_KEY, simulationData, simulationSnapshot } from '../src/simulation/store';
 import api from '../src/services/api';
 import { permissionsForRoles } from '../../backend/src/config/permissions.js';
 
@@ -31,4 +31,19 @@ it('reset restores local records and exit confirmation clears the simulation key
   confirmation.mockReturnValue(true); fireEvent.click(screen.getByRole('button', { name: 'Salir de simulación' }));
   await waitFor(() => expect(screen.queryByText('MODO SIMULACIÓN')).not.toBeInTheDocument());
   expect(sessionStorage.getItem(MODE_KEY)).toBeNull(); expect(screen.getByText('Identidad privada de prueba')).toBeVisible();
+});
+it('dedicated account enters before children mount and can reset or sign out, never switch to real data', async () => {
+  const logout = vi.fn(async () => {}), reads = [];
+  function ReadOnMount() { reads.push(simulationSnapshot().mode); return <Identity />; }
+  const identity = { user: {id:'42',name:'Presentación MERTEL',simulation_only:true},roles:[{name:'simulation'}],permissions,logout };
+  render(<MemoryRouter><AuthContext.Provider value={identity}><SimulationProvider><SimulationControls/><ReadOnMount/></SimulationProvider></AuthContext.Provider></MemoryRouter>);
+  expect(await screen.findByText('MODO SIMULACIÓN')).toBeVisible();
+  expect(reads.every(mode=>mode==='SIMULATION')).toBe(true);
+  expect(screen.queryByRole('button',{name:'Salir de simulación'})).not.toBeInTheDocument();
+  simulationData().customers[0].name='Cambio temporal';
+  fireEvent.click(screen.getByRole('button',{name:'Reiniciar simulación'}));
+  expect(simulationData().customers[0].name).toContain('DEMO');
+  fireEvent.click(screen.getByRole('button',{name:'Cerrar sesión'}));
+  await waitFor(()=>expect(logout).toHaveBeenCalledOnce());
+  expect(api.defaults.adapter).not.toHaveBeenCalled();
 });

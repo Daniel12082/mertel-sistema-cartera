@@ -23,6 +23,6 @@ export function authRoutes(config) {
     message: { success: false, message: "Demasiadas solicitudes de sesión" },
   }), controller.refresh);
   router.post("/logout", controller.logout);
-  router.get("/me", authenticateToken(config), controller.me);
+  router.get("/me", authenticateToken(config, { allowSimulationAccount: true }), controller.me);
   return router;
 }

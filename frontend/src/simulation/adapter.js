@@ -156,6 +156,7 @@ function authorize(path, method) {
   const operation = method === 'GET' ? 'view' : method === 'POST' ? 'create' : method === 'DELETE' ? 'delete' : 'update';
   let permission;
   if (/^\/(customers|invoices|payments)(\/|$)/.test(path)) permission = `${path.split('/')[1]}.${operation}`;
+  if (/^\/invoices\/[^/]+\/paid$/.test(path)) permission = 'invoices.update';
   if (path.includes('/allocations')) permission = `payment_allocations.${method === 'GET' ? 'view' : method === 'DELETE' ? 'reverse' : 'create'}`;
   if (path.startsWith('/portfolio')) permission = 'portfolio.view';
   if (path.startsWith('/collection')) permission = method === 'GET' ? 'collection.view' : 'collection.manage';
@@ -176,6 +177,24 @@ export function simulationRequest(config) {
   const body = typeof config.data === 'string' ? JSON.parse(config.data || '{}') : config.data || {};
   const ok = value => ({ success: true, data: structuredClone(value), simulation: true });
   let match;
+  if ((match = path.match(/^\/invoices\/([^/]+)\/history$/)) && method === 'GET') {
+    find(data.invoices, match[1]);
+    return ok(data.events.filter(row => row.metadata?.invoice_id === match[1] || row.invoice_id === match[1]).reverse());
+  }
+  if ((match = path.match(/^\/invoices\/([^/]+)\/paid$/)) && method === 'POST') {
+    if (!['payments.create','payment_allocations.create'].every(permission => simulationSnapshot().display.permissions.includes(permission))) fail('No tienes permiso para registrar este pago.',403);
+    const invoice = find(data.invoices, match[1]);
+    if (invoice.deleted_at) fail('La factura de demostración no está disponible.',404);
+    if (moneyCents(invoice.balance) > 0n) {
+      const payment = { id: id(data), customer_id: invoice.customer_id, amount: invoice.balance, payment_date: browserDay(), payment_method: 'Simulación', reference: 'PAGO-DEMO', status: 'confirmed', created_at: now() };
+      data.payments.push(payment); allocate(data,payment,[{invoice_id:invoice.id,amount:payment.amount}]);
+      invoice.status = 'paid';
+      const recorded = event(data,'financial',invoice.customer_id,'Factura marcada pagada únicamente en simulación',{invoice_id:invoice.id,payment_id:payment.id});
+      recorded.action='invoice_marked_paid';
+      for (const message of data.messages) if (message.customer_id === invoice.customer_id && message.message_mode === 'AUTOMATICO' && message.status === 'PENDING' && !openInvoices(data).some(row => row.customer_id === invoice.customer_id)) message.status='CANCELLED';
+    }
+    return ok(invoiceView(data,invoice));
+  }
   if ((match = path.match(/^\/(customers|invoices|payments)(?:\/([^/]+))?$/))) {
     const [, kind, key] = match, rows = data[kind], view = row => kind === 'invoices' ? invoiceView(data, row) : kind === 'payments' ? paymentView(data, row) : row;
     if (method === 'GET') return ok(key ? view(find(rows, key)) : rows.filter(row => !row.deleted_at).map(view));

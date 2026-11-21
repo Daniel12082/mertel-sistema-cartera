@@ -31,10 +31,11 @@ function saveDisplay(display) {
 export function beginRealWrite() { realWrites++; }
 export function finishRealWrite() { realWrites = Math.max(0, realWrites - 1); }
 export function enterSimulation(identity) {
-  if (!simulationAvailable) throw new Error('La versión publicada trabaja con datos de producción.');
+  if (!simulationAvailable && identity?.simulation_only !== true) throw new Error('La versión publicada trabaja con datos de producción.');
   if (!identity || !Array.isArray(identity.permissions)) throw new Error('Inicia sesión antes de activar la simulación.');
   if (realWrites) throw new Error('Espera a que termine la operación actual antes de activar la simulación.');
   const display = { id: 'SIMULATION', name: 'Equipo de demostración', first_name: 'Equipo DEMO', email: 'presentacion@example.invalid', company_id: null,
+    simulation_only: identity.simulation_only === true, account_id: String(identity.id),
     roles: (identity.roles || []).map(role => typeof role === 'string' ? { name: role } : { name: role.name }), permissions: [...identity.permissions] };
   dataset = createSimulationDataset(); saveDisplay(display);
   snapshot = { mode: 'SIMULATION', epoch: snapshot.epoch + 1, display }; notify();

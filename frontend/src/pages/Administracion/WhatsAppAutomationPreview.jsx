@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { MERTEL_CONTACTS } from '../../../../backend/src/services/whatsappSequence';
 import { MERTEL_INVOICE_TEMPLATE } from '../../../../backend/src/services/mertelInvoiceWhatsApp';
 import { whatsappRequest } from '../../services/whatsappCenter.service';
+import { useAppDataMode } from '../../simulation/useAppDataMode';
 
 const days = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
 function AutomaticRule({ step, rule, templates, busy, act }) {
@@ -25,6 +26,7 @@ function AutomaticRule({ step, rule, templates, busy, act }) {
   </form>;
 }
 export default function WhatsAppAutomationPreview({ settings, templates, busy, act, revision }) {
+  const { mode } = useAppDataMode();
   const real = settings.provider === 'WHATSAPP_CLOUD_API';
   const [daily, setDaily] = useState(real ? settings.automatic_daily_limit ?? settings.global_daily_limit ?? 40 : settings.global_daily_limit ?? '');
   const [metaLimit, setMetaLimit] = useState({ loading: true });
@@ -58,7 +60,7 @@ export default function WhatsAppAutomationPreview({ settings, templates, busy, a
       {settings.automations_enabled ? 'Desactivar envíos automáticos' : 'Activar envíos automáticos por WhatsApp'}
     </button>
   </article>;
-  if (import.meta.env.PROD) return <article className="wa-card">
+  if (import.meta.env.PROD && mode !== 'SIMULATION') return <article className="wa-card">
     <h2>Programación automática por WhatsApp</h2>
     <p role="alert">La conexión real con Meta no está disponible. Revisa la pestaña Conexión para poder activar los envíos.</p>
   </article>;

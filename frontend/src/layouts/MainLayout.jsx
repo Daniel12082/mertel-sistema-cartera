@@ -102,7 +102,7 @@ function MainLayout() {
             <h1>{appearance.name}</h1>
             <span>{appearance.description}</span>
           </div>
-          {simulationAvailable && <SimulationControls />}
+          {(simulationAvailable || mode === 'SIMULATION') && <SimulationControls />}
           {mode !== 'SIMULATION' && <SessionActions />}
         </header>
 

@@ -48,6 +48,18 @@ describe('central simulation isolation', () => {
 
 describe('existing workflows on an invented local ledger', () => {
   beforeEach(() => enterSimulation(identity));
+  it('quick mark paid records a local payment and history, is idempotent, and excludes the invoice from future notices',async()=>{
+    const before=simulationData().payments.length;
+    const paid=await request('post','/invoices/92001/paid',{});
+    expect(paid.balance).toBe('0.00');expect(paid.status).toBe('paid');
+    await request('post','/invoices/92001/paid',{});
+    expect(simulationData().payments).toHaveLength(before+1);
+    const records=await request('get','/invoices/92001/history');
+    expect(records.some(row=>row.action==='invoice_marked_paid'&&row.actor&&row.occurred_at)).toBe(true);
+    const remaining=await request('get','/collection/results/customers/91001/context');
+    expect(remaining.open_invoices.some(row=>row.id==='92001')).toBe(false);
+    expect(network).not.toHaveBeenCalled();
+  });
   it('reuses the engine for all four stages, not-overdue invoices and dashboard charts', async () => {
     const pipeline = await request('get', '/collection');
     expect(pipeline.customers.map(row => row.stage)).toEqual(['overdue', 'due_today', 'five_days_before_due', 'prompt_payment']);

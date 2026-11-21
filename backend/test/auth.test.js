@@ -93,6 +93,27 @@ describe("secure authentication HTTP / MySQL integration", { skip: !configured }
     assert.equal(result.status, 200, JSON.stringify(result.body));
     return { ...result, token: result.body.data.access_token, cookie: result.headers.getSetCookie()[0].split(";")[0] };
   }
+  test('dedicated simulation login and refresh expose demo screens but deny all operational reads and writes', async () => {
+    await pool.query("INSERT IGNORE INTO roles(name) VALUES ('simulation')");
+    await pool.query('DELETE FROM user_roles WHERE user_id=?', [userId]);
+    await pool.query("INSERT INTO user_roles(user_id,role_id) SELECT ?,id FROM roles WHERE name='simulation'", [userId]);
+    const login = await session();
+    assert.equal(login.body.data.user.simulation_only, true);
+    assert.ok(login.body.data.user.permissions.includes('settings.manage'));
+    const me = await assertStatus('GET', '/api/auth/me', { token: login.token }, 200);
+    assert.equal(me.body.data.simulation_only, true);
+    for (const [method, path] of [['GET','/api/customers'],['GET','/api/invoices'],['GET','/api/admin/users'],['GET','/api/health/db'],['POST','/api/payments'],['PATCH','/api/admin/whatsapp/settings'],['POST','/api/admin/whatsapp/queue'],['DELETE',`/api/invoices/${customerId}`]]) {
+      const denied = await request(method,path,{token:login.token,body:method==='GET'?undefined:{simulation_only:false,roles:['admin']}});
+      assert.equal(denied.status,403,JSON.stringify(denied.body));
+      assert.equal(denied.body.code,'SIMULATION_ACCOUNT_ONLY');
+    }
+    const renewed = await assertStatus('POST','/api/auth/refresh',{cookie:login.cookie,body:{}},200);
+    assert.equal(renewed.body.data.user.simulation_only,true);
+    await assertStatus('POST','/api/auth/logout',{cookie:renewed.headers.getSetCookie()[0].split(';')[0],body:{}},200);
+    // Even an accidentally added operational role cannot lift the demo boundary.
+    await pool.query("INSERT INTO user_roles(user_id,role_id) SELECT ?,id FROM roles WHERE name='admin'", [userId]);
+    await assertStatus('GET','/api/customers',{token:login.token},403);
+  });
   const cookieToken = cookie => decodeURIComponent(cookie.split("=")[1]);
   const cookieHash = cookie => createHash("sha256").update(cookieToken(cookie)).digest("hex");
   async function assertStatus(method, path, options, expected) {

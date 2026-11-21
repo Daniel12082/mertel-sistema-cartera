@@ -56,6 +56,7 @@ export async function saveManagedUser({scope,actorId,userId,body,statusOnly=fals
     let previous=null;
     if(!creating){const [[user]]=await db.query(`SELECT ${columns},u.company_id FROM users u WHERE u.id=? AND ${ownership} AND u.deleted_at IS NULL FOR UPDATE`,[userId,scope.companyId]);if(!user)throw fail(404,'Usuario no encontrado.');previous=user;
       const [roles]=await db.query('SELECT r.name FROM roles r JOIN user_roles ur ON ur.role_id=r.id WHERE ur.user_id=?',[userId]);previous.roles=roles.map(role=>role.name);
+      if(previous.roles.includes('simulation')&&!statusOnly)throw fail(409,'La cuenta de demostración conserva su acceso exclusivo a simulación. Solo puedes activar o desactivar esta cuenta.');
       const removingAdmin=previous.roles.includes('admin')&&(statusOnly?data.status==='inactive':!data.roles.includes('admin'));
       if(String(actorId)===String(userId)&&removingAdmin)throw fail(409,'No puedes desactivar tu cuenta ni retirar tu propio rol administrativo.');
       if(previous.company_id===null&&!statusOnly&&!data.roles.includes('admin'))throw fail(409,'La cuenta administrativa original debe conservar su rol admin.');

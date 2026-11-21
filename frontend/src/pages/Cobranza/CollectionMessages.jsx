@@ -3,10 +3,13 @@ import { Link } from "react-router-dom";
 import { getCollectionMessageTemplates, previewCollectionMessage, prepareCollectionMessage } from "../../services/collectionMessages.service";
 import { useAuth } from "../../auth/useAuth";
 import { queueCustomerWhatsApp } from "../../services/whatsappCenter.service";
-import { simulationAvailable } from "../../simulation/store";
+import { simulationAvailable as developmentSimulation } from "../../simulation/store";
+import { useAppDataMode } from '../../simulation/useAppDataMode';
 
 export default function CollectionMessages({ customer, referenceDate, autoOpen = false }) {
   const { permissions = [] } = useAuth();
+  const { mode } = useAppDataMode();
+  const simulationAvailable = developmentSimulation || mode === 'SIMULATION';
   const allowed = permissions.includes("collection.manage");
   const [opened, setOpened] = useState(autoOpen);
   const [reload, setReload] = useState(0);

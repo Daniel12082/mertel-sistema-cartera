@@ -467,7 +467,7 @@ export default function WhatsAppConversations({ settings, conversationCustomers,
               </div>}
               {metaTestChat && <small>Comparte el límite diario de 3 pruebas con la pestaña Conexión.</small>}
             </> : <p>{metaProduction ? 'Esta conversación no tiene un número de WhatsApp válido.' : metaTestChat ? 'Pide al destinatario de prueba que escriba al número de MERTEL para abrir una ventana de respuesta.' : modeNotice}</p>}
-          </form> : !simulationAvailable ? <p className="wa-chat-compose">{modeNotice}</p> : <form className="wa-chat-compose" onSubmit={event => { event.preventDefault(); void send(); }}>
+          </form> : !simulationAvailable && !simulated ? <p className="wa-chat-compose">{modeNotice}</p> : <form className="wa-chat-compose" onSubmit={event => { event.preventDefault(); void send(); }}>
             {conversation.customer && !phoneKey(conversation.customer.phone) && <p className="wa-warning">Este cliente no tiene un número de WhatsApp válido. No se puede simular el envío.</p>}
             {notice && <p className="wa-success" role="status">{notice}</p>}{sendError && <p className="wa-error" role="alert">{sendError}</p>}
             {draftProblem && <p className="wa-warning" role="alert">{draftProblem}</p>}{realProblem && <p className="wa-warning" role="alert">{realProblem}</p>}
