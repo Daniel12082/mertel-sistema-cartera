@@ -218,10 +218,13 @@ a {
   width: calc(100% - 270px);
   min-height: 100vh;
   margin-left: 250px;
+  display: flex;
+  flex-direction: column;
 }
 
 .mertel-header {
   min-height: 82px;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   padding: 0 32px;
@@ -245,7 +248,8 @@ a {
 }
 
 .mertel-content {
-  min-height: calc(100vh - 78px);
+  flex: 1;
+  min-height: 0;
   padding: 34px;
   background-image: linear-gradient(90deg, transparent 0 97%, rgba(228, 49, 52, .08) 97% 100%);
 }
@@ -380,7 +384,7 @@ a {
   }
 
   .mertel-layout {
-    display: block;
+    flex-direction: column;
   }
 
   .mertel-navigation {
@@ -412,6 +416,8 @@ a {
   .mertel-main {
     width: 100%;
     margin-left: 0;
+    min-height: 0;
+    flex: 1;
   }
 
   .mertel-header {

@@ -7,3 +7,4 @@
 .users-roles-consultation { border: 1px solid var(--border, #dbe3e8); border-radius: 12px; padding: 20px; }
 .users-roles-consultation summary { cursor: pointer; font-weight: 600; padding: 8px 0; }
 .users-roles-consultation[open] summary { margin-bottom: 16px; }
+.users-page,.users-page>*{min-width:0}.users-page p{overflow-wrap:anywhere}
