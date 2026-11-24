@@ -6,7 +6,7 @@ import "./CollectionHistory.css";
 
 function dayValue(date = new Date()) { return [date.getFullYear(), String(date.getMonth() + 1).padStart(2, "0"), String(date.getDate()).padStart(2, "0")].join("-"); }
 function shownDate(value) { return new Intl.DateTimeFormat("es-CO", { dateStyle: "short", timeStyle: "short", timeZone: "America/Bogota" }).format(new Date(value)); }
-const kinds = { action: "Gestión", promise: "Promesa", configuration: "Configuración", import: "Importación", invoice: "Factura" };
+const kinds = { action: "Gestión", promise: "Promesa", configuration: "Configuración", import: "Importación", invoice: "Factura",access:"Usuarios y roles" };
 const invoiceFields = {
   customer_id: "Cliente", invoice_number: "Número", issue_date: "Emisión", due_date: "Vencimiento",
   document_value: "Valor", base_value: "Base", iva_value: "IVA", balance: "Saldo", credit_days: "Días de crédito",
@@ -14,7 +14,7 @@ const invoiceFields = {
 };
 
 export default function CollectionHistory({navigationState}) {
-  const { permissions = [] } = useAuth(); const authorized = permissions.includes("history.view") && permissions.includes("settings.manage");
+  const { permissions = [] } = useAuth(); const authorized = permissions.includes("audit.view");
   const today = useMemo(() => dayValue(), []);
   const [actors, setActors] = useState({ key: null, rows: [] });
   const [filters, setFilters] = useState(()=>({ date_from: "", date_to: "", type: navigationState?.type==='promise'?'promise':'all', actor_id: "", q: typeof navigationState?.q==='string'?navigationState.q.slice(0,120):"" }));

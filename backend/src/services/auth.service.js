@@ -2,27 +2,30 @@ import { createHash, randomBytes, randomUUID } from "node:crypto";
 import jwt from "jsonwebtoken";
 import pool from "../config/database.js";
 import { auditAuth, findRefreshSession, findUserByLogin, findUserById, insertRefreshSession,
-  isActiveUser, publicUser, revokeRefreshFamily } from "../models/auth.model.js";
+  isActiveUser, publicUser, revokeRefreshFamily, passwordVersion } from "../models/auth.model.js";
 import { verifyPassword } from "../utils/password.js";
 const invalidCredentials = () => Object.assign(new Error("Credenciales inválidas"), { status: 401 });
 const invalidSession = () => Object.assign(new Error("Sesión inválida o expirada"), { status: 401 });
 export const refreshHash = token => createHash("sha256").update(token).digest("hex");
 const validRefresh = token => typeof token === "string" && /^[A-Za-z0-9_-]{43}$/.test(token);
-export function issueAccessToken(userId, config) {
-  return jwt.sign({}, config.secret, { algorithm: "HS256", subject: String(userId),
+export function issueAccessToken(userId, config, version = null) {
+  return jwt.sign(version ? {password_version:version} : {}, config.secret, { algorithm: "HS256", subject: String(userId),
     issuer: config.issuer, audience: config.audience, expiresIn: config.accessSeconds });
 }
 export function verifyAccessToken(token, config) {
+  return verifyAccessTokenClaims(token,config).sub;
+}
+export function verifyAccessTokenClaims(token,config){
   const claims = jwt.verify(token, config.secret, { algorithms: ["HS256"],
     issuer: config.issuer, audience: config.audience, maxAge: config.accessSeconds });
   if (typeof claims.sub !== "string" || !/^[1-9]\d{0,19}$/.test(claims.sub) ||
       BigInt(claims.sub) > 18446744073709551615n || !Number.isInteger(claims.iat) ||
       !Number.isInteger(claims.exp) || claims.exp <= claims.iat ||
       claims.exp - claims.iat > config.accessSeconds || claims.iat > Math.floor(Date.now() / 1000) + 5) throw invalidSession();
-  return claims.sub;
+  return claims;
 }
 async function tokenResponse(user, config, db) {
-  return { access_token: issueAccessToken(user.id, config), token_type: "Bearer",
+  return { access_token: issueAccessToken(user.id, config,await passwordVersion(user.id,db)), token_type: "Bearer",
     expires_in: config.accessSeconds, user: await publicUser(user, db) };
 }
 export async function login(identifier, password, config, ip) {

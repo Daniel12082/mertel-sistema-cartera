@@ -150,7 +150,7 @@ describe("role authorization and internal admin provisioning HTTP / MySQL", { sk
     assert.equal((await request("POST", "/auth/logout", { cookie: refreshed.headers.getSetCookie()[0].split(";")[0] })).status, 200);
     await role("admin");
     for (const path of ["/reports", "/messages", "/history", "/settings", "/users"]) assert.equal((await request("GET", path, { token: session.body.data.access_token })).status, 404);
-    for (const path of ["/auth/register", "/auth/signup", "/auth/forgot-password"]) assert.equal((await request("POST", path, { body: {} })).status, 404);
+    for (const path of ["/auth/register", "/auth/signup"]) assert.equal((await request("POST", path, { body: {} })).status, 404);
   });
   test("provisioning creates one active username admin with Argon2id and authenticates by username/email", async () => {
     const adminEmail = `${randomUUID()}@example.test`;

@@ -18,6 +18,13 @@ export function isActiveUser(user) { return Boolean(user && user.status === "act
 export async function userRoles(userId, db = pool) {
   const [roles] = await db.query(`SELECT CAST(r.id AS CHAR) AS id, r.name FROM roles r
     INNER JOIN user_roles ur ON ur.role_id = r.id WHERE ur.user_id = ? ORDER BY r.id`, [userId]);
+  if (roles.some(role => /^custom_/.test(role.name))) {
+    const [custom] = await db.query('SELECT CAST(cr.role_id AS CHAR) role_id,cr.label,cr.permissions FROM custom_roles cr JOIN users u ON u.company_id=cr.company_id JOIN user_roles ur ON ur.user_id=u.id AND ur.role_id=cr.role_id WHERE u.id=? AND cr.active=1',[userId]);
+    for (const role of roles) {
+      const entry=custom.find(row=>String(row.role_id)===String(role.id));
+      if(entry)Object.assign(role,{custom:true,label:entry.label,permissions:typeof entry.permissions==='string'?JSON.parse(entry.permissions):entry.permissions});
+    }
+  }
   return roles;
 }
 export async function publicUser(user, db = pool) {
@@ -27,6 +34,11 @@ export async function publicUser(user, db = pool) {
     company_id: user.company_id, is_global_admin: companyContext({ ...user, roles }).globalAdmin,
     // Display grants open local screens only; middleware denies real API access.
     simulation_only: simulationOnly, roles, permissions: permissionsForRoles(simulationOnly ? [{ name: 'admin' }] : roles) };
+}
+export async function passwordVersion(userId,db=pool){
+  const [[row]]=await db.query("SELECT new_values FROM audit_logs WHERE entity_type='user' AND entity_id=? AND action IN ('USER_PASSWORD_CHANGED','PASSWORD_RESET_COMPLETED') ORDER BY id DESC LIMIT 1",[userId]);
+  const data=typeof row?.new_values==='string'?JSON.parse(row.new_values):row?.new_values;
+  return data?.password_version??null;
 }
 export async function findRefreshSession(hash, db = pool, lock = false) {
   const [rows] = await db.query(`SELECT CAST(id AS CHAR) AS id, CAST(user_id AS CHAR) AS user_id,

@@ -18,6 +18,7 @@ import ReportedPayments from "./pages/Administracion/ReportedPayments";
 import CustomerResolution from "./pages/Administracion/CustomerResolution";
 import AdminDashboard from "./pages/Administracion/AdminDashboard";
 import LoginPage from "./pages/Login/LoginPage";
+import PasswordRecovery from './pages/Login/PasswordRecovery';
 import ProtectedRoute from "./auth/ProtectedRoute";
 import SimulationReports from './simulation/SimulationReports';
 import { useAppDataMode } from './simulation/useAppDataMode';
@@ -35,6 +36,8 @@ function App() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/olvide-contrasena" element={<PasswordRecovery/>}/>
+      <Route path="/restablecer-contrasena" element={<PasswordRecovery reset/>}/>
       <Route element={<ProtectedRoute />}>
       <Route element={<MainLayout />}>
         <Route path="/" element={<Dashboard />} />

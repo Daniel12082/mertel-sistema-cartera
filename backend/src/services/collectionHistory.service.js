@@ -3,7 +3,7 @@ import { companyFilter, validCompanyId } from "../utils/companyScope.js";
 import { operationId, operationError } from "./collectionOperations.validation.js";
 
 const PAGE_SIZE_MAX = 100;
-const TYPES = new Set(["action", "promise", "configuration", "import", "invoice"]);
+const TYPES = new Set(["action", "promise", "configuration", "import", "invoice", "access"]);
 function normalizePage(page, limit) {
   const validInteger = value => typeof value === "string" && /^\d{1,6}$/.test(value);
   if ((page !== undefined && !validInteger(page)) || (limit !== undefined && !validInteger(limit))) throw operationError(400, "page y limit deben ser enteros positivos.");
@@ -206,6 +206,21 @@ function globalSelects({ companyId, type, dateFrom, dateTo, actorId, query }) {
       LEFT JOIN users u ON u.id=a.user_id AND (u.company_id=a.company_id OR u.company_id IS NULL)
       WHERE ${where.sql} AND a.entity_type='invoice' AND a.action IN ('invoice_created','invoice_updated','invoice_voided','invoice_deleted','invoice_marked_paid')`, values: where.values });
   }
+  if(!type||type==='access'){
+    const values=[companyId];let where="a.company_id=? AND a.entity_type IN ('user','role')";
+    if(dateFrom){where+=' AND DATE(a.created_at)>=?';values.push(dateFrom);}
+    if(dateTo){where+=' AND DATE(a.created_at)<=?';values.push(dateTo);}
+    if(actorId){where+=' AND a.user_id=?';values.push(actorId);}
+    if(query){where+=" AND (CONCAT_WS(' ',u.first_name,u.last_name) LIKE ? OR target.email LIKE ? OR JSON_UNQUOTE(JSON_EXTRACT(a.new_values,'$.label')) LIKE ?)";values.push(...Array(3).fill('%'+query+'%'));}
+    defs.push({sql:`SELECT CONCAT('access:',a.id) id,'access' type,UNIX_TIMESTAMP(a.created_at)*1000 occurred_ms,NULL occurred_at,
+      CONCAT_WS(' ',u.first_name,u.last_name) actor,NULL customer_name,NULL customer_nit,NULL invoice_number,
+      CASE a.action WHEN 'USER_CREATED' THEN 'Usuario creado' WHEN 'USER_UPDATED' THEN 'Usuario actualizado' WHEN 'USER_STATUS_CHANGED' THEN 'Estado de usuario cambiado'
+        WHEN 'ROLE_CREATED' THEN 'Rol creado' WHEN 'ROLE_UPDATED' THEN 'Rol actualizado' WHEN 'USER_PASSWORD_CHANGED' THEN 'Contraseña cambiada por administración'
+        WHEN 'PASSWORD_RESET_COMPLETED' THEN 'Contraseña restablecida' WHEN 'PASSWORD_RESET_REQUESTED' THEN 'Recuperación solicitada' WHEN 'PASSWORD_RESET_DELIVERY_FAILED' THEN 'Falló el correo de recuperación' ELSE a.action END title,
+      CASE WHEN a.entity_type='user' THEN CONCAT_WS(' · ',CONCAT_WS(' ',target.first_name,target.last_name),target.email) ELSE JSON_UNQUOTE(JSON_EXTRACT(a.new_values,'$.label')) END description,
+      a.action status,NULL promised_date,NULL amount,NULL notes,NULL old_values,NULL new_values,NULL file_name,NULL total_rows,NULL failed_rows
+      FROM audit_logs a LEFT JOIN users u ON u.id=a.user_id LEFT JOIN users target ON a.entity_type='user' AND target.id=a.entity_id WHERE ${where}`,values});
+  }
   return defs;
 }
 
@@ -244,8 +259,9 @@ export async function getAdministrativeHistoryActors({ scope }, dbPool = pool) {
       UNION SELECT a.user_id,CONCAT_WS(' ',u.first_name,u.last_name) FROM audit_logs a JOIN settings s ON s.id=a.entity_id AND s.setting_key='collection_rules' JOIN users u ON u.id=a.user_id WHERE a.company_id=? AND a.entity_type='setting'
       UNION SELECT a.user_id,CONCAT_WS(' ',u.first_name,u.last_name) FROM audit_logs a JOIN users u ON u.id=a.user_id WHERE a.company_id=? AND a.entity_type='invoice' AND a.action IN ('invoice_created','invoice_updated','invoice_voided','invoice_deleted','invoice_marked_paid')
       UNION SELECT b.user_id,CONCAT_WS(' ',u.first_name,u.last_name) FROM import_batches b JOIN users u ON u.id=b.user_id WHERE b.company_id=?
+      UNION SELECT a.user_id,CONCAT_WS(' ',u.first_name,u.last_name) FROM audit_logs a JOIN users u ON u.id=a.user_id WHERE a.company_id=? AND a.entity_type IN ('user','role')
     ) actors WHERE actor_id IS NOT NULL AND actor_name<>'' GROUP BY actor_id,actor_name ORDER BY actor_name,actor_id LIMIT 500`,
-    [scope.companyId, scope.companyId, scope.companyId, scope.companyId, scope.companyId]);
+    [scope.companyId, scope.companyId, scope.companyId, scope.companyId, scope.companyId, scope.companyId]);
     await db.commit(); return rows;
   } catch (error) { try { await db.rollback(); } catch { /* preserve original */ } throw error; }
   finally { db.release(); }

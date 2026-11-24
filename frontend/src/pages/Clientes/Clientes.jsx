@@ -1,3 +1,4 @@
+import {useAuth} from "../../auth/useAuth";
 import { useEffect, useMemo, useState } from "react";
 import {
   Search,
@@ -33,6 +34,7 @@ const initialForm = {
 };
 
 function Clientes() {
+  const {permissions=[]}=useAuth();
   const [customers, setCustomers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -371,7 +373,7 @@ function Clientes() {
           <button
             type="button"
             className="primary-button"
-            onClick={openCreateModal}
+            disabled={!permissions.includes("customers.create")} onClick={openCreateModal}
           >
             <Plus size={18} />
             Nuevo cliente
@@ -476,7 +478,7 @@ function Clientes() {
                 <button
                   type="button"
                   className="primary-button"
-                  onClick={openCreateModal}
+                  disabled={!permissions.includes("customers.create")} onClick={openCreateModal}
                 >
                   <Plus size={17} />
                   Nuevo cliente
@@ -556,7 +558,7 @@ function Clientes() {
                         <button
                           type="button"
                           className="icon-button edit"
-                          onClick={() => openEditModal(customer)}
+                          disabled={!permissions.includes("customers.update")} onClick={() => openEditModal(customer)}
                           title="Editar cliente"
                         >
                           <Pencil size={17} />
@@ -567,7 +569,7 @@ function Clientes() {
                           type="button"
                           className="icon-button delete"
                           onClick={() => handleDelete(customer)}
-                          disabled={deletingId === customer.id}
+                          disabled={deletingId === customer.id || !permissions.includes("customers.delete")}
                           title="Eliminar cliente"
                         >
                           {deletingId === customer.id ? (
@@ -886,7 +888,7 @@ function Clientes() {
                   type="button"
                   className="primary-button"
                   onClick={() =>
-                    selectedCustomer &&
+                    permissions.includes("customers.update") && selectedCustomer &&
                     openEditModal(selectedCustomer)
                   }
                 >

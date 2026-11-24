@@ -13,7 +13,7 @@ vi.mock('../src/services/customer.service');
 vi.mock('../src/services/messageTemplatesAdmin.service');
 const template = { id: '1', name: 'DEMO / BORRADOR', stage: 'overdue', status: 'active', content: '{{cliente_nombre}}' };
 const center = { settings: { connection_status: 'NOT_CONFIGURED', provider: null, number: '', automations_enabled: false, rules: [], credentials_configured: false }, stage_catalog: [{ key: 'overdue', label: 'En mora' }] };
-function view(permissions = ['settings.manage', 'message_templates.manage']) { return render(<MemoryRouter><AuthContext.Provider value={{ permissions }}><WhatsAppCenter /></AuthContext.Provider></MemoryRouter>); }
+function view(permissions = ['whatsapp.view','whatsapp.manage','whatsapp.send','message_templates.manage','message_templates.view']) { return render(<MemoryRouter><AuthContext.Provider value={{ permissions }}><WhatsAppCenter /></AuthContext.Provider></MemoryRouter>); }
 beforeEach(() => {
   vi.clearAllMocks();
   getCustomers.mockResolvedValue({ success: true, data: [] });

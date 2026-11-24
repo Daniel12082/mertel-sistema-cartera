@@ -3,7 +3,7 @@ import { MERTEL_INVOICE_TEMPLATE } from '../../../../backend/src/services/mertel
 import { describeWhatsAppTextTemplate, META_TEST_TEMPLATE_NAME, prepareWhatsAppTextTemplate } from '../../../../backend/src/services/whatsappTextTemplate';
 import { whatsappRequest } from '../../services/whatsappCenter.service';
 
-export default function WhatsAppTemplatePicker({ recipient, query, onClose, canUseInvoice, onInvoice, onMessage }) {
+export default function WhatsAppTemplatePicker({ recipient, query, onClose, canUseInvoice, onInvoice, onMessage, canSend=true }) {
   const [templates, setTemplates] = useState(null);
   const [selected, setSelected] = useState(null);
   const [values, setValues] = useState([]);
@@ -24,7 +24,7 @@ export default function WhatsAppTemplatePicker({ recipient, query, onClose, canU
 
   async function send(event) {
     event.preventDefault();
-    if (busy || !preview) return;
+    if (busy || !preview || !canSend) return;
     setBusy(true);
     setError('');
     try {
@@ -65,7 +65,7 @@ export default function WhatsAppTemplatePicker({ recipient, query, onClose, canU
       {definitions.filter(component => component.type === 'button').map(({ index, text }) => <p key={index}>{text}</p>)}
       <div className="wa-chat-draft-actions">
         <button type="button" disabled={busy} onClick={() => { setSelected(null); setError(''); }}>Volver a plantillas</button>
-        <button type="submit" disabled={busy || !preview}>{busy ? 'Enviando…' : 'Enviar plantilla'}</button>
+        <button type="submit" disabled={busy || !preview || !canSend}>{busy ? 'Enviando…' : 'Enviar plantilla'}</button>
       </div>
     </form>}
   </section>;

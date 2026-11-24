@@ -21,9 +21,10 @@ const entityLabels = { whatsapp_setting: 'WhatsApp', whatsapp_message: 'Mensaje'
 const time = value => value ? new Intl.DateTimeFormat('es-CO', { dateStyle: 'short', timeStyle: 'short', timeZone: 'America/Bogota' }).format(new Date(value)) : '—';
 
 export default function WhatsAppCenter({ chatOnly = false }) {
-  const { permissions = [], user } = useAuth(); const authorized = permissions.includes('settings.manage');
+  const { permissions = [], user } = useAuth(); const authorized = permissions.includes('whatsapp.view');
   const { mode } = useAppDataMode();
-  const canManageTemplates = permissions.includes('message_templates.manage');
+  const canManageTemplates = permissions.includes('message_templates.view');
+  const canConfigure = permissions.includes('whatsapp.manage');
   const [data, setData] = useState(null); const [templates, setTemplates] = useState([]); const [tab, setTab] = useState('Conexión');
   const [error, setError] = useState(''); const [notice, setNotice] = useState(''); const [busy, setBusy] = useState(false);
   const [settingsForm, setSettingsForm] = useState(null); const [credentials, setCredentials] = useState(null);
@@ -35,13 +36,13 @@ export default function WhatsAppCenter({ chatOnly = false }) {
   const [revision, setRevision] = useState(0);
   const operationPending = useRef(false);
   useEffect(() => {
-    if (!authorized) return;
+    if (!authorized || (!chatOnly && !canConfigure)) return;
     const controller = new AbortController();
     Promise.all([whatsappRequest('', { signal: controller.signal }), !chatOnly && canManageTemplates ? getMessageTemplateAdminData({ signal: controller.signal }) : Promise.resolve({ templates: [] })]).then(([center, templateData]) => {
       if (!controller.signal.aborted) { setData(center); setTemplates(Array.isArray(templateData.templates) ? templateData.templates.filter(template => template && template.id != null) : []); }
     }).catch(failure => { if (!controller.signal.aborted) setError(failure.message); });
     return () => controller.abort();
-  }, [authorized, canManageTemplates, chatOnly, revision]);
+  }, [authorized, canManageTemplates, canConfigure, chatOnly, revision]);
   useEffect(() => {
     if (!authorized || !['Mensajes', 'Historial'].includes(tab)) return;
     const controller = new AbortController();
@@ -67,6 +68,7 @@ export default function WhatsAppCenter({ chatOnly = false }) {
   const allowMock = (simulationAvailable || mode === 'SIMULATION') && !metaConfigured;
   const metaTestMode = metaConfigured && settings?.test_mode;
   function changeFilter(key, value) { setFilters(current => ({ ...current, [key]: value, page: 1 })); }
+  if (!chatOnly && !permissions.includes('whatsapp.manage')) return <section><p role="alert">No tienes permiso para configurar WhatsApp.</p></section>;
   if (!authorized) return <section className="wa-center"><h1>Centro de WhatsApp MERTEL</h1><p role="alert">No tienes permiso para configurar WhatsApp.</p></section>;
   if (chatOnly) return <section className="wa-center wa-center-expanded">
     {error && <p role="alert" className="wa-error">{error}</p>}

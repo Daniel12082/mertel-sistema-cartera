@@ -12,11 +12,11 @@ test("policy has exactly the three existing roles and unique described permissio
   for (const names of Object.values(ROLE_PERMISSIONS)) for (const name of names) assert.ok(PERMISSIONS.some(item => item.name === name));
 });
 test("collector and supervisor receive the exact initial active grants", () => {
-  assert.deepEqual(permissionsForRoles([{ name: "collector" }]).sort(), ["customers.view", "invoices.view", "payments.create", "payments.view",
+  assert.deepEqual(permissionsForRoles([{ name: "collector" }]).sort(), ["dashboard.view", "customers.view", "invoices.view", "payments.create", "payments.view",
     "payment_allocations.create", "payment_allocations.view", "portfolio.view", "collection.view", "collection.manage", "history.view", "reports.view"].sort());
-  assert.deepEqual(permissionsForRoles([{ name: "supervisor" }]).sort(), ["customers.view", "customers.update", "invoices.view", "invoices.update",
+  assert.deepEqual(permissionsForRoles([{ name: "supervisor" }]).sort(), ["dashboard.view", "customers.view", "customers.update", "invoices.view", "invoices.update",
     "payments.create", "payments.view", "payments.update", "payment_allocations.create", "payment_allocations.view", "payment_allocations.reverse", "portfolio.view", "collection.view", "collection.manage", "history.view", "reports.view"].sort());
-  assert.equal(permissionsForRoles([{ name: "admin" }]).length, 25);
+  assert.equal(permissionsForRoles([{ name: "admin" }]).length, PERMISSIONS.filter(p=>p.implemented).length);
   assert.equal(permissionsForRoles([{ name: "admin" }]).includes("portfolio.import"), true);
   assert.equal(permissionsForRoles([{ name: "collector" }]).includes("portfolio.import"), false);
   assert.equal(permissionsForRoles([{ name: "supervisor" }]).includes("portfolio.import"), false);
@@ -43,7 +43,7 @@ test("catalog activates existing history permission with own-user collector scop
   assert.equal(collector.permissions.find(permission => permission.name === "collection.view").implemented, true);
   assert.equal(collector.permissions.find(permission => permission.name === "collection.manage").implemented, true);
   assert.ok(catalog.find(role => role.name === "admin").permissions.every(permission => permission.enabled));
-  assert.equal(permissionsForRoles([{ name: "admin" }]).includes("users.create"), false);
+  assert.equal(permissionsForRoles([{ name: "admin" }]).includes("users.create"), true);
 });
 test("permission guard differentiates 401/403 and ignores client-supplied grants", () => {
   const guard = requirePermission("customers.create");

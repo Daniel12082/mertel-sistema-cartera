@@ -6,7 +6,7 @@ import { getAdministrativeHistory, getAdministrativeHistoryActors } from "../src
 
 vi.mock("../src/services/collectionHistory.service", () => ({ getAdministrativeHistory: vi.fn(), getAdministrativeHistoryActors: vi.fn() }));
 const event = { id: "action:2", type: "action", occurred_at: "2026-10-06T15:30:00.000Z", actor: "Ana", customer: { name: "Cliente", identification: "NIT" }, invoice: "F-1", title: "Llamada", description: "Observación", status: "completed", metadata: { action_type: "Llamada" } };
-function view({ user = { id: "1", company_id: "1" }, permissions = ["history.view", "settings.manage"] } = {}) {
+function view({ user = { id: "1", company_id: "1" }, permissions = ["history.view", "audit.view"] } = {}) {
   return render(<AuthContext.Provider value={{ user, permissions }}><CollectionHistory /></AuthContext.Provider>);
 }
 beforeEach(() => { vi.clearAllMocks(); getAdministrativeHistory.mockResolvedValue({ events: [event], pagination: { page: 1, limit: 20, total: 1, pages: 1, has_next: false, has_previous: false } }); getAdministrativeHistoryActors.mockResolvedValue([{ id: "1", name: "Ana" }]); });

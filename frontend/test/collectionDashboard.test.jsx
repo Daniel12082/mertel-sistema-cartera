@@ -12,7 +12,7 @@ const data = { reference_date: "2026-10-06", portfolio: { total_balance: "120.00
   stages: [{ key: "overdue", label: "En mora", customers: 1, balance: "120.00" }],
   promises: { pending_count: 1, pending_amount: "30.00" }, activity: { activity_from: "2026-09-30", activity_to: "2026-10-06", actions_period: 4 },
   warnings: ["Reglas pendientes"], collection_status: "ready" };
-function view({ permissions = ["collection.view", "settings.manage"], user = { id: "1", company_id: "1" } } = {}) {
+function view({ permissions = ["collection.view", "collection_dashboard.view"], user = { id: "1", company_id: "1" } } = {}) {
   return render(<AuthContext.Provider value={{ user, permissions }}><MemoryRouter><CollectionDashboard /></MemoryRouter></AuthContext.Provider>);
 }
 beforeEach(() => { vi.clearAllMocks(); getCollectionDashboard.mockResolvedValue(data); getCustomerResolutionDashboard.mockResolvedValue({ counts:{SEARCHING:2,PERSISTENT:5,NEW:3,AMBIGUOUS:1,INVALID:0,RESOLVED:4},pending:6,batches:[{id:"9",file_name:"cartera.xlsx"}] }); });
@@ -47,7 +47,7 @@ describe("5.5 dashboard operativo de cobranza", () => {
     getCollectionDashboard.mockRejectedValueOnce(new Error("Error de dashboard")); view(); expect(await screen.findByRole("alert")).toHaveTextContent("Error de dashboard");
   });
   it("shows MERTEL client-resolution counters and a direct link from the dashboard", async()=>{
-    view({permissions:["collection.view","settings.manage","portfolio.import"]});
+    view({permissions:["collection.view","collection_dashboard.view","portfolio.import"]});
     expect(await screen.findByText("Hay 6 clientes pendientes de resolución.")).toBeVisible();
     expect(screen.getByText("Hay 6 clientes pendientes de resolución.")).toBeVisible();
     expect(screen.getByRole("link",{name:"Revisar cartera.xlsx"})).toHaveAttribute("href","/administracion/resolucion-clientes?batch_id=9");

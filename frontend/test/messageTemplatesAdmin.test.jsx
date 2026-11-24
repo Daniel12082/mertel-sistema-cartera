@@ -17,7 +17,7 @@ const variables = [
 ];
 const template = { id: "10", name: "Recordatorio fixture", channel: "whatsapp", content: "Hola {{nombre_cliente}}", stage: "overdue", status: "inactive", created_at: "2026-10-01T10:00:00Z", updated_at: "2026-10-02T11:00:00Z" };
 const adminData = templates => ({ templates, stage_catalog: [{ key: "overdue", label: "En mora" }], variables });
-function view({ permissions = ["message_templates.manage"], user = { id: "1", is_global_admin: false } } = {}) {
+function view({ permissions = ["message_templates.manage","message_templates.view"], user = { id: "1", is_global_admin: false } } = {}) {
   return render(<AuthContext.Provider value={{ user, permissions }}><MessageTemplates /></AuthContext.Provider>);
 }
 

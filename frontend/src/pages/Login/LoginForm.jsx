@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { ArrowRight, LoaderCircle, Mail, ShieldCheck } from "lucide-react";
 import { useAuth } from "../../auth/useAuth";
 import PasswordField from "./PasswordField";
+import {Link} from 'react-router-dom';
 
 export default function LoginForm() {
   const { login } = useAuth();
@@ -43,6 +44,7 @@ export default function LoginForm() {
       </div>
     </div>
     <PasswordField value={password} onChange={event => setPassword(event.target.value)} disabled={loading} invalid={invalid} />
+    <Link to="/olvide-contrasena">Olvidé mi contraseña</Link>
     <div id="login-message" className="login-message" role={invalid ? "alert" : "status"} aria-live="polite">{message}</div>
     <button className="login-submit" type="submit" disabled={loading}>
       {loading ? <><LoaderCircle className="login-spinner" size={21} aria-hidden="true" /> Iniciando sesión...</> :

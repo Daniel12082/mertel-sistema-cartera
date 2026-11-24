@@ -3,6 +3,7 @@ import {hashPassword} from '../utils/password.js';
 import {ROLE_LABELS,permissionsForRoles} from '../config/permissions.js';
 import {validCompanyId} from '../utils/companyScope.js';
 import {findUserById,isActiveUser,userRoles} from '../models/auth.model.js';
+import {assignableRoles} from './roleManagement.service.js';
 
 const fail=(status,message)=>Object.assign(new Error(message),{status});
 const ownership="(u.company_id=? OR (u.company_id IS NULL AND EXISTS (SELECT 1 FROM user_roles legacy JOIN roles lr ON lr.id=legacy.role_id WHERE legacy.user_id=u.id AND lr.name='admin')))";
@@ -18,15 +19,12 @@ export function parseManagedUser(body,creating=false){
   const data={first_name:text(body.first_name,100,true),last_name:text(body.last_name,100),username:text(body.username,50),email:text(body.email,150,true),phone:text(body.phone,50)};
   if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.email))throw fail(400,'Correo electrónico inválido.');
   if(data.username&&!/^[a-zA-Z0-9][a-zA-Z0-9._-]{2,49}$/.test(data.username))throw fail(400,'Usuario inválido: usa entre 3 y 50 letras, números, puntos, guiones o guiones bajos.');
-  if(!Array.isArray(body.roles)||!body.roles.length||body.roles.length>Object.keys(ROLE_LABELS).length||new Set(body.roles).size!==body.roles.length||body.roles.some(role=>!Object.hasOwn(ROLE_LABELS,role)))throw fail(400,'Selecciona únicamente roles existentes, sin duplicados.');
+  if(!Array.isArray(body.roles)||!body.roles.length||body.roles.length>64||new Set(body.roles).size!==body.roles.length||body.roles.some(role=>typeof role!=='string'||!Object.hasOwn(ROLE_LABELS,role)&&!/^custom_[a-f0-9]{24}$/.test(role)))throw fail(400,'Selecciona únicamente roles existentes, sin duplicados.');
   data.roles=[...body.roles].sort();
   if(creating&&(typeof body.password!=='string'||!body.password||Buffer.byteLength(body.password)>1024))throw fail(400,'La contraseña es obligatoria y admite hasta 1024 bytes.');
   return data;
 }
-async function roleList(db){
-  const [rows]=await db.query('SELECT CAST(id AS CHAR) id,name FROM roles ORDER BY id');
-  return rows.filter(role=>Object.hasOwn(ROLE_LABELS,role.name)).map(role=>({...role,label:ROLE_LABELS[role.name]}));
-}
+async function roleList(db,companyId){return assignableRoles(db,companyId);}
 async function readUsers(db,scope){
   const [users]=await db.query(`SELECT ${columns} FROM users u WHERE ${ownership} AND u.deleted_at IS NULL ORDER BY u.first_name,u.id`,[scope.companyId]);
   const [assignments]=await db.query(`SELECT CAST(ur.user_id AS CHAR) user_id,r.name FROM user_roles ur JOIN roles r ON r.id=ur.role_id JOIN users u ON u.id=ur.user_id WHERE ${ownership} AND u.deleted_at IS NULL ORDER BY r.id`,[scope.companyId]);
@@ -35,7 +33,7 @@ async function readUsers(db,scope){
 }
 export async function listManagedUsers(scope,dbPool=pool){
   if(!validCompanyId(scope?.companyId))throw fail(403,'El contexto MERTEL no está disponible.');
-  const db=await dbPool.getConnection();try{await db.query('START TRANSACTION READ ONLY');const users=await readUsers(db,scope),roles=await roleList(db);await db.commit();return {users,roles};}
+  const db=await dbPool.getConnection();try{await db.query('START TRANSACTION READ ONLY');const users=await readUsers(db,scope),roles=await roleList(db,scope.companyId);await db.commit();return {users,roles};}
   catch(error){try{await db.rollback();}catch{}throw error;}finally{db.release();}
 }
 export async function saveManagedUser({scope,actorId,userId,body,statusOnly=false},dbPool=pool){
@@ -52,7 +50,8 @@ export async function saveManagedUser({scope,actorId,userId,body,statusOnly=fals
     const [[company]]=await db.query("SELECT id FROM companies WHERE id=? AND status='active' AND deleted_at IS NULL FOR UPDATE",[scope.companyId]);
     if(!company)throw fail(403,'MERTEL no está disponible.');
     const actor=await findUserById(actorId,db,true),actorRoles=await userRoles(actorId,db);
-    if(!isActiveUser(actor)||!permissionsForRoles(actorRoles).includes('settings.manage')||(actor.company_id!==null&&String(actor.company_id)!==String(scope.companyId)))throw fail(403,'La sesión ya no tiene acceso administrativo.');
+    const actorPermissions=permissionsForRoles(actorRoles),required=statusOnly?'users.deactivate':creating?'users.create':'users.update';
+    if(!isActiveUser(actor)||!actorPermissions.includes(required)||(actor.company_id!==null&&String(actor.company_id)!==String(scope.companyId)))throw fail(403,'La sesión ya no tiene acceso administrativo.');
     let previous=null;
     if(!creating){const [[user]]=await db.query(`SELECT ${columns},u.company_id FROM users u WHERE u.id=? AND ${ownership} AND u.deleted_at IS NULL FOR UPDATE`,[userId,scope.companyId]);if(!user)throw fail(404,'Usuario no encontrado.');previous=user;
       const [roles]=await db.query('SELECT r.name FROM roles r JOIN user_roles ur ON ur.role_id=r.id WHERE ur.user_id=?',[userId]);previous.roles=roles.map(role=>role.name);
@@ -67,8 +66,9 @@ export async function saveManagedUser({scope,actorId,userId,body,statusOnly=fals
     }
     if(statusOnly){await db.query('UPDATE users SET status=? WHERE id=?',[data.status,userId]);}
     else{
-      const roles=await roleList(db),selected=data.roles.map(name=>roles.find(role=>role.name===name));
+      const roles=await roleList(db,scope.companyId),selected=data.roles.map(name=>roles.find(role=>role.name===name));
       if(selected.some(role=>!role))throw fail(400,'Un rol seleccionado no existe en la base de datos.');
+      if(permissionsForRoles(selected).some(permission=>!actorPermissions.includes(permission)))throw fail(403,'No puedes asignar permisos que tu cuenta no tiene.');
       if(creating){await db.query("INSERT INTO users(company_id,first_name,last_name,username,email,phone,password_hash,status) VALUES (?,?,?,?,?,?,?,'active')",[scope.companyId,data.first_name,data.last_name,data.username,data.email,data.phone,passwordHash]);const [[created]]=await db.query('SELECT CAST(LAST_INSERT_ID() AS CHAR) id');userId=created.id;}
       else await db.query('UPDATE users SET first_name=?,last_name=?,username=?,email=?,phone=? WHERE id=?',[data.first_name,data.last_name,data.username,data.email,data.phone,userId]);
       await db.query('DELETE FROM user_roles WHERE user_id=?',[userId]);

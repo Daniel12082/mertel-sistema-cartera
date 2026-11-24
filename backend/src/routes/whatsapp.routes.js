@@ -18,7 +18,12 @@ function respond(work) {
   };
 }
 export const adminWhatsAppRoutes = express.Router();
-adminWhatsAppRoutes.use(requirePermission('settings.manage'), requireCompanyScope);
+adminWhatsAppRoutes.use(requirePermission('whatsapp.view'), requireCompanyScope);
+adminWhatsAppRoutes.use((req,res,next)=>{
+  if(['GET','HEAD','OPTIONS'].includes(req.method))return next();
+  const send=/^\/meta\/(templates\/send|replies(?:\/media)?|conversations\/association|invoice-notices)$/.test(req.path);
+  return requirePermission(send?'whatsapp.send':'whatsapp.manage')(req,res,next);
+});
 adminWhatsAppRoutes.get('/', respond(center.getWhatsAppCenter));
 adminWhatsAppRoutes.get('/status', respond(center.getWhatsAppCenter));
 adminWhatsAppRoutes.patch('/settings', respond(center.updateWhatsAppSettings));

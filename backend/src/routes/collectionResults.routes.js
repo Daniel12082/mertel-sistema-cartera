@@ -17,7 +17,8 @@ function respond(work) {
   };
 }
 const router = express.Router();
-router.use(requireCompanyScope,requirePermission('collection.view'));
+router.use(requireCompanyScope);
+router.use((req,res,next)=>requirePermission(req.path.startsWith('/reports')?'reported_payments.view':'collection.view')(req,res,next));
 router.get('/customers/:customerId/context',respond(results.getManagementContext));
 router.post('/pipeline/refresh',respond(results.refreshManagedPipeline));
 router.post('/customers/:customerId/result',requirePermission('collection.manage'),respond(results.recordManagementResult));
@@ -25,9 +26,9 @@ router.get('/customers/:customerId/reports',requirePermission('history.view'),re
 const financial = [requirePermission('collection.manage'),requirePermission('payments.create'),requirePermission('payment_allocations.create')];
 router.post('/customers/:customerId/payment-preview',...financial,respond(results.previewCollectionPayment));
 router.post('/customers/:customerId/payments',...financial,respond(results.registerCollectionPayment));
-router.get('/reports',requirePermission('settings.manage'),respond(results.listReportedPayments));
-router.post('/reports/:reportId/payment-preview',requirePermission('settings.manage'),...financial,respond(results.previewReportedPayment));
-router.post('/reports/:reportId/review',requirePermission('settings.manage'),(req,res,next) => {
+router.get('/reports',respond(results.listReportedPayments));
+router.post('/reports/:reportId/payment-preview',requirePermission('reported_payments.review'),...financial,respond(results.previewReportedPayment));
+router.post('/reports/:reportId/review',requirePermission('reported_payments.review'),(req,res,next) => {
   if (req.body?.decision === 'CONFIRMED') return requirePermission('payments.create')(req,res,() => requirePermission('payment_allocations.create')(req,res,next));
   return next();
 },respond(results.reviewReportedPayment));

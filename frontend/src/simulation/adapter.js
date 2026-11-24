@@ -225,7 +225,7 @@ export function simulationRequest(config) {
     if ((match = path.match(/^\/portfolio\/customer\/([^/]+)$/))) return ok({ customer: { ...find(data.customers, match[1]), customer_id: match[1], customer_name: find(data.customers, match[1]).name }, totals: portfolioTotals(rows.filter(row => row.customer_id === match[1]), params.reference_date || browserDay()), invoices: rows.filter(row => row.customer_id === match[1]) });
     return ok(rows);
   }
-  if (path === '/admin/dashboard') return ok(dashboardView(data, params));
+  if (path === '/admin/dashboard' || path === '/admin/main-dashboard') return ok(dashboardView(data, params));
   if (path === '/admin/collection/dashboard') {
     const dashboard = dashboardView(data, params); return ok({ reference_date: params.reference_date || browserDay(), portfolio: { total_balance: dashboard.summary.data.total_balance, customers_in_collection: dashboard.summary.data.stages.reduce((sum, stage) => sum + stage.customers, 0) },
       stages: dashboard.summary.data.stages, promises: dashboard.promises.data, activity: { activity_from: params.activity_from || browserDay(), activity_to: params.activity_to || browserDay(), actions_period: data.actions.length }, warnings: [], collection_status: 'ready' });
@@ -268,7 +268,17 @@ export function simulationRequest(config) {
     report.status = 'REJECTED'; report.review_reason = body.reason; event(data, 'action', report.customer_id, body.reason); return ok(report);
   }
   if (path === '/collection/results/pipeline/refresh') return ok({ reference_date: body.reference_date, customers: (body.customers || []).map(row => ({ customer_id: row.customer_id || row.customer?.id, financial_source_ready: true, collection_item: collectionView(data, body.reference_date).customers.find(item => item.customer.id === (row.customer_id || row.customer?.id)) || null, pending_report_count: 0 })) });
-  if (path === '/admin/roles') return ok(roleCatalog());
+  if ((match=path.match(/^\/admin\/roles(?:\/([^/]+))?$/))) {
+    data.customRoles??=[];
+    if(method==='GET')return ok([...roleCatalog(),...data.customRoles]);
+    const catalog=roleCatalog()[0].permissions;
+    if(!body.label?.trim()||!Array.isArray(body.permissions))fail('Completa el nombre y los permisos del rol simulado.',400);
+    const role=match[1]?find(data.customRoles,match[1]):{id:id(data),custom:true};
+    role.name??='custom_'+BigInt(role.id).toString(16).padStart(24,'0');
+    Object.assign(role,{label:body.label.trim(),description:body.description||'',active:body.active??true,permissions:catalog.map(permission=>({...permission,enabled:body.permissions.includes(permission.name)}))});
+    if(!match[1])data.customRoles.push(role);
+    event(data,'configuration',null,'Rol guardado solo en la demostración');return ok(role);
+  }
   if (path === '/admin/settings') {
     const stages = data.configuration.rules.map(rule => ({ key: rule.key, label: collectionView(data).stage_catalog.find(stage => stage.key === rule.key)?.label || rule.key, description: 'Etapa de demostración', type: 'boolean', value: rule.active, editable: true })); return ok({ configured: true, stages, settings: stages });
   }
@@ -365,8 +375,17 @@ export function simulationRequest(config) {
 
   }
   if (path.startsWith('/admin/users')) {
-    if (method === 'GET') return ok({ users: data.users, roles: roleCatalog() });
-    fail('La administración de cuentas está deshabilitada en la demostración.');
+    if(path==='/admin/users/recovery-status')return ok({configured:false,from:'Solo simulación',simulation:true});
+    if(path==='/admin/users/recovery-verify')fail('En simulación no se consulta el correo real.');
+    const roles=[...roleCatalog(),...(data.customRoles||[])].filter(role=>role.active!==false);
+    if (method === 'GET') return ok({ users: data.users, roles });
+    const key=path.split('/')[3];
+    if(path.endsWith('/password')){find(data.users,key);event(data,'configuration',null,'Cambio de contraseña simulado; ninguna credencial real fue modificada');return ok({id:key,password_changed:true,simulation:true});}
+    if(path.endsWith('/status')){const user=find(data.users,key);user.status=body.status;return ok(user);}
+    const profile={first_name:body.first_name,last_name:body.last_name||'',email:body.email,username:body.username||null,phone:body.phone||null,roles:body.roles};
+    if(!profile.first_name?.trim()||!profile.email||!Array.isArray(profile.roles)||!profile.roles.length)fail('Completa los datos del usuario simulado.',400);
+    if(method==='POST'){const user={id:id(data),...profile,status:'active'};data.users.push(user);return ok(user);}
+    const user=find(data.users,key);Object.assign(user,profile);return ok(user);
   }
   fail('Esta operación no está disponible en simulación. No se realizó ninguna solicitud real.');
 }

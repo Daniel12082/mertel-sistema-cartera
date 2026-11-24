@@ -15,7 +15,7 @@ const cop = new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP",
 
 export default function CollectionDashboard() {
   const { permissions = [] } = useAuth();
-  const authorized = permissions.includes("collection.view") && permissions.includes("settings.manage");
+  const authorized = permissions.includes("collection_dashboard.view");
   const today = useMemo(() => localDate(), []);
   const [referenceDate, setReferenceDate] = useState(today); const [period, setPeriod] = useState("7");
   const [state, setState] = useState({ key: null, error: "", data: null });

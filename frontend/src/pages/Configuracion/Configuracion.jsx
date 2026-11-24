@@ -7,6 +7,8 @@ import {useAppearance} from '../../appearance/appearance.context';
 import {Panel,Badge,EmptyState} from '../../components/ui/dashboard-ui';
 import api from '../../services/api';
 import Usuarios from './Usuarios';
+import RolesPermissions from './RoleManager';
+import {hasPanelAccess,configurationPermissions} from '../../auth/panelAccess';
 import CollectionSettings from '../Administracion/CollectionSettings';
 import WhatsAppCenter from '../Administracion/WhatsAppCenter';
 import Personalizacion from './Personalizacion';
@@ -16,6 +18,7 @@ const categories=[
   {key:'general',name:'General',description:'Información de MERTEL y formatos de presentación.',icon:Building2},
   {key:'cobranza',name:'Cobranza',description:'Etapas operativas y reglas comerciales vigentes.',icon:ClipboardCheck},
   {key:'usuarios',name:'Usuarios',description:'Trabajadores, cuentas y consulta de roles.',icon:Users},
+  {key:'roles',name:'Roles y permisos',description:'Paneles y operaciones disponibles para cada rol.',icon:Users},
   {key:'whatsapp',name:'WhatsApp',description:'Conexión, proveedor y reglas de envío.',icon:MessageSquare},
   {key:'mensajes',name:'Mensajes',description:'Plantillas y variables de los mensajes.',icon:FileText},
   {key:'importaciones',name:'Importaciones',description:'Cargue de cartera, validaciones y resolución.',icon:FileSpreadsheet},
@@ -39,21 +42,22 @@ function ModuleAccess({title,description,links}){
 }
 export default function Configuracion(){
   const {permissions=[]}=useAuth(),{mode}=useAppDataMode(),{category}=useParams(),navigate=useNavigate(),appearance=useAppearance();
-  if(!permissions.includes('settings.manage'))return <section className="settings-center"><h2>Configuración</h2><p role="alert">{category==='usuarios'?'No tienes permiso para administrar usuarios.':'No tienes permiso para administrar la configuración de MERTEL.'}</p></section>;
-  const selected=categories.find(item=>item.key===category);
+  if(!hasPanelAccess('/configuracion'+(category?'/'+category:''),permissions))return <section className="settings-center"><h2>Configuración</h2><p role="alert">{category==='usuarios'?'No tienes permiso para administrar usuarios.':'No tienes permiso para administrar la configuración de MERTEL.'}</p></section>;
+  const selected=categories.filter(item=>permissions.includes(configurationPermissions[item.key])).find(item=>item.key===category);
   let content;
-  if(!category)content=<><div className="settings-overview-heading"><h3>Centro de configuración</h3><p>Encuentra las opciones que necesitas para administrar MERTEL.</p></div><div className="settings-categories">{categories.map(({key,name,description,icon:Icon})=><Link className="settings-category-card" key={key} to={'/configuracion/'+key}><span className="settings-category-icon"><Icon size={22} aria-hidden="true"/></span><h3>{name}</h3><p>{description}</p><span className="settings-card-action">Administrar <ArrowUpRight size={15} aria-hidden="true"/></span></Link>)}</div></>;
+  if(!category)content=<><div className="settings-overview-heading"><h3>Centro de configuración</h3><p>Encuentra las opciones que necesitas para administrar MERTEL.</p></div><div className="settings-categories">{categories.filter(item=>permissions.includes(configurationPermissions[item.key])).map(({key,name,description,icon:Icon})=><Link className="settings-category-card" key={key} to={'/configuracion/'+key}><span className="settings-category-icon"><Icon size={22} aria-hidden="true"/></span><h3>{name}</h3><p>{description}</p><span className="settings-card-action">Administrar <ArrowUpRight size={15} aria-hidden="true"/></span></Link>)}</div></>;
   else if(!selected)content=<EmptyState title="Categoría no disponible" description="Selecciona una opción del Centro de Configuración."/>;
   else if(category==='general')content=<Panel title="Información general" description="MERTEL es el único contexto de esta aplicación.">{appearance.loading?<p role="status">Cargando información…</p>:appearance.error?<div className="ui-error" role="alert">No pudimos cargar la información.<button onClick={appearance.reload}>Reintentar</button></div>:<dl className="settings-data"><div><dt>Organización</dt><dd>{mode==='SIMULATION'?'MERTEL · Modo simulación':appearance.companyName||'MERTEL'}</dd></div><div><dt>Nombre de la aplicación</dt><dd>{appearance.savedAppearance?.name||appearance.appearance.name}</dd></div><div><dt>Descripción</dt><dd>{appearance.savedAppearance?.description||appearance.appearance.description}</dd></div><div><dt>Zona horaria de presentación</dt><dd>Bogotá (UTC−5)</dd></div><div><dt>Formato monetario</dt><dd>Peso colombiano (COP)</dd></div><div><dt>Formato de fecha y hora</dt><dd>Español (Colombia)</dd></div></dl>}<p className="settings-muted">Los formatos actuales son informativos. La identidad visual se administra en Personalización.</p><Link className="settings-text-link" to="/configuracion/personalizacion">Administrar identidad visual →</Link></Panel>;
   else if(category==='cobranza')content=<CollectionSettings/>;
   else if(category==='usuarios')content=<Usuarios/>;
+  else if(category==='roles')content=<RolesPermissions/>;
   else if(category==='whatsapp')content=<WhatsAppCenter/>;
   else if(category==='mensajes')content=<ModuleAccess title="Mensajes" description="Administra las plantillas y consulta sus variables en el módulo existente." links={[{to:'/administracion/plantillas-whatsapp',name:'Plantillas y variables',description:'Contenido, etapas, variables y activación de plantillas.',permission:'message_templates.manage'}]}/>;
   else if(category==='importaciones')content=<ModuleAccess title="Importaciones" description="Accede a las herramientas de cargue y revisión de cartera." links={[{to:'/administracion/importar-cartera',name:'Importar cartera',description:'Analiza archivos y consulta las validaciones disponibles.',permission:'portfolio.import'},{to:'/administracion/resolucion-clientes',name:'Clientes por resolver',description:'Revisa y resuelve las correspondencias del archivo.',permission:'portfolio.import'}]}/>;
   else if(category==='sistema')content=<ServiceStatus/>;
   else content=<Personalizacion/>;
   return <section className="settings-center"><header className="settings-center-header"><div className="settings-eyebrow"><Settings size={14} aria-hidden="true"/>ADMINISTRACIÓN</div><h2>Configuración</h2><p>Administra las preferencias, reglas y módulos de MERTEL desde un solo lugar.</p></header>{mode==='SIMULATION'&&<p className="settings-simulation" role="status"><Badge tone="attention">MODO SIMULACIÓN</Badge> Cambios temporales en este navegador. No se guardan en MERTEL.</p>}
-    <label className="settings-mobile-selector">Categoría de configuración<select value={selected?.key||''} onChange={event=>navigate(event.target.value?'/configuracion/'+event.target.value:'/configuracion')}><option value="">Centro de configuración</option>{categories.map(item=><option key={item.key} value={item.key}>{item.name}</option>)}</select></label>
-    <div className="settings-layout"><nav aria-label="Categorías de configuración" className="settings-navigation"><NavLink end to="/configuracion">Centro de configuración</NavLink>{categories.map(({key,name,icon:Icon})=><NavLink key={key} to={'/configuracion/'+key}><Icon size={17} aria-hidden="true"/>{name}</NavLink>)}</nav><div className="settings-content" key={category||'overview'}>{content}</div></div>
+    <label className="settings-mobile-selector">Categoría de configuración<select value={selected?.key||''} onChange={event=>navigate(event.target.value?'/configuracion/'+event.target.value:'/configuracion')}><option value="">Centro de configuración</option>{categories.filter(item=>permissions.includes(configurationPermissions[item.key])).map(item=><option key={item.key} value={item.key}>{item.name}</option>)}</select></label>
+    <div className="settings-layout"><nav aria-label="Categorías de configuración" className="settings-navigation"><NavLink end to="/configuracion">Centro de configuración</NavLink>{categories.filter(item=>permissions.includes(configurationPermissions[item.key])).map(({key,name,icon:Icon})=><NavLink key={key} to={'/configuracion/'+key}><Icon size={17} aria-hidden="true"/>{name}</NavLink>)}</nav><div className="settings-content" key={category||'overview'}>{content}</div></div>
   </section>;
 }

@@ -7,3 +7,8 @@ export function requirePermission(permission) {
     return next();
   };
 }
+export function requireAnyPermission(...permissions){
+  permissions.forEach(permission=>requirePermission(permission));
+  return (req,res,next)=>!req.user?res.status(401).json({success:false,message:'Autenticación requerida'}):
+    permissions.some(permission=>req.user.permissions?.includes(permission))?next():res.status(403).json({success:false,message:'No tienes permiso para esta operación'});
+}

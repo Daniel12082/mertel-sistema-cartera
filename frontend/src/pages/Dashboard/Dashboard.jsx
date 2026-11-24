@@ -21,12 +21,12 @@ function CustomerName({customer,canView,referenceDate}) {return <div className="
 
 export default function Dashboard() {
   const simulated=useAppDataMode().mode==='SIMULATION';
-  const {permissions=[]}=useAuth(),authorized=permissions.includes('settings.manage'),canView=permissions.includes('collection.view');
+  const {permissions=[]}=useAuth(),authorized=permissions.includes('dashboard.view'),canView=permissions.includes('collection.view');
   const [revision,setRevision]=useState(0),[result,setResult]=useState({revision:null,data:null,error:''});
   useEffect(()=>{
     if(!authorized)return;
     const controller=new AbortController();
-    getAdminDashboard({period:'month'},{signal:controller.signal}).then(data=>{if(!controller.signal.aborted)setResult({revision,data,error:''});})
+    getAdminDashboard({period:'month'},{signal:controller.signal,main:true}).then(data=>{if(!controller.signal.aborted)setResult({revision,data,error:''});})
       .catch(error=>{if(!controller.signal.aborted)setResult({revision,data:null,error:error.message});});
     return ()=>controller.abort();
   },[authorized,revision]);

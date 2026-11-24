@@ -10,7 +10,7 @@ import {usersRequest} from '../src/services/userManagement.service';
 vi.mock('../src/services/auth.service',()=>({getRoleCatalog:vi.fn()}));
 vi.mock('../src/services/userManagement.service',()=>({usersRequest:vi.fn()}));
 const data={users:[{id:'1',first_name:'Ana',last_name:'Admin',email:'ana@example.test',username:'ana.admin',phone:'',status:'active',roles:['admin']},{id:'2',first_name:'Luis',last_name:'Worker',email:'luis@example.test',username:'luis.worker',phone:'3001111111',status:'active',roles:['collector']}],roles:[{name:'admin',label:'Admin'},{name:'collector',label:'Collector'},{name:'supervisor',label:'Supervisor'}]};
-function view(element=<Usuarios/>,permissions=['settings.manage','roles.view']){render(<MemoryRouter><AuthContext.Provider value={{user:{id:'1'},permissions}}>{element}</AuthContext.Provider></MemoryRouter>);}
+function view(element=<Usuarios/>,permissions=['settings.view','settings.manage','roles.view','users.view','users.create','users.update','users.deactivate']){render(<MemoryRouter><AuthContext.Provider value={{user:{id:'1'},permissions}}>{element}</AuthContext.Provider></MemoryRouter>);}
 beforeEach(()=>{
   vi.clearAllMocks();getRoleCatalog.mockResolvedValue([{name:"admin",label:"Administrador",permissions:[{name:"settings.manage",moduleLabel:"Configuración",description:"Administrar configuración",enabled:true,implemented:true}]}]);usersRequest.mockImplementation(method=>Promise.resolve(method==='GET'?data:{id:'2'}));
   Object.defineProperties(HTMLDialogElement.prototype,{showModal:{configurable:true,value:function(){this.setAttribute('open','');}},close:{configurable:true,value:function(){this.removeAttribute('open');}}});

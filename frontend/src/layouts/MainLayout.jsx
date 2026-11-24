@@ -1,4 +1,5 @@
-import { NavLink, Outlet } from "react-router-dom";
+import {hasPanelAccess,firstPanelPath} from "../auth/panelAccess";
+import { NavLink, Outlet, Navigate, useLocation } from "react-router-dom";
 import SimulationControls from '../simulation/SimulationControls';
 import { simulationAvailable } from '../simulation/store';
 import { useAppDataMode } from '../simulation/useAppDataMode';
@@ -35,6 +36,7 @@ function MainLayout() {
   const { permissions = [] } = useAuth();
   const { mode } = useAppDataMode();
   const { appearance } = useAppearance();
+  const location=useLocation(),fallback=firstPanelPath(permissions);
   return (
     <div className="mertel-layout">
       <aside className="mertel-sidebar">
@@ -49,7 +51,7 @@ function MainLayout() {
         </div>
 
         <nav className="mertel-navigation" aria-label="Navegación principal">
-          {navigation.map(({ label, path, icon: Icon }) => (
+          {navigation.filter(item=>hasPanelAccess(item.path,permissions)).map(({ label, path, icon: Icon }) => (
             <NavLink
               key={path}
               to={path}
@@ -62,18 +64,18 @@ function MainLayout() {
               <span>{label}</span>
             </NavLink>
           ))}
-          {(permissions.includes("message_templates.manage") || permissions.includes("settings.manage") || permissions.includes("portfolio.import")) && <div className="mertel-navigation-group">
+          {(permissions.some(p=>["admin_dashboard.view","collection_dashboard.view","message_templates.view","whatsapp.view","reported_payments.view","audit.view","portfolio.import"].includes(p))) && <div className="mertel-navigation-group">
             <span>Administración</span>
-            {permissions.includes("settings.manage") && <NavLink end to="/administracion" className={({isActive})=>`mertel-nav-item ${isActive?'active':''}`}><LayoutDashboard size={19}/><span>Centro Administrativo</span></NavLink>}
+            {permissions.includes("admin_dashboard.view") && <NavLink end to="/administracion" className={({isActive})=>`mertel-nav-item ${isActive?'active':''}`}><LayoutDashboard size={19}/><span>Centro Administrativo</span></NavLink>}
             {permissions.includes("portfolio.import") && <NavLink to="/administracion/resolucion-clientes" className={({ isActive }) =>
               `mertel-nav-item ${isActive ? "active" : ""}`}><SearchCheck size={19} strokeWidth={2} /><span>Clientes por resolver</span></NavLink>}
-            {permissions.includes("settings.manage") && <NavLink to="/administracion/pagos-reportados" className={({ isActive }) =>
+            {permissions.includes("reported_payments.view") && <NavLink to="/administracion/pagos-reportados" className={({ isActive }) =>
               `mertel-nav-item ${isActive ? "active" : ""}`}><CreditCard size={19} strokeWidth={2} /><span>Pagos reportados</span></NavLink>}
-            {permissions.includes("history.view") && permissions.includes("settings.manage") && <NavLink to="/administracion/historial-cobranza" className={({ isActive }) =>
+            {permissions.includes("audit.view") && <NavLink to="/administracion/historial-cobranza" className={({ isActive }) =>
               `mertel-nav-item ${isActive ? "active" : ""}`}><ClipboardCheck size={19} strokeWidth={2} /><span>Auditoría</span></NavLink>}
-            {permissions.includes("settings.manage") && <NavLink to="/administracion/whatsapp" className={({ isActive }) =>
+            {permissions.includes("whatsapp.view") && <NavLink to="/administracion/whatsapp" className={({ isActive }) =>
               `mertel-nav-item ${isActive ? "active" : ""}`}><MessageSquareText size={19} strokeWidth={2} /><span>WhatsApp</span></NavLink>}
-            {permissions.includes("message_templates.manage") && <NavLink to="/administracion/plantillas-whatsapp" className={({ isActive }) =>
+            {permissions.includes("message_templates.view") && <NavLink to="/administracion/plantillas-whatsapp" className={({ isActive }) =>
               `mertel-nav-item ${isActive ? "active" : ""}`}>
               <MessageSquareText size={19} strokeWidth={2} />
               <span>Plantillas WhatsApp</span>
@@ -83,7 +85,7 @@ function MainLayout() {
               <FileSpreadsheet size={19} strokeWidth={2} />
               <span>Importar cartera</span>
             </NavLink>}
-            {permissions.includes("collection.view") && permissions.includes("settings.manage") && <NavLink to="/administracion/dashboard-cobranza" className={({ isActive }) =>
+            {permissions.includes("collection_dashboard.view") && <NavLink to="/administracion/dashboard-cobranza" className={({ isActive }) =>
               `mertel-nav-item ${isActive ? "active" : ""}`}><Gauge size={19} strokeWidth={2} /><span>Dashboard de cobranza</span></NavLink>}
           </div>}
         </nav>
@@ -107,7 +109,7 @@ function MainLayout() {
         </header>
 
         <main className="mertel-content">
-          <Outlet />
+          {hasPanelAccess(location.pathname,permissions)?<Outlet/>:location.pathname==='/'&&fallback&&fallback!=='/'?<Navigate to={fallback} replace/>:<section><h2>Sin acceso a este panel</h2><p>Tu rol no tiene permiso para abrir esta sección.</p></section>}
         </main>
       </div>
     </div>

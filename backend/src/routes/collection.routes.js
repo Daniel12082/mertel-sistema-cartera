@@ -17,7 +17,7 @@ router.post("/customers/:customerId/promises", requirePermission("collection.man
 router.get("/customers/:customerId/message-templates", requirePermission("collection.manage"), collectionMessageController("templates"));
 router.post("/customers/:customerId/messages/preview", requirePermission("collection.manage"), collectionMessageController("preview"));
 router.post("/customers/:customerId/messages/prepare", requirePermission("collection.manage"), collectionMessageController("prepare"));
-router.get("/message-templates", requirePermission("message_templates.manage"), listTemplates);
+router.get("/message-templates", requirePermission("message_templates.view"), listTemplates);
 router.post("/message-templates", requirePermission("message_templates.manage"), createTemplate);
 router.put("/message-templates/:templateId", requirePermission("message_templates.manage"), updateTemplate);
 router.post("/message-templates/:templateId/activate", requirePermission("message_templates.manage"), activateTemplate);

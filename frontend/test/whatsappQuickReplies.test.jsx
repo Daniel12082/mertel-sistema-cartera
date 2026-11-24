@@ -1,3 +1,4 @@
+vi.mock('../src/auth/useAuth',()=>({useAuth:()=>({permissions:['whatsapp.view','whatsapp.send','invoices.view']})}));
 import { beforeEach, afterEach, describe, it, expect, vi } from 'vitest';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';

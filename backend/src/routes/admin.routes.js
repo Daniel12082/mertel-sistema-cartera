@@ -1,5 +1,4 @@
 import express from "express";
-import { roleCatalog } from "../config/permissions.js";
 import { requirePermission } from "../middleware/requirePermission.js";
 import { requireCompanyScope, requireGlobalAdmin } from "../middleware/companyScope.js";
 import { findCompany, listCompanies } from "../models/company.model.js";
@@ -13,13 +12,21 @@ import { analyzeCustomerResolution, decideCustomerResolution, getCustomerResolut
 import { administrativeCollectionHistory, administrativeHistoryActors } from "../controllers/collectionHistory.controller.js";
 import { getAdminDashboard } from "../services/adminDashboard.service.js";
 import {listManagedUsers,saveManagedUser} from '../services/userManagement.service.js';
+import {listRoleCatalog,saveCustomRole} from '../services/roleManagement.service.js';
+import {changeManagedPassword,recoveryStatus,verifyRecoveryMail} from '../services/passwordRecovery.service.js';
 const router = express.Router();
 function managedUsers(handler){return async(req,res)=>{try{res.set('Cache-Control','no-store');return res.json({success:true,data:await handler(req)});}catch(error){const status=[400,403,404,409].includes(error.status)?error.status:500;return res.status(status).json({success:false,message:status===500?'No se pudo guardar o consultar el usuario.':error.message});}};}
-router.get('/users',requirePermission('settings.manage'),requireCompanyScope,managedUsers(req=>listManagedUsers(req.companyScope)));
-router.post('/users',requirePermission('settings.manage'),requireCompanyScope,managedUsers(req=>saveManagedUser({scope:req.companyScope,actorId:req.user.id,body:req.body})));
-router.put('/users/:id',requirePermission('settings.manage'),requireCompanyScope,managedUsers(req=>saveManagedUser({scope:req.companyScope,actorId:req.user.id,userId:req.params.id,body:req.body})));
-router.patch('/users/:id/status',requirePermission('settings.manage'),requireCompanyScope,managedUsers(req=>saveManagedUser({scope:req.companyScope,actorId:req.user.id,userId:req.params.id,body:req.body,statusOnly:true})));
-router.get('/dashboard', requirePermission('settings.manage'), requireCompanyScope, async(req,res,next)=>{
+router.get('/users',requirePermission('users.view'),requireCompanyScope,managedUsers(req=>listManagedUsers(req.companyScope)));
+router.post('/users',requirePermission('users.create'),requireCompanyScope,managedUsers(req=>saveManagedUser({scope:req.companyScope,actorId:req.user.id,body:req.body})));
+router.get('/users/recovery-status',requirePermission('users.reset_password'),requireCompanyScope,managedUsers(()=>recoveryStatus()));
+router.post('/users/recovery-verify',requirePermission('users.reset_password'),requireCompanyScope,managedUsers(()=>verifyRecoveryMail()));
+router.put('/users/:id',requirePermission('users.update'),requireCompanyScope,managedUsers(req=>saveManagedUser({scope:req.companyScope,actorId:req.user.id,userId:req.params.id,body:req.body})));
+router.put('/users/:id/password',requirePermission('users.reset_password'),requireCompanyScope,managedUsers(req=>changeManagedPassword({scope:req.companyScope,actorId:req.user.id,userId:req.params.id,body:req.body})));
+router.patch('/users/:id/status',requirePermission('users.deactivate'),requireCompanyScope,managedUsers(req=>saveManagedUser({scope:req.companyScope,actorId:req.user.id,userId:req.params.id,body:req.body,statusOnly:true})));
+router.get('/main-dashboard',requirePermission('dashboard.view'),requireCompanyScope,async(req,res,next)=>{
+  try{res.set('Cache-Control','no-store');res.json({success:true,data:await getAdminDashboard({scope:req.companyScope,query:req.query})});}catch(error){next(error);}
+});
+router.get('/dashboard', requirePermission('admin_dashboard.view'), requireCompanyScope, async(req,res,next)=>{
   try { res.set('Cache-Control','no-store');return res.json({success:true,data:await getAdminDashboard({scope:req.companyScope,query:req.query})}); }
   catch(error) { if([400,403].includes(error.status))return res.status(error.status).json({success:false,message:error.message});return next(error); }
 });
@@ -44,9 +51,9 @@ router.post("/portfolio/imports/resolution/:id/decision", requirePermission("por
   try { res.set("Cache-Control","no-store"); return res.json({success:true,data:await decideCustomerResolution({scope:req.companyScope,actorId:req.user.id,rowId:req.params.id,body:req.body,ipAddress:req.ip,userAgent:req.get("user-agent")})}); }
   catch(error) { if([400,403,404,409].includes(error.status)) return res.status(error.status).json({success:false,message:error.message,code:error.code}); return next(error); }
 });
-router.get("/collection/dashboard", requirePermission("collection.view"), requirePermission("settings.manage"), requireCompanyScope, getCollectionDashboardController);
-router.get("/collection/history", requirePermission("history.view"), requirePermission("settings.manage"), requireCompanyScope, administrativeCollectionHistory);
-router.get("/collection/history/actors", requirePermission("history.view"), requirePermission("settings.manage"), requireCompanyScope, administrativeHistoryActors);
+router.get("/collection/dashboard", requirePermission("collection_dashboard.view"), requireCompanyScope, getCollectionDashboardController);
+router.get("/collection/history", requirePermission("audit.view"), requireCompanyScope, administrativeCollectionHistory);
+router.get("/collection/history/actors", requirePermission("audit.view"), requireCompanyScope, administrativeHistoryActors);
 router.post("/portfolio/imports/analyze", requirePermission("portfolio.import"), requireCompanyScope,
   express.raw({ type: ["text/csv", "application/csv", "application/vnd.ms-excel", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"], limit: MAX_IMPORT_BYTES }), async (req, res, next) => {
     try {
@@ -126,10 +133,9 @@ router.get("/companies/:id", requirePermission("companies.view"), requireGlobalA
     return res.json({ success: true, data: company });
   } catch { return next(new Error("No se pudo consultar la empresa")); }
 });
-router.get("/roles", requirePermission("roles.view"), (req, res) => {
-  res.set("Cache-Control", "no-store");
-  return res.json({ success: true, data: roleCatalog() });
-});
+router.get('/roles',requirePermission('roles.view'),requireCompanyScope,managedUsers(req=>listRoleCatalog(req.companyScope)));
+router.post('/roles',requirePermission('roles.manage'),requireCompanyScope,managedUsers(req=>saveCustomRole({scope:req.companyScope,actorId:req.user.id,body:req.body})));
+router.put('/roles/:id',requirePermission('roles.manage'),requireCompanyScope,managedUsers(req=>saveCustomRole({scope:req.companyScope,actorId:req.user.id,roleId:req.params.id,body:req.body})));
 router.get("/settings", requirePermission("settings.manage"), requireCompanyScope, async (req, res, next) => {
   try {
     res.set("Cache-Control", "no-store");

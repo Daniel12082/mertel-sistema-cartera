@@ -19,7 +19,7 @@ function CustomerTable({rows=[],priority=false,referenceDate}) {
   return rows.length?<div className="admin-table-scroll"><table><thead><tr><th>Cliente / NIT</th><th>Saldo</th><th>Etapa</th><th>{priority?'Prioridad':'Cobrador'}</th><th>Factura principal</th><th>Vencimiento</th><th>Días de mora</th></tr></thead><tbody>{rows.map(row=><tr key={row.id}><td><Link to="/cobranza" state={{customerId:row.id,referenceDate}}>{row.name}</Link><small>{row.nit}</small></td><td>{formatCurrency(row.balance)}</td><td>{row.stage}</td><td>{priority?row.priority??'No disponible':row.collector??'No disponible'}</td><td>{row.invoice||'—'}</td><td>{row.due_date||'—'}</td><td>{row.overdue_days??'—'}</td></tr>)}</tbody></table></div>:<p>Sin clientes con saldo pendiente</p>;
 }
 export default function AdminDashboard() {
-  const {permissions=[]}=useAuth(), authorized=permissions.includes('settings.manage');
+  const {permissions=[]}=useAuth(), authorized=permissions.includes('admin_dashboard.view');
   const [period,setPeriod]=useState('today'),[from,setFrom]=useState(''),[to,setTo]=useState(''),[revision,setRevision]=useState(0);
   const [state,setState]=useState({data:null,error:'',key:null});
   const key=JSON.stringify({period,...(period==='custom'?{from,to}:{})}), ready=authorized&&(period!=='custom'||Boolean(from&&to));

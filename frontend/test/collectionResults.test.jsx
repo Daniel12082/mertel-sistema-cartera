@@ -14,7 +14,7 @@ const catalog=[['CONTACTED','Contacté al cliente'],['WHATSAPP','Envié WhatsApp
 const invoices=[{id:'11',invoice_number:'ME-74743',balance:'3482310.00',due_date:'2026-10-01',status:'pending'},{id:'12',invoice_number:'ME-74801',balance:'850000.00',due_date:'2026-10-12',status:'pending'}];
 const context={customer:{id:'1',name:'Cliente MERTEL',nit:'90012345'},result_catalog:catalog,open_invoices:invoices,total_balance:'4332310.00',reports:[],collection_item:{stage_label:'En mora'},reference_date:'2026-10-07',financial_source_ready:true};
 const report={id:'4',customer_id:'1',invoice_id:'11',customer_name:'Cliente MERTEL',nit:'90012345',invoice_number:'ME-74743',reported_amount:'3482310.00',reported_payment_date:'2026-10-07',current_balance:'3482310.00',reported_by:'Cobrador',status:'PENDING_REVIEW'};
-const permissions=['collection.view','collection.manage','payments.create','payment_allocations.create','settings.manage','history.view'];
+const permissions=['collection.view','collection.manage','payments.create','payment_allocations.create','reported_payments.view','reported_payments.review','history.view'];
 function view(component,allowed=permissions){return render(<AuthContext.Provider value={{permissions:allowed,user:{name:'Cobrador'}}}>{component}</AuthContext.Provider>);}
 beforeEach(()=>{vi.clearAllMocks();collectionResultsRequest.mockImplementation((path)=>Promise.resolve(path==='/reports'?{reports:[report],page:1,has_next:false}:context));});
 describe('Management results and financial confirmation',()=>{

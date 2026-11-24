@@ -19,7 +19,7 @@ describe('central simulation isolation', () => {
   });
   it('all real financial, administrative, authentication and unknown writes are blocked or local, even with a custom request adapter', async () => {
     enterSimulation(identity);
-    for (const url of ['/unknown-writer', '/auth/login', '/auth/refresh', '/auth/logout', '/admin/portfolio/imports/analyze', '/admin/portfolio/imports/reconcile', '/admin/portfolio/imports/pipeline', '/admin/users', '/provider/whatsapp']) {
+    for (const url of ['/unknown-writer', '/auth/login', '/auth/refresh', '/auth/logout', '/admin/portfolio/imports/analyze', '/admin/portfolio/imports/reconcile', '/admin/portfolio/imports/pipeline', '/provider/whatsapp']) {
       await expect(api.post(url, {}, { adapter: network })).rejects.toMatchObject({ response: { status: 409 } });
     }
     await expect(request('get', '/unexpected-sensitive-reader')).rejects.toMatchObject({ response: { status: 409 } });
@@ -48,6 +48,15 @@ describe('central simulation isolation', () => {
 
 describe('existing workflows on an invented local ledger', () => {
   beforeEach(() => enterSimulation(identity));
+  it('roles, users and password changes remain local and never store a password',async()=>{
+    const role=await request('post','/admin/roles',{label:'Rol de práctica',permissions:['customers.view'],active:true});
+    expect((await request('get','/admin/roles')).some(row=>row.name===role.name)).toBe(true);
+    const user=await request('post','/admin/users',{first_name:'Práctica',email:'practice@example.invalid',roles:[role.name],password:'never-store-this-demo-password'});
+    await request('put','/admin/users/'+user.id+'/password',{password:'never-store-this-new-password'});
+    expect((await request('get','/admin/users')).users.some(row=>row.id===user.id)).toBe(true);
+    expect(JSON.stringify(simulationData())).not.toContain('never-store-this');
+    expect(network).not.toHaveBeenCalled();
+  });
   it('quick mark paid records a local payment and history, is idempotent, and excludes the invoice from future notices',async()=>{
     const before=simulationData().payments.length;
     const paid=await request('post','/invoices/92001/paid',{});

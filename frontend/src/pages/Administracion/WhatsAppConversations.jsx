@@ -10,6 +10,7 @@ import { WhatsAppAttachmentPicker, WhatsAppMediaPreview } from './WhatsAppMedia'
 import { discardDraftMedia, temporaryWhatsAppMedia, MEDIA_UNAVAILABLE } from '../../services/whatsappMedia.service';
 import { collectionResultsRequest } from '../../services/collectionResults.service';
 import { useAppDataMode } from '../../simulation/useAppDataMode';
+import {useAuth} from '../../auth/useAuth';
 import { simulationAvailable } from '../../simulation/store';
 import { buildConversations, conversationMessageError, conversationMessageStatus, customerConversationKey, messageTime, phoneKey, conversationStatus } from './whatsappConversation.presentation';
 import './WhatsAppConversations.css';
@@ -56,6 +57,7 @@ function ChatMessages({ messages }) {
 }
 
 export default function WhatsAppConversations({ settings, conversationCustomers, chatOnly = false, preferenceOwner }) {
+  const {permissions=[]}=useAuth();
   const { mode } = useAppDataMode(); const simulated = mode === 'SIMULATION';
   const metaConnected = !simulated && settings?.provider === 'WHATSAPP_CLOUD_API' && settings?.connection_status === 'CONNECTED';
   const metaProduction = metaConnected && settings.real_sending_enabled && !settings.test_mode;
@@ -158,7 +160,7 @@ export default function WhatsAppConversations({ settings, conversationCustomers,
       return received <= now && now - received < 24 * 60 * 60 * 1000;
     });
   }
-  const canReplyToMeta = Boolean(recipient && !otherCustomerOwnsChat && (metaTestChat || metaProduction) && hasOpenMetaWindow(windowClock));
+  const canReplyToMeta = Boolean(permissions.includes('whatsapp.send') && recipient && !otherCustomerOwnsChat && (metaTestChat || metaProduction) && hasOpenMetaWindow(windowClock));
   const canWriteMetaDraft = canReplyToMeta || (metaProduction && Boolean(recipient));
   const modeLabel = simulated ? 'Demo local' : metaProduction ? 'Meta conectada' : metaConnected ? settings.test_mode ? 'Meta conectada · prueba controlada' : 'Meta conectada · envío desactivado' : simulationAvailable ? 'Proveedor MOCK · Meta pendiente' : 'Meta no disponible';
   const modeNotice = simulated ? 'SIMULACIÓN — No se enviará ningún mensaje real'
@@ -171,7 +173,7 @@ export default function WhatsAppConversations({ settings, conversationCustomers,
   const unresolved = /\{\{[^}]*\}\}/.test(draft);
   const draftProblem = preview?.problem || (unresolved ? 'El mensaje contiene variables sin resolver. Selecciona una plantilla y revisa los datos pendientes.' : '');
   const realProblem = !simulated && preview && draft.trim() !== preview.content.trim() ? 'El envío manual actual requiere el texto validado de la plantilla. Vuelve a insertarla para enviar; el texto editado puede enviarse en Simulación.' : '';
-  const canSend = Boolean(conversation?.customer && phoneKey(conversation.customer.phone) && (draft.trim() || attachment) && (!attachment || simulated && temporaryWhatsAppMedia.get(attachment)) && !draftProblem && !realProblem && !busy && !quickBusy && !mediaBusy &&
+  const canSend = Boolean(permissions.includes('whatsapp.send') && conversation?.customer && phoneKey(conversation.customer.phone) && (draft.trim() || attachment) && (!attachment || simulated && temporaryWhatsAppMedia.get(attachment)) && !draftProblem && !realProblem && !busy && !quickBusy && !mediaBusy &&
     (simulated || preview?.can_prepare && settings?.provider === 'MOCK' && settings?.connection_status === 'CONNECTED'));
 
   useEffect(() => { active.current = true; return () => { active.current = false; }; }, []);
@@ -424,7 +426,7 @@ export default function WhatsAppConversations({ settings, conversationCustomers,
               <label>Cliente para asociar<select aria-label="Cliente para asociar" value={associateId} onChange={event => setAssociateId(event.target.value)}><option value="">Seleccionar cliente</option>{conversation.candidates.map(row => <option key={row.id} value={row.id}>{row.name} · {row.nit}</option>)}</select></label>
               <button disabled={busy || !associateId} onClick={() => associate()}>{simulated ? 'Asociar en esta demo' : 'Vincular conversación'}</button>
             </>}
-            {metaProduction && recipient && <WhatsAppInvoiceLink key={selection} busy={busy} onLink={associate} />}
+            {metaProduction && recipient && permissions.includes('whatsapp.send') && <WhatsAppInvoiceLink key={selection} busy={busy} onLink={associate} />}
           </div>}
           {detail.historyError && <p className="wa-warning" role="alert">{detail.historyError}<button onClick={() => setRevision(value => value + 1)}>Reintentar historial</button></p>}
           {detail.hasNext && <button className="wa-chat-more" disabled={loadingMore} onClick={() => loadMore(true)}>Cargar mensajes anteriores</button>}
@@ -432,10 +434,10 @@ export default function WhatsAppConversations({ settings, conversationCustomers,
           {metaProduction && customerId && recipient && <WhatsAppInvoiceNotice key={`${selection}:${Boolean(invoiceFocus)}`} customerId={customerId}
             recipient={`+${recipient}`} initialOpen={Boolean(invoiceFocus)} initialInvoiceId={invoiceFocus?.id}
             invoices={detail.context?.open_invoices || []}
-            blocked={detail.sequence?.excluded || (recipient === phoneKey(conversation.customer.phone) && detail.sequence?.contact_opted_out)}
+            blocked={!permissions.includes('whatsapp.send') || detail.sequence?.excluded || (recipient === phoneKey(conversation.customer.phone) && detail.sequence?.contact_opted_out)}
             onMessage={message => setRecords(current => merge(current, [message]))} />}
           {metaProduction && recipient && !otherCustomerOwnsChat && (templateCommand || templatesOpen) && <WhatsAppTemplatePicker
-            key={selection} recipient={`+${recipient}`} query={templateCommand ? draft.slice(1).toLowerCase() : ''}
+            key={selection} recipient={`+${recipient}`} canSend={permissions.includes('whatsapp.send')} query={templateCommand ? draft.slice(1).toLowerCase() : ''}
             onClose={closeTemplates} canUseInvoice={Boolean(customerId)} onInvoice={() => { closeTemplates(); setInvoiceFocus({}); }}
             onMessage={message => setRecords(current => merge(current, [message]))} />}
           {metaConnected ? <form className="wa-chat-compose" onSubmit={event => { event.preventDefault(); void send(); }}>
